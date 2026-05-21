@@ -1,0 +1,62 @@
+{
+  "name": "builder-test-reviewer",
+  "description": "Three-phase loop: Builder writes code, TestRunner validates tests pass, Reviewer checks quality.",
+  
+  "default_provider": "llama-cpp-3090",
+
+  "phases": {
+    "builder": { 
+      "skill": "/skill:tdd", 
+      "model": "qwen-35b-a3b-118k-bf16",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 1800,
+      "retries": 3
+    },
+    "test_runner": { 
+      "skill": null, 
+      "model": null,
+      "provider": null,
+      "timeout_seconds": 60,
+      "is_local": true,
+      "command": "pnpm test --run",
+      "retries": 1
+    },
+    "reviewer": { 
+      "skill": "/skill:reviewer", 
+      "model": "qwen-35b-a3b-118k-bf16",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 900,
+      "retries": 2
+    },
+    "diagnostic": { 
+      "skill": "/skill:debugger", 
+      "model": "qwen-35b-a3b-118k-bf16",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 600,
+      "retries": 1
+    }
+  },
+  
+  "transitions": [
+    { 
+      "from": "builder", 
+      "on_success": "test_runner", 
+      "on_reject": "builder",
+      "on_error": "diagnostic" 
+    },
+    { 
+      "from": "test_runner", 
+      "on_success": "reviewer", 
+      "on_reject": "builder",
+      "on_error": "diagnostic",
+      "description": "If tests fail, send feedback to builder for fixes"
+    },
+    { 
+      "from": "reviewer", 
+      "on_success": "finish", 
+      "on_reject": "builder",
+      "on_error": "diagnostic",
+      "description": "If reviewer rejects code, send critique back to builder"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "name": "builder-reviewer",
+  "description": "Builder writes code, reviewer validates quality. Retry loops on rejection.",
+  
+  "default_provider": "llama-cpp-3090",
+
+  "phases": {
+    "builder": { 
+      "skill": "/skill:tdd", 
+      "model": "qwen-35b-a3b-118k-bf16",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 1800,
+      "retries": 3
+    },
+    "reviewer": { 
+      "skill": "/skill:reviewer", 
+      "model": "qwen-35b-a3b-118k-bf16",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 900,
+      "retries": 2
+    }    ,
+    "diagnostic": { 
+      "skill": "/skill:debugger", 
+      "model": "qwen-35b-a3b-118k-bf16",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 600,
+      "retries": 1
+    }
+  },
+  "transitions": [
+    {
+      "from": "builder",
+      "on_success": "reviewer",
+      "on_reject": "builder",
+      "on_error": "diagnostic",
+      "description": "If builder self-rejects, retry with same phase"
+    },
+    {
+      "from": "reviewer",
+      "on_success": "finish",
+      "on_reject": "builder",
+      "on_error": "finish",
+      "description": "If reviewer rejects code, send critique back to builder for fixes"
+    }
+  ]
+}

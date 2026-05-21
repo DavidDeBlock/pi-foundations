@@ -1,0 +1,400 @@
+#!/usr/bin/env bash
+# Debugger Skill - Headless browser debugging with console capture
+# Uses Playwright for browser automation and event monitoring
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_ROOT="/home/david/projects/pos-dev"
+PLAYWRIGHT_SCRIPT="${SCRIPT_DIR}/playwright-debug.cjs"
+OUTPUT_DIR="${WORKSPACE_ROOT}/.pi/debug-output"
+
+# Ensure output directory exists
+mkdir -p "$OUTPUT_DIR"
+
+# Color codes for terminal output
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Print colored output
+print_info() { echo -e "${BLUE}ℹ️  $1${NC}"; }
+print_success() { echo -e "${GREEN}✅ $1${NC}"; }
+print_error() { echo -e "${RED}❌ $1${NC}"; }
+print_warn() { echo -e "${YELLOW}⚠️  $1${NC}"; }
+
+# Show help
+show_help() {
+    cat << EOF
+Debugger Skill - Headless Browser Debugging with Console Capture
+
+USAGE:
+    debugger <command> [options]
+
+COMMANDS:
+    open <url>              Open URL with console monitoring enabled
+    navigate <url>          Navigate to page while capturing logs
+    close                   Close debug session
+    
+LOG CAPTURE:
+    logs --page=<url>       Extract all console logs from a page
+                            [--type=info|warn|error]
+                            [--output=/path/to/file.json]
+    
+ERROR TRACKING:
+    errors --page=<url>     Capture all JavaScript errors from page
+                            [--include-rejections=true|false]
+    
+NETWORK MONITORING:
+    network --page=<url>    Monitor network requests
+                            [--type=xhr|fetch|all]
+                            [--output=/path/to/file.json]
+
+DOM INSPECTION:
+    query --selector=<sel>  Query element and return content
+                            --page=<url>
+                            [--attribute=<attr>]
+    
+    exists --selector=<sel> Check if element exists
+                            --page=<url>
+
+SCREENSHOTS:
+    screenshot --page=<url> Full page screenshot
+                            [--selector=<element>]
+                            [--output=/path/to/file.png]
+
+ADVANCED:
+    trace --page=<url>      Enable tracing with console + network
+                            --output=trace.zip
+    
+    pause --selector=<sel>  Pause execution at specific selector
+                            --page=<url>
+    
+    eval --script="<js>"   Execute custom JavaScript in page context
+                           --page=<url>
+
+OPTIONS:
+    -h, --help              Show this help message
+    --timeout=<ms>          Set timeout in milliseconds (default: 30000)
+    --browser=<type>        Browser type: chromium, firefox, webkit
+    
+EXAMPLES:
+    debugger open "https://example.com"
+    debugger logs --page="https://example.com" --type=error
+    debugger errors --page="https://example.com"
+    debugger network --page="https://example.com" --output=network.json
+    debugger query --selector=".main-content" --page="https://example.com"
+    debugger screenshot --page="https://example.com" --output=screenshot.png
+
+EOF
+}
+
+# Run Playwright debug script with arguments
+run_playwright_debug() {
+    local url="$1"
+    shift
+    
+    # Build args object as JSON
+    local args_json='{'
+    args_json+="\"url\": \"${url}\", "
+    
+    if [[ $# -gt 0 ]]; then
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --action=*) 
+                    action="${1#*=}"
+                    args_json+="\"action\": \"${action}\", "
+                    shift ;;
+                --type=*) 
+                    type="${1#*=}"
+                    args_json+="\"type\": \"${type}\", "
+                    shift ;;
+                --output=*) 
+                    output="${1#*=}"
+                    args_json+="\"output\": \"${output}\", "
+                    shift ;;
+                --selector=*) 
+                    selector="${1#*=}"
+                    args_json+="\"selector\": \"${selector}\", "
+                    shift ;;
+                --attribute=*) 
+                    attribute="${1#*=}"
+                    args_json+="\"attribute\": \"${attribute}\", "
+                    shift ;;
+                --script=*) 
+                    script="${1#*=}"
+                    # Escape quotes in script for JSON
+                    script=$(echo "$script" | sed 's/"/\\"/g')
+                    args_json+="\"script\": \"${script}\", "
+                    shift ;;
+                --include-rejections=*) 
+                    include_rejections="${1#*=}"
+                    args_json+="\"includeRejections\": ${include_rejections}, "
+                    shift ;;
+                *) shift ;;
+            esac
+        done
+    fi
+    
+    # Remove trailing comma and close object
+    args_json="${args_json%, }"
+    args_json+='}'
+    
+    # Run Playwright script from project root where playwright is installed
+    cd /home/david/projects/pi-hub && node "$PLAYWRIGHT_SCRIPT" "$args_json"
+}
+
+# Main command handler
+handle_command() {
+    local cmd="$1"
+    shift
+    
+    case "$cmd" in
+        open|navigate)
+            local url=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --url=*) url="${1#*=}"; shift ;;
+                    *) url="$1"; shift ;;
+                esac
+            done
+            
+            if [[ -z "$url" ]]; then
+                print_error "URL required. Usage: debugger open <url>"
+                exit 1
+            fi
+            
+            print_info "Opening URL with console monitoring: $url"
+            
+            run_playwright_debug "$url" --action=open
+            
+            ;;
+        
+        logs)
+            local page_url="" type="all" output=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --page=*) page_url="${1#*=}"; shift ;;
+                    --type=*) type="${1#*=}"; shift ;;
+                    --output=*) output="${1#*=}"; shift ;;
+                    *) shift ;;
+                esac
+            done
+            
+            if [[ -z "$page_url" ]]; then
+                print_error "URL required. Usage: debugger logs --page=<url>"
+                exit 1
+            fi
+            
+            print_info "Extracting console logs from: $page_url"
+            
+            run_playwright_debug "$page_url" --action=logs --type="$type" --output="$output"
+            
+            ;;
+        
+        errors)
+            local page_url="" include_rejections="true" output=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --page=*) page_url="${1#*=}"; shift ;;
+                    --include-rejections=*) include_rejections="${1#*=}"; shift ;;
+                    --output=*) output="${1#*=}"; shift ;;
+                    *) shift ;;
+                esac
+            done
+            
+            if [[ -z "$page_url" ]]; then
+                print_error "URL required. Usage: debugger errors --page=<url>"
+                exit 1
+            fi
+            
+            print_info "Capturing JavaScript errors from: $page_url"
+            
+            run_playwright_debug "$page_url" --action=errors --include-rejections="$include_rejections" --output="$output"
+            
+            ;;
+        
+        network)
+            local page_url="" type="all" output=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --page=*) page_url="${1#*=}"; shift ;;
+                    --type=*) type="${1#*=}"; shift ;;
+                    --output=*) output="${1#*=}"; shift ;;
+                    *) shift ;;
+                esac
+            done
+            
+            if [[ -z "$page_url" ]]; then
+                print_error "URL required. Usage: debugger network --page=<url>"
+                exit 1
+            fi
+            
+            print_info "Monitoring network requests from: $page_url"
+            
+            run_playwright_debug "$page_url" --action=network --type="$type" --output="$output"
+            
+            ;;
+        
+        query)
+            local selector="" page_url="" attribute=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --selector=*) selector="${1#*=}"; shift ;;
+                    --page=*) page_url="${1#*=}"; shift ;;
+                    --attribute=*) attribute="${1#*=}"; shift ;;
+                    *) shift ;;
+                esac
+            done
+            
+            if [[ -z "$selector" || -z "$page_url" ]]; then
+                print_error "Selector and URL required. Usage: debugger query --selector=<sel> --page=<url>"
+                exit 1
+            fi
+            
+            print_info "Querying element '$selector' on: $page_url"
+            
+            run_playwright_debug "$page_url" --action=query --selector="$selector" --attribute="$attribute"
+            
+            ;;
+        
+        exists)
+            local selector="" page_url=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --selector=*) selector="${1#*=}"; shift ;;
+                    --page=*) page_url="${1#*=}"; shift ;;
+                    *) shift ;;
+                esac
+            done
+            
+            if [[ -z "$selector" || -z "$page_url" ]]; then
+                print_error "Selector and URL required. Usage: debugger exists --selector=<sel> --page=<url>"
+                exit 1
+            fi
+            
+            print_info "Checking existence of '$selector' on: $page_url"
+            
+            run_playwright_debug "$page_url" --action=exists --selector="$selector"
+            
+            ;;
+        
+        screenshot)
+            local page_url="" selector="" output=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --page=*) page_url="${1#*=}"; shift ;;
+                    --selector=*) selector="${1#*=}"; shift ;;
+                    --output=*) output="${1#*=}"; shift ;;
+                    *) shift ;;
+                esac
+            done
+            
+            if [[ -z "$page_url" ]]; then
+                print_error "URL required. Usage: debugger screenshot --page=<url>"
+                exit 1
+            fi
+            
+            local screenshot_path="$output"
+            if [[ -z "$screenshot_path" ]]; then
+                screenshot_path="${OUTPUT_DIR}/screenshot_$(date +%Y%m%d_%H%M%S).png"
+            fi
+            
+            print_info "Taking screenshot from: $page_url"
+            
+            run_playwright_debug "$page_url" --action=screenshot --selector="$selector" --output="$screenshot_path"
+            
+            ;;
+        
+        trace)
+            local page_url="" output=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --page=*) page_url="${1#*=}"; shift ;;
+                    --output=*) output="${1#*=}"; shift ;;
+                    *) shift ;;
+                esac
+            done
+            
+            if [[ -z "$page_url" ]]; then
+                print_error "URL required. Usage: debugger trace --page=<url>"
+                exit 1
+            fi
+            
+            local trace_path="$output"
+            if [[ -z "$trace_path" ]]; then
+                trace_path="${OUTPUT_DIR}/trace_$(date +%Y%m%d_%H%M%S).zip"
+            fi
+            
+            print_info "Creating trace for: $page_url"
+            
+            run_playwright_debug "$page_url" --action=trace --output="$trace_path"
+            
+            ;;
+        
+        pause)
+            local selector="" page_url=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --selector=*) selector="${1#*=}"; shift ;;
+                    --page=*) page_url="${1#*=}"; shift ;;
+                    *) shift ;;
+                esac
+            done
+            
+            if [[ -z "$selector" || -z "$page_url" ]]; then
+                print_error "Selector and URL required. Usage: debugger pause --selector=<sel> --page=<url>"
+                exit 1
+            fi
+            
+            print_info "Pausing at element '$selector' on: $page_url (press Ctrl+C to continue)"
+            
+            run_playwright_debug "$page_url" --action=pause --selector="$selector"
+            
+            ;;
+        
+        eval)
+            local script="" page_url=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --script=*) script="${1#*=}"; shift ;;
+                    --page=*) page_url="${1#*=}"; shift ;;
+                    *) shift ;;
+                esac
+            done
+            
+            if [[ -z "$script" || -z "$page_url" ]]; then
+                print_error "Script and URL required. Usage: debugger eval --script='<js>' --page=<url>"
+                exit 1
+            fi
+            
+            print_info "Evaluating script on: $page_url"
+            
+            run_playwright_debug "$page_url" --action=eval --script="$script"
+            
+            ;;
+        
+        close)
+            print_info "Closing debug session (no active session to close)"
+            ;;
+        
+        help|--help|-h)
+            show_help
+            ;;
+        
+        *)
+            if [[ -z "$cmd" ]]; then
+                print_error "No command provided. Use 'debugger --help' for usage."
+            else
+                print_error "Unknown command: $cmd"
+            fi
+            show_help
+            exit 1
+            ;;
+    esac
+}
+
+# Run main handler
+handle_command "$@"

@@ -1,0 +1,59 @@
+{
+  "name": "prd-audit",
+  "description": "PRD-to-Code Audit: Verifies a GitHub Issue/PRD against implemented code and tests. Approved issues are closed; rejected ones trigger to-prd for follow-up work.",
+
+  "default_provider": "llama-cpp-3090",
+
+  "phases": {
+    "auditor": {
+      "skill": "/skill:prd-auditor",
+      "model": "qwen-35b-a3b-118k-bf16",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 900,
+      "retries": 2
+    },
+    "generate-issues": { 
+      "skill": "/skill:to-prd", 
+      "model": "qwen-35b-a3b-118k-bf16",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 900,
+      "retries": 2
+    },
+    "close_issue": {
+      "is_local": true,
+      "command": "gh issue close {issue_number}",
+      "model": null,
+      "provider": null,
+      "timeout_seconds": 30,
+      "retries": 1
+    },
+    "diagnostic": {
+      "skill": "/skill:debugger",
+      "model": "qwen-35b-a3b-118k-bf16",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 600,
+      "retries": 1
+    }
+  },
+
+  "transitions": [
+    {
+      "from": "auditor",
+      "on_success": "close_issue",
+      "on_reject": "generate-issues",
+      "on_error": "diagnostic"
+    },
+    {
+      "from": "generate-issues",
+      "on_success": "finish",
+      "on_reject": "finish",
+      "on_error": "diagnostic"
+    },
+    {
+      "from": "close_issue",
+      "on_success": "finish",
+      "on_reject": "finish",
+      "on_error": "diagnostic"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+## PHASE: auditor
+## ISSUE: {issue_number}
+
+### Issue Details
+{issue_body}
+
+{prd_body}
+
+{diagnostic_insights}
+
+{previous_output}
+
+**YOUR TASK:** Audit this GitHub Issue/PRD against the implemented codebase. Verify that every acceptance criterion has corresponding implementation in routes, models, and tests. Run CI checks to ensure nothing breaks.
+
+**RULES:**
+1. Extract all Acceptance Criteria from the issue body (checkboxes or bulleted lists)
+2. For each AC, confirm existence of matching routes, functions, DB schemas, and test files
+3. Run `pnpm build && pnpm lint && pnpm test` to verify CI passes
+4. Flag vague/ambiguous ACs as `needs_clarification` rather than failing
+
+**RESULT FORMAT:** Write TWO files:
+
+**1. Result file** → `.pi/maestro/state/slice-result.json`
+
+If APPROVED (all ACs verified + CI passes):
+```json
+{"status":"approved","slice":{issue_number}}
+```
+
+If REJECTED (missing code/tests or CI fails):
+```json
+{"status":"rejected","slice":{issue_number},"issues":["specific issue 1", "specific issue 2"]}
+```
+
+**SKILL TO USE:** `/skill:prd-auditor`

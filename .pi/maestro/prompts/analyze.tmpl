@@ -1,0 +1,39 @@
+## PHASE: analyze
+## ISSUE: {issue_number}
+
+{diagnostic_insights}
+
+{previous_output}
+
+**YOUR TASK:** Audit the project for documentation drift — identify gaps between what the code does and what the docs say (or don't say). This gap analysis will feed into a PRD in the next phase.
+
+**RULES:**
+1. Use `context-sync-audit` skill to compare docs against the current codebase
+2. Classify findings by drift category (undocumented-feature, stale-description, renamed-moved, removed-but-documented)
+3. Severity matters — critical findings (stale/removed) should drive the PRD
+4. Do NOT modify any files — this is an audit-only pass
+
+**OUTPUT:** Write TWO files:
+
+**1. Drift report** → `.pi/maestro/state/drift-report.md`
+Produce a structured drift report with:
+- Summary counts by severity (critical 🔴, medium 🟡, low 🟢)
+- Each finding with category, description, and code evidence
+- Verified claims that are accurate (for completeness)
+
+**2. Result file** → `.pi/maestro/state/slice-result.json`
+
+If NO SIGNIFICANT GAPS (docs match code):
+```json
+{"status":"no_gaps","slice":{issue_number},"message":"No critical gaps found — flow complete."}
+```
+
+If APPROVED:
+```json
+{"status":"approved","slice":{issue_number}}
+```
+
+If REJECTED:
+```json
+{"status":"rejected","slice":{issue_number},"issues":["specific reason 1", "specific reason 2"]}
+```

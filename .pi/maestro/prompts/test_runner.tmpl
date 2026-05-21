@@ -1,0 +1,31 @@
+## PHASE: test_runner
+## ISSUE: {issue_number}
+
+{previous_output}
+
+**YOUR TASK:** Execute the local test suite and report results.
+
+**COMMAND TO RUN:**
+```bash
+pnpm test --run
+```
+
+**RULES:**
+1. Run the test command in the project root directory
+2. Capture both stdout and stderr
+3. Report pass/fail status with specific failing tests if any
+4. If all tests pass, mark as "success"
+5. If tests fail, provide specific error messages for the builder to fix
+
+**RESULT FORMAT:**
+Write a result file to `.pi/maestro/state/slice-result.json`:
+
+If ALL TESTS PASS:
+```json
+{"status":"approved","slice":{issue_number},"tests":{"passed":true}}
+```
+
+If ANY TEST FAILS:
+```json
+{"status":"rejected","slice":{issue_number},"tests":{"passed":false,"errors":["Test 1 failed: ...", "Test 2 failed: ..."]}
+```

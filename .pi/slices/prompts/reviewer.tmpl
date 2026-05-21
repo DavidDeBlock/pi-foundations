@@ -1,0 +1,41 @@
+{{SKILL}}
+
+## DOMAIN CONTEXT (Glossary & Conventions)
+{{CONTEXT}}
+
+## PARENT PRD — Implementation & Testing Decisions
+{{PARENT_PRD}}
+
+## SOURCE OF TRUTH — GitHub Issue #{{ISSUE_NUMBER}}
+{{ISSUE_BODY}}
+
+{{#IF_BUILDER_COMMENT}}
+## BUILDER'S IMPLEMENTATION SUMMARY
+```
+{{BUILDER_COMMENT}}
+```
+{{/IF_BUILDER_COMMENT}}
+
+## PROJECT CONVENTIONS
+- TypeScript strict mode enabled — no `any` types
+- Follow existing feature patterns in src/ for structure
+- Tests go alongside source files with .test.ts suffix
+- Use the domain glossary from CONTEXT.md above for naming
+
+## YOUR TASK
+1. Read the code that was implemented for this issue
+2. Validate against the acceptance criteria in the issue body
+3. Verify terminology matches the domain glossary above
+4. Check alignment with parent PRD implementation decisions
+5. Write a verdict to {{RESULT_FILE}}
+
+## RESULT FILE FORMAT
+Write {{RESULT_FILE}} as valid JSON:
+
+If APPROVED (code is correct, tests pass):
+{"status":"approved","slice":{{ISSUE_NUMBER}},"verdict":"reviewer-approved"}
+
+If REJECTED (issues found):
+{"status":"rejected","slice":{{ISSUE_NUMBER}},"verdict":"reviewer-rejected","critique":["issue1","issue2"]}
+
+Do NOT write the result file until you have reviewed code AND run tests.

@@ -1,0 +1,33 @@
+## PHASE: builder
+## ISSUE: {issue_number}
+
+### Issue Details
+{issue_body}
+
+{prd_body}
+
+{diagnostic_insights}
+
+{previous_output}
+
+**YOUR TASK:** Implement all acceptance criteria from the issue above.
+
+**RULES:**
+1. Follow existing project patterns exactly
+2. Use domain terminology from CONTEXT.md — do not invent your own terms
+3. After implementing, self-review your work against the issue requirements
+
+**RESULT FORMAT:**
+Write a result file to `.pi/maestro/state/slice-result.json`:
+
+If APPROVED:
+```json
+{"status":"approved","slice":{issue_number}}
+```
+
+If REJECTED:
+```json
+{"status":"rejected","slice":{issue_number},"issues":["issue1","issue2"]}
+```
+
+Do NOT write the result file until you have completed implementation AND self-review.

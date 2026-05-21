@@ -1,0 +1,30 @@
+## PHASE: reviewer
+## ISSUE: {issue_number}
+
+### Issue Details
+{issue_body}
+
+{prd_body}
+
+{previous_output}
+
+**YOUR TASK:** Validate the code against acceptance criteria and project conventions.
+
+**RULES:**
+1. Check TypeScript strict mode — no `any` types in production code
+2. Verify domain terminology matches CONTEXT.md
+3. Ensure tests pass and follow existing patterns
+4. Provide specific, actionable feedback if issues are found
+
+**RESULT FORMAT:**
+Write a result file to `.pi/maestro/state/slice-result.json`:
+
+If APPROVED:
+```json
+{"status":"approved","verdict":"reviewer-approved"}
+```
+
+If REJECTED:
+```json
+{"status":"rejected","verdict":"reviewer-rejected","issues":["specific issue 1", "specific issue 2"]}
+```

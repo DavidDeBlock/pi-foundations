@@ -1,0 +1,62 @@
+{
+  "name": "gap-check",
+  "description": "Architectural Gap Check: Compares PRD requirements against project structure and identifies missing implementations.",
+  
+  "default_provider": "llama-cpp-3090",
+
+  "phases": {
+    "analyze": { 
+      "skill": "/skill:context-sync-audit", 
+      "model": "qwen-35b-a3b-118k-bf16",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 300,
+      "retries": 1
+    },
+    "to-prd": { 
+      "skill": "/skill:to-prd", 
+      "model": "qwen-35b-a3b-118k-bf16",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 900,
+      "retries": 1
+    },
+    "to-issues": { 
+      "skill": "/skill:to-issues", 
+      "model": "qwen-35b-a3b-118k-bf16",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 900,
+      "retries": 1
+    },
+    "diagnostic": { 
+      "skill": "/skill:debugger", 
+      "model": "qwen-35b-a3b-118k-bf16",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 600,
+      "retries": 1
+    }
+  },
+  
+  "transitions": [
+    {
+      "from": "analyze",
+      "on_success": "to-prd",
+      "on_no_gaps": "finish",
+      "on_reject": "analyze",
+      "on_error": "diagnostic",
+      "description": "Run drift analysis. If gaps found, proceed to PRD generation. If no significant gaps, finish."
+    },
+    {
+      "from": "to-prd",
+      "on_success": "to-issues",
+      "on_reject": "to-prd",
+      "on_error": "diagnostic",
+      "description": "Generate/update PRD based on gap findings."
+    },
+    {
+      "from": "to-issues",
+      "on_success": "finish",
+      "on_reject": "to-issues",
+      "on_error": "diagnostic",
+      "description": "Create implementation issues from PRD. Flow ends after issue creation."
+    }
+  ]
+}

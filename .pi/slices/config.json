@@ -1,0 +1,21 @@
+{
+  "model": "qwen-35b-a3b-118k-bf16",
+  "provider": "llama-cpp-3090",
+  "max_retries": 3,
+  "timeout_seconds": 1500,
+  "target_label": "needs-triage",
+  "success_label": "awaiting-manual-check",
+  "fail_label": "failed-slice",
+  "builder_skill": "/skill:tdd",
+  "reviewer_skill": "/skill:reviewer",
+  "state_dir": ".pi/state",
+  "result_file": ".pi/state/slice-result.json",
+  "continue_on_failure": true,
+  "post_builder_comment": true,
+  "post_reviewer_comment": true,
+  "update_labels": true,
+  "fetch_parent_prd": true,
+  "load_context_md": true,
+  "parent_prd_label_pattern": "parent-prd:#(\\d+)",
+  "session_log_tracking": true
+}
