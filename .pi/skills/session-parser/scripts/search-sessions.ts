@@ -19,6 +19,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 // ── CLI parsing ────────────────────────────────────────────────
@@ -59,10 +60,29 @@ if (positionalArgs.length < 1 && !errorsOnly) {
 
 query = positionalArgs[0] || '';
 
+// Resolve session directory dynamically
 if (positionalArgs.length > 1) {
   sessionDir = path.resolve(positionalArgs[1]);
 } else {
-  sessionDir = '/home/david/.pi/agent/sessions/--home-david-projects-pi-pos-v1--';
+  const home = process.env.HOME || os.homedir();
+  const sessionsRoot = path.join(home, '.pi', 'agent', 'sessions');
+  const cwdProjectSlug = '--' + process.cwd().replace(/\/+/g, '-') + '--';
+  const candidatePath = path.join(sessionsRoot, cwdProjectSlug);
+
+  if (fs.existsSync(candidatePath)) {
+    sessionDir = candidatePath;
+  } else {
+    console.error('⚠️ No session directory found for current project.');
+    console.error('   Specify a path as the last argument, or use one of these:');
+    if (fs.existsSync(sessionsRoot)) {
+      const dirs = fs.readdirSync(sessionsRoot)
+        .filter(d => !d.startsWith('.'))
+        .sort()
+        .slice(0, 10);
+      for (const d of dirs) console.error(`     ${path.join(sessionsRoot, d)}`);
+    }
+    process.exit(1);
+  }
 }
 
 // ── Read directory ─────────────────────────────────────────────

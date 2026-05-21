@@ -13,10 +13,12 @@ description: >
 This skill provides the ability to list, search, and parse raw JSONL session logs into human-readable Markdown and machine-parsable JSON structures. It uses the `parseSessionLog` library function from the project's shared codebase.
 
 ## 🔍 Location of Sessions
-All project sessions are stored in:
+All project sessions are stored in the user's global Pi agent directory:
 ```bash
-/home/david/.pi/agent/sessions/--home-david-projects-pi-pos-v1--/
+<HOME>/.pi/agent/sessions/<project-slug>/
 ```
+
+The `<project-slug>` is derived from the full path to the project directory (e.g., `--home-david-projects-my-app--`). Each project gets its own session subdirectory.
 
 Files are named with timestamps (e.g., `2026-05-07T15-28-33-649Z_...jsonl`).
 
@@ -98,7 +100,9 @@ tsx .pi/skills/session-parser/scripts/parse-session.ts <path-to-jsonl>
 
 **Example:**
 ```bash
-tsx .pi/skills/session-parser/scripts/parse-session.ts /home/david/.pi/agent/sessions/--home-david-projects-pi-pos-v1--/2026-05-08T19-12-59-256Z_019e0901.jsonl
+# Find a session path first, then parse it
+tsx .pi/skills/session-parser/scripts/list-sessions.ts --path | head -1
+tsx .pi/skills/session-parser/scripts/parse-session.ts <path-from-above>
 ```
 
 **Output:** Two sections:

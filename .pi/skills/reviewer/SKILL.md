@@ -109,7 +109,7 @@ This project does NOT have a flat `src/` directory. Top-level source directories
 
 **Before running `find` or `grep`:**
 1. Know which directory your target lives in — don't guess `/src`
-2. If unsure, run `ls /home/david/projects/pi-pos-v0/` first (one command, saves retries)
+2. If unsure, run `ls $PROJECT_ROOT/src/` first (one command, saves retries)
 3. Tests live alongside source: `server/__tests__/`, not root `__tests__/`
 
 ### Bash Timeout Rule

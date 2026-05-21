@@ -1,0 +1,91 @@
+# Pi Agent — Agent Definitions & Task Routing
+
+**Location:** `~/.pi/agent/AGENTS.md` (global) or `.pi/agents.md` (project-local)  
+**Purpose:** Maps agent roles to skills. This file tells the system which skill each agent should use.
+
+---
+
+## Overview
+
+Agents are logical roles that map to specific skills in `.pi/skills/`. Each agent handles one type of work and passes context to the next.
+
+---
+
+## Available Agents
+
+| Agent | Skill | Purpose |
+|-------|-------|---------|
+| **Builder** | `typescript-implementer` | Execute code changes, create files/directories, follow patterns |
+| **Planner** | `planner` | Break down broad tasks into scoped, actionable steps |
+| **Reviewer** | `reviewer` | Validate correctness, identify risks, check against plan |
+| **Architect** | `architect` | Protect project structure, domain boundaries, source-of-truth rules |
+| **DB Engineer** | `db-engineer` | Design schemas, migrations, relations, constraints |
+
+---
+
+## How to Add a New Agent/Skill
+
+1. Create `.pi/skills/<skill-name>/SKILL.md` with instructions
+2. Add an entry above in the table: `| <AgentName> \| <skill-name> \| <Purpose> |`
+3. The skill path is always relative: `.pi/skills/<skill-name>/SKILL.md`
+
+---
+
+## Task Routing Rules
+
+1. **Identify task type** → Select appropriate agent from the table above
+2. **Validate scope** → Ensure clarity before proceeding (execution gate)
+3. **Execute with skills** → Use correct skill for the task
+4. **Review changes** → Validate correctness against plan
+
+### Task-to-Agent Mapping
+
+| Task Type | Primary Agent | Secondary Support |
+|-----------|--------------|-------------------|
+| Planning & decomposition | Planner | Architect |
+| Feature implementation | Builder | DB Engineer, Architect |
+| Database changes | DB Engineer | Architect, Reviewer |
+| Structural decisions | Architect | Planner, Reviewer |
+| Quality review | Reviewer | Architect |
+
+### Typical Handoffs
+
+```
+Planner → Architect (if structural decisions needed)
+        → DB Engineer (if schema changes needed)
+        → Builder (ready to build)
+
+Architect → DB Engineer (for schema design)
+          → Builder (with approval)
+
+Builder → Reviewer (for quality check)
+        → Architect (if structural conflict found)
+        → DB Engineer (if schema assumptions wrong)
+
+DB Engineer → Builder (for integration)
+            → Reviewer (for consistency review)
+
+Reviewer → Builder (for fixes)
+         → Architect (for structural issues)
+```
+
+---
+
+## Definition of Done by Agent
+
+| Agent | When Work is Complete |
+|-------|----------------------|
+| **Planner** | Task is clear enough for another agent to execute without reinterpretation |
+| **Architect** | Feature has a clear structural place; project is more consistent |
+| **DB Engineer** | Schema and migration plan are clear, safe, and domain-aligned |
+| **Builder** | Slice works, respects architecture, fits naturally into project |
+| **Reviewer** | Quality and safety are clearly understood; next action is obvious |
+
+---
+
+## Notes
+
+- Agents work **sequentially** — one completes before the next begins
+- No role mixing allowed — each agent stays in its lane
+- Context passes between agents via documented outputs (result files, comments)
+- If uncertainty arises, return to the previous agent for clarification

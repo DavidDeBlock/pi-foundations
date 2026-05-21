@@ -106,8 +106,8 @@ Quick reference — see `~/.pi/agent/AGENTS.md` for complete agent definitions.
 | **grill-with-docs** | `.pi/skills/grill-with-docs/SKILL.md` | Sparring + doc updates (step 1) |
 | **to-prd** | `.pi/skills/to-prd/SKILL.md` | Conversation → PRD (step 2) |
 | **to-issues** | `.pi/skills/to-issues/SKILL.md` | Plan → GitHub issues (step 3) |
-| **tdd** | `.pi/skills/tdd/SKILL.md` | TDD builder in run-slices.sh (step 4a) |
-| **reviewer** | `.pi/skills/reviewer/SKILL.md` | Review loop in run-slices.sh (step 4b) |
+| **tdd** | `.pi/skills/tdd/SKILL.md` | TDD builder in maestro flow (builder-reviewer) |
+| **reviewer** | `.pi/skills/reviewer/SKILL.md` | Review loop in maestro flow (builder-reviewer) |
 | **planner** | `.pi/skills/planner/SKILL.md` | Task decomposition |
 | **typescript-implementer** | `.pi/skills/typescript-implementer/SKILL.md` | Implementation |
 | **architect** | `.pi/skills/architect/SKILL.md` | Structural decisions |
@@ -139,24 +139,39 @@ See `~/.pi/agent/AGENTS.md` for complete handoff diagrams and workflow patterns.
 .pi/
 ├── INDEX.md                    ← You are here (skills quick reference)
 ├── SYSTEM.md                   Core system rules
-├── WORLD.md                    Domain map and project structure
+├── WORLD.md.EXAMPLE            Example domain map (copy to WORLD.md for your project)
 ├── FLOW.md                     Workflow guide
-└── skills/                     Skill implementations
-    ├── grill-with-docs/        Sparring + doc updates (workflow step 1)
-    ├── to-prd/                 Conversation → PRD (workflow step 2)
-    ├── to-issues/              Plan → GitHub issues (workflow step 3)
-    ├── tdd/                    TDD builder (run-slices.sh step 4a)
-    ├── reviewer/               Review loop (run-slices.sh step 4b)
-    ├── planner/                Task decomposition
-    ├── typescript-implementer/ Implementation
-    ├── architect/              Structural decisions
-    ├── db-engineer/            Schema design
-    ├── triage/                 Issue state management
-    ├── vertical-slice-planner/ Slice-specific planning
-    ├── archivist/              Documentation lookup
-    ├── web-searcher/           External research
-    ├── browser-automation/     Headless browser
-    └── debugger/               Debug sessions
+├── AGENTS.md.EXAMPLE           Agent-to-skill mapping template
+│
+├── maestro/                    Autonomous loop orchestrator
+│   ├── orchestrate.py          CLI entry point
+│   ├── app_shell.py            High-level workflow manager
+│   ├── flow_engine.py          Core execution engine
+│   ├── lib/                    Shared libraries (rpc, github client, etc.)
+│   ├── flows/                  Flow definitions (JSON)
+│   ├── prompts/                Prompt templates for each phase
+│   └── pipelines/              Pipeline definitions
+│
+├── skills/                     Skill implementations
+│   ├── grill-with-docs/        Sparring + doc updates (workflow step 1)
+│   ├── to-prd/                 Conversation → PRD (workflow step 2)
+│   ├── to-issues/              Plan → GitHub issues (workflow step 3)
+│   ├── tdd/                    TDD builder (maestro builder-reviewer flow)
+│   ├── reviewer/               Review loop (maestro builder-reviewer flow)
+│   ├── planner/                Task decomposition
+│   ├── typescript-implementer/ Implementation
+│   ├── architect/              Structural decisions
+│   ├── db-engineer/            Schema design
+│   ├── triage/                 Issue state management
+│   ├── vertical-slice-planner/ Slice-specific planning
+│   ├── archivist/              Documentation lookup
+│   ├── web-searcher/           External research
+│   ├── browser-automation/     Headless browser
+│   └── debugger/               Debug sessions
+│
+├── hooks/                      User-defined hook points (empty by default)
+└── archive/                    Obsolete implementations (reference only)
+    └── slices/                 Bash orchestrator — archived, use maestro instead
 ```
 
 For agent definitions and routing rules, see `~/.pi/agent/AGENTS.md`.

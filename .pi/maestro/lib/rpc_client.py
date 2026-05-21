@@ -23,8 +23,8 @@ import tempfile
 from pathlib import Path
 
 
-# Path to the existing rpc-client.py in slices directory
-RPC_CLIENT_PATH = Path(__file__).parent.parent.parent / "slices" / "rpc-client.py"
+# Path to the Pi RPC client (consolidated into maestro/lib/)
+RPC_CLIENT_PATH = Path(__file__).parent / "pi_rpc_client.py"
 
 
 def run_rpc(prompt_text: str, phase_name: str = "builder", timeout_seconds: int = 1800,

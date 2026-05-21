@@ -14,6 +14,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 // ── CLI parsing ────────────────────────────────────────────────
@@ -39,10 +40,36 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
+// Resolve session directory:
+// 1. Explicit argument
+// 2. Current project's sessions (from cwd)
+// 3. All projects' sessions (lists them)
 if (positionalArgs.length > 0) {
   sessionDir = path.resolve(positionalArgs[0]);
 } else {
-  sessionDir = '/home/david/.pi/agent/sessions/--home-david-projects-pi-pos-v1--';
+  // Try to find the current project's session directory from cwd
+  const home = process.env.HOME || os.homedir();
+  const sessionsRoot = path.join(home, '.pi', 'agent', 'sessions');
+  const cwdProjectSlug = '--' + process.cwd().replace(/\/+/g, '-') + '--';
+  const candidatePath = path.join(sessionsRoot, cwdProjectSlug);
+
+  if (fs.existsSync(candidatePath)) {
+    sessionDir = candidatePath;
+  } else {
+    // Fall back: list all available projects and pick the first with sessions
+    console.error('⚠️ No session directory found for current project.');
+    console.error('   Specify a path, or use one of these:');
+    if (fs.existsSync(sessionsRoot)) {
+      const dirs = fs.readdirSync(sessionsRoot)
+        .filter(d => !d.startsWith('.'))
+        .sort()
+        .slice(0, 10);
+      if (dirs.length > 0) {
+        for (const d of dirs) console.error(`     ${path.join(sessionsRoot, d)}`);
+      }
+    }
+    process.exit(1);
+  }
 }
 
 // ── Read directory ─────────────────────────────────────────────
