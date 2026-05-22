@@ -1,5 +1,5 @@
 /**
- * _lib/script-runner.ts — Standardized CLI runner for all scripts.
+ * scripts/lib/script-runner.ts — Standardized CLI runner for all scripts.
  *
  * Provides a thin, opinionated entry point that handles:
  *   --json          → Output as JSON (via existing toJson helper)
@@ -10,7 +10,7 @@
  * `runScript()` at the bottom instead of handling CLI boilerplate inline.
  *
  * Usage in a script:
- *   import { runScript } from '../_lib/script-runner.js'
+ *   import { runScript } from './lib/script-runner.js'
  *
  *   export function generateOutput(
  *     targetPath: string, json = false, help = false

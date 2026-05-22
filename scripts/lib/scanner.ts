@@ -1,12 +1,12 @@
 /**
- * _lib/scanner.ts — Configurable directory scanner.
+ * scripts/lib/scanner.ts — Configurable directory scanner.
  *
  * Replaces N independent inline scanners with one deep module. Each caller
  * passes its SKIP_DIRS, extension filters, and exclusion patterns via an
  * options object. One implementation replaces shallow copies.
  *
  * Usage:
- *   import { scanDirectory, DEFAULT_SCAN_OPTIONS } from './_lib/scanner.js'
+ *   import { scanDirectory, DEFAULT_SCAN_OPTIONS } from './lib/scanner.js'
  *   const files = scanDirectory(dirPath, { ...DEFAULT_SCAN_OPTIONS })
  */
 

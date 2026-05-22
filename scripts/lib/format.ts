@@ -1,5 +1,5 @@
 /**
- * _lib/format.ts — Shared formatting utilities for script output.
+ * scripts/lib/format.ts — Shared formatting utilities for all scripts.
  *
  * Provides deterministic, compact output formats:
  * - Markdown tables for flat data (routes, exports)

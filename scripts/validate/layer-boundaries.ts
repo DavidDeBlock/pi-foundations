@@ -21,8 +21,8 @@ import {
   readFileSync
 } from "node:fs";
 import { resolve, join, relative, basename, dirname } from "node:path";
-import { scanDirectory as _scanFiles } from "../../_lib/scanner.js";
-import { markdownTable, toJson } from "../../_lib/format.js";
+import { scanDirectory as _scanFiles } from "../lib/scanner.js";
+import { markdownTable, toJson } from "../lib/format.js";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -242,7 +242,7 @@ export function generateOutput(targetPath: string, json = false, help = false): 
 }
 
 // ── CLI Entry Point ───────────────────────────────────────────────────
-import { runScriptIfDirect } from '../../_lib/script-runner.js'
+import { runScriptIfDirect } from '../lib/script-runner.js'
 
 runScriptIfDirect(
   (targetPath: string, json = false, help = false) => {

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { resolve, join } from 'path'
 import fs from 'node:fs'
 
-const TEST_DIR = resolve(__dirname, '..', '_lib', '__test-fixtures__')
+const TEST_DIR = resolve(__dirname, '__test-fixtures__')
 
 
 

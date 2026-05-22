@@ -49,7 +49,7 @@ These are used for the docs reorganization pipeline. Run them in order.
 
 ---
 
-## Shared Library (`_lib/`)
+## Shared Library (`scripts/lib/`)
 
 These are not meant to be run directly. They're imported by the scripts above.
 
@@ -57,6 +57,9 @@ These are not meant to be run directly. They're imported by the scripts above.
 |------|---------|
 | **ts-parser.ts** | ts-morph AST parsing — extract exports, signatures, JSDoc, script metadata from `.ts` files |
 | **format.ts** | Output formatting — markdown tables, Unicode trees, JSON serialization |
+| **scanner.ts** | Directory scanning with configurable filters |
+| **script-runner.ts** | Standardized CLI runner with `--json`/`--help` handling |
+| **cli-runner.ts** | Deep CLI orchestration layer for scripts returning structured data
 
 ---
 

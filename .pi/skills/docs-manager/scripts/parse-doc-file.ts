@@ -219,7 +219,7 @@ Output:
 }
 
 // ── CLI Entry Point ────────────────────────────────────────────
-import { runScriptIfDirect, parseArgs, writeOutput } from '../../../../_lib/script-runner.js'
+import { runScriptIfDirect, parseArgs, writeOutput } from '../../../../scripts/lib/script-runner.js'
 
 /** Main entry point for CLI execution (used by tests and direct execution) */
 export async function main(args: string[] = process.argv.slice(2)): Promise<void> {

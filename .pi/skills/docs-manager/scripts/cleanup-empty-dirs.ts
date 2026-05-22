@@ -209,7 +209,7 @@ Output:
 }
 
 // ── CLI Entry Point ────────────────────────────────────────────
-import { runScriptWithCustomFlags } from '../../../../_lib/script-runner.js'
+import { runScriptWithCustomFlags } from '../../../../scripts/lib/script-runner.js'
 
 runScriptWithCustomFlags(
   (args) => {

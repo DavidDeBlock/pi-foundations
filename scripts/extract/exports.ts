@@ -18,8 +18,8 @@
 
 import { statSync } from 'node:fs'
 import { resolve, basename } from 'node:path'
-import { createProject, loadSourceFile, extractExports, ParsedExport } from '../../_lib/ts-parser.js'
-import { markdownTable, toJson } from '../../_lib/format.js'
+import { createProject, loadSourceFile, extractExports, ParsedExport } from '../lib/ts-parser.js'
+import { markdownTable, toJson } from '../lib/format.js'
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -207,7 +207,7 @@ Output Formats:
 Examples:
   tsx scripts/extract/exports.ts src/services/sale.ts
   tsx scripts/extract/exports.ts src/types/index.ts --json
-  tsx scripts/extract/exports.ts _lib/ts-parser.ts`
+  tsx scripts/extract/exports.ts scripts/lib/ts-parser.ts`
 }
 
 /**
@@ -244,7 +244,7 @@ export function generateOutput(
 }
 
 // ── CLI Entry Point ───────────────────────────────────────────────────
-import { runScriptIfDirect } from '../../_lib/script-runner.js'
+import { runScriptIfDirect } from '../lib/script-runner.js'
 
 runScriptIfDirect(
   (targetPath: string, json = false, help = false) => {

@@ -22,19 +22,19 @@ import {
   writeFileSync,
 } from "node:fs";
 import { resolve, join, basename, relative } from "node:path";
-import { scanDirectory as _scanFiles } from "../../_lib/scanner.js";
-import { markdownTable, toJson } from "../../_lib/format.js";
+import { scanDirectory as _scanFiles } from "../lib/scanner.js";
+import { markdownTable, toJson } from "../lib/format.js";
 import {
   createProject,
   loadSourceFile,
   extractEntityTags,
   extractRelationTags,
-} from "../../_lib/ts-parser.js";
+} from "../lib/ts-parser.js";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
 /** Re-export domain model types from ts-parser for backward compatibility */
-export type { DomainEntity, DomainRelation } from "../../_lib/ts-parser.js";
+export type { DomainEntity, DomainRelation } from "../lib/ts-parser.js";
 
 /** Complete domain model output */
 export interface DomainModel {
@@ -68,7 +68,7 @@ const CACHE_FILE = join(CACHE_DIR, "domain-model.json");
 
 /**
  * Parse a domain schema file and extract entities and relations.
- * Uses ts-morph AST via _lib/ts-parser.ts for reliable extraction.
+ * Uses ts-morph AST via scripts/lib/ts-parser.js for reliable extraction.
  */
 export function parseDomainSchema(filePath: string): {
   entities: DomainEntity[];
@@ -383,7 +383,7 @@ export function generateOutput(
 }
 
 // ── CLI Entry Point ───────────────────────────────────────────────────
-import { runScriptIfDirect } from '../../_lib/script-runner.js'
+import { runScriptIfDirect } from '../lib/script-runner.js'
 
 runScriptIfDirect(
   (targetPath: string, json = false, help = false) => {

@@ -1,5 +1,5 @@
 /**
- * _lib/ts-parser.ts — TypeScript AST parser powered by ts-morph.
+ * scripts/lib/ts-parser.ts — TypeScript AST parser powered by ts-morph.
  *
  * Provides reliable extraction of exports, function signatures, JSDoc comments,
  * and script metadata from TypeScript source files. Uses the project's actual

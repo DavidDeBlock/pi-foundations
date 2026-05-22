@@ -16,11 +16,11 @@
  */
 
 import { resolve, join, dirname, basename } from 'node:path'
-import { scanDirectory as _scanFiles } from '../_lib/scanner.js'
+import { scanDirectory as _scanFiles } from './lib/scanner.js'
 import { fileURLToPath } from 'node:url'
-import { createProject, loadSourceFile, extractExports, extractScriptMetadata } from '../_lib/ts-parser.js'
-import { markdownTable } from '../_lib/format.js'
-import { runCli } from '../_lib/cli-runner.js'
+import { createProject, loadSourceFile, extractExports, extractScriptMetadata } from './lib/ts-parser.js'
+import { markdownTable } from './lib/format.js'
+import { runCli } from './lib/cli-runner.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = resolve(__dirname, '..')

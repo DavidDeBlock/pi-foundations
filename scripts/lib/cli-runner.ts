@@ -1,12 +1,12 @@
 /**
- * _lib/cli-runner.ts — Deep CLI orchestration layer for all scripts.
+ * scripts/lib/cli-runner.ts — Deep CLI orchestration layer for all scripts.
  *
  * Owns all CLI plumbing so scripts only implement pure domain functions (`DataFn`).
  * Handles argument parsing, path resolution, help display, output routing, error wrapping,
  * and direct-execution guards in one place.
  *
  * Usage in a script:
- *   import { runCli } from '../_lib/cli-runner.js'
+ *   import { runCli } from './lib/cli-runner.js'
  *
  *   export function myDataFn(dirPath: string): { markdown: string; json?: unknown } | string {
  *     // your domain logic here

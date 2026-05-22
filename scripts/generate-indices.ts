@@ -136,7 +136,7 @@ Output:
 }
 
 // ── CLI Entry Point ────────────────────────────────────────────
-import { runScriptIfDirect } from '../_lib/script-runner.js'
+import { runScriptIfDirect } from './lib/script-runner.js'
 
 runScriptIfDirect(
   generateOutput,

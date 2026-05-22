@@ -17,9 +17,9 @@
 
 import { statSync } from 'node:fs'
 import { resolve, join, extname, basename } from 'node:path'
-import { scanDirectory as _scanFiles } from '../../_lib/scanner.js'
+import { scanDirectory as _scanFiles } from '../lib/scanner.js'
 import { fileURLToPath } from 'node:url'
-import { toJson } from '../../_lib/format.js'
+import { toJson } from '../lib/format.js'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
@@ -383,7 +383,7 @@ Examples:
 }
 
 // ── CLI Entry Point ───────────────────────────────────────────────────
-import { runScriptIfDirect } from '../../_lib/script-runner.js'
+import { runScriptIfDirect } from '../lib/script-runner.js'
 
 runScriptIfDirect(
   (targetPath: string, json = false, help = false) => {
