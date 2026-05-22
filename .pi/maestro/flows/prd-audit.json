@@ -12,8 +12,15 @@
       "timeout_seconds": 900,
       "retries": 2
     },
-    "generate-issues": { 
+    "to-prd": { 
       "skill": "/skill:to-prd", 
+      "model": "qwen-35b-a3b-118k-bf16",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 900,
+      "retries": 2
+    },
+    "to-issues": { 
+      "skill": "/skill:to-issues", 
       "model": "qwen-35b-a3b-118k-bf16",
       "provider": "llama-cpp-3090",
       "timeout_seconds": 900,
@@ -40,11 +47,17 @@
     {
       "from": "auditor",
       "on_success": "close_issue",
-      "on_reject": "generate-issues",
+      "on_reject": "to-prd",
       "on_error": "diagnostic"
     },
     {
-      "from": "generate-issues",
+      "from": "to-prd",
+      "on_success": "to-issues",
+      "on_reject": "finish",
+      "on_error": "diagnostic"
+    },
+    {
+      "from": "to-issues",
       "on_success": "finish",
       "on_reject": "finish",
       "on_error": "diagnostic"

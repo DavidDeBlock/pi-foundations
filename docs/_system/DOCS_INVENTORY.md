@@ -2,7 +2,7 @@
 
 **Purpose:** Central state file containing YAML blocks per file with stable IDs. Source of truth for all reorganization state.
 **Updated By:** Phase 1 scan script, then agent during classification
-**Last Scan:** 2026-05-22T06:05:31.549Z
+**Last Scan:** 2026-05-22T19:12:07.464Z
 
 ---
 
@@ -16,7 +16,7 @@
 | docs/25-system-specs | 3 | 6.61 |
 | docs/30-vertical-flows | 1 | 0.22 |
 | docs/31-planning-notes | 7 | 32.26 |
-| docs/35-prds | 12 | 68.41 |
+| docs/35-prds | 13 | 81.03 |
 | docs/40-decisions | 6 | 30.84 |
 | docs/50-agent-workflows | 1 | 0.16 |
 | docs/90-archive | 1 | 0.15 |
@@ -66,7 +66,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
@@ -87,7 +87,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
@@ -108,7 +108,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/10-domain
@@ -131,7 +131,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
@@ -152,7 +152,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
@@ -173,7 +173,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/20-architecture
@@ -196,7 +196,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/25-system-specs
@@ -219,7 +219,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
@@ -240,7 +240,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
@@ -261,7 +261,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/30-vertical-flows
@@ -284,7 +284,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/31-planning-notes
@@ -307,7 +307,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
@@ -328,7 +328,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
@@ -349,7 +349,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
@@ -370,7 +370,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
@@ -391,7 +391,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
@@ -412,7 +412,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
@@ -433,7 +433,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/35-prds
@@ -456,11 +456,32 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
 id: F0020
+path: docs/35-prds/architecture-deepening.md
+folder: docs/35-prds
+size_kb: 12.62
+lines: 283
+status: scanned
+class: null
+confidence: null
+proposed_action: null
+approval: null
+risk: null
+reason: null
+questions: []
+related_files: []
+target_path: null
+current_step: null
+blocker: null
+last_updated: 2026-05-22T19:12:07.464Z
+```
+
+```yaml
+id: F0021
 path: docs/35-prds/backend-improvement.md
 folder: docs/35-prds
 size_kb: 11.81
@@ -477,11 +498,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0021
+id: F0022
 path: docs/35-prds/client-server-divergence-fix.md
 folder: docs/35-prds
 size_kb: 4.8
@@ -498,11 +519,11 @@ related_files: []
 target_path: null
 current_step: classified
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0022
+id: F0023
 path: docs/35-prds/docs-reorganization-system.md
 folder: docs/35-prds
 size_kb: 13.64
@@ -519,11 +540,11 @@ related_files: []
 target_path: null
 current_step: classified
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0023
+id: F0024
 path: docs/35-prds/order-basket-1-add-from-dst-search.md
 folder: docs/35-prds
 size_kb: 2.81
@@ -540,11 +561,11 @@ related_files: []
 target_path: null
 current_step: classified
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0024
+id: F0025
 path: docs/35-prds/order-basket-2-basket-view-supplier-groups.md
 folder: docs/35-prds
 size_kb: 2.16
@@ -561,11 +582,11 @@ related_files: []
 target_path: null
 current_step: classified
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0025
+id: F0026
 path: docs/35-prds/order-basket-3-mark-ordered-receive-flow.md
 folder: docs/35-prds
 size_kb: 2.79
@@ -582,11 +603,11 @@ related_files: []
 target_path: null
 current_step: classified
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0026
+id: F0027
 path: docs/35-prds/quotes-and-invoices.md
 folder: docs/35-prds
 size_kb: 13.22
@@ -603,11 +624,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0027
+id: F0028
 path: docs/35-prds/repair-bugs-fixes.md
 folder: docs/35-prds
 size_kb: 4.93
@@ -624,11 +645,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0028
+id: F0029
 path: docs/35-prds/repair-calendar-1-week-view.md
 folder: docs/35-prds
 size_kb: 1.71
@@ -645,11 +666,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0029
+id: F0030
 path: docs/35-prds/repair-calendar.md
 folder: docs/35-prds
 size_kb: 3.67
@@ -666,11 +687,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0030
+id: F0031
 path: docs/35-prds/repair-module-extraction.md
 folder: docs/35-prds
 size_kb: 5.8
@@ -687,13 +708,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/40-decisions
 
 ```yaml
-id: F0031
+id: F0032
 path: docs/40-decisions/_index.md
 folder: docs/40-decisions
 size_kb: 0.56
@@ -710,11 +731,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0032
+id: F0033
 path: docs/40-decisions/ADR-006-golden-copy-pattern.md
 folder: docs/40-decisions
 size_kb: 11.82
@@ -731,11 +752,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0033
+id: F0034
 path: docs/40-decisions/ADR-007-sequence-table-for-document-numbering.md
 folder: docs/40-decisions
 size_kb: 1.97
@@ -752,11 +773,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0034
+id: F0035
 path: docs/40-decisions/ADR-008-flow-first-architecture.md
 folder: docs/40-decisions
 size_kb: 5.73
@@ -773,11 +794,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0035
+id: F0036
 path: docs/40-decisions/adr-template.md
 folder: docs/40-decisions
 size_kb: 1.7
@@ -794,11 +815,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0036
+id: F0037
 path: docs/40-decisions/index.md
 folder: docs/40-decisions
 size_kb: 9.06
@@ -815,13 +836,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/50-agent-workflows
 
 ```yaml
-id: F0037
+id: F0038
 path: docs/50-agent-workflows/_index.md
 folder: docs/50-agent-workflows
 size_kb: 0.16
@@ -838,13 +859,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive
 
 ```yaml
-id: F0038
+id: F0039
 path: docs/90-archive/_index.md
 folder: docs/90-archive
 size_kb: 0.15
@@ -861,13 +882,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/02-architecture
 
 ```yaml
-id: F0039
+id: F0040
 path: docs/90-archive/02-architecture/backend-improvement-plan.md
 folder: docs/90-archive/02-architecture
 size_kb: 16.04
@@ -884,13 +905,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/04-operations
 
 ```yaml
-id: F0040
+id: F0041
 path: docs/90-archive/04-operations/agent-workflow-analysis.md
 folder: docs/90-archive/04-operations
 size_kb: 9.38
@@ -907,11 +928,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0041
+id: F0042
 path: docs/90-archive/04-operations/context-loading-audit.md
 folder: docs/90-archive/04-operations
 size_kb: 13.42
@@ -928,11 +949,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0042
+id: F0043
 path: docs/90-archive/04-operations/info-waterfall.md
 folder: docs/90-archive/04-operations
 size_kb: 20.72
@@ -949,13 +970,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/07-examples/integration
 
 ```yaml
-id: F0043
+id: F0044
 path: docs/90-archive/07-examples/integration/todo-feature-example.md
 folder: docs/90-archive/07-examples/integration
 size_kb: 13.91
@@ -972,13 +993,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/docs
 
 ```yaml
-id: F0056
+id: F0057
 path: docs/90-archive/docs/flows.md
 folder: docs/90-archive/docs
 size_kb: 7.33
@@ -995,11 +1016,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0057
+id: F0058
 path: docs/90-archive/docs/index.md
 folder: docs/90-archive/docs
 size_kb: 7.52
@@ -1016,11 +1037,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0068
+id: F0069
 path: docs/90-archive/docs/react-router-crud-guide.md
 folder: docs/90-archive/docs
 size_kb: 19.16
@@ -1037,11 +1058,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0069
+id: F0070
 path: docs/90-archive/docs/react-router-fix-plan.md
 folder: docs/90-archive/docs
 size_kb: 11.73
@@ -1058,11 +1079,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0070
+id: F0071
 path: docs/90-archive/docs/react-router-fix-summary.md
 folder: docs/90-archive/docs
 size_kb: 6.26
@@ -1079,11 +1100,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0071
+id: F0072
 path: docs/90-archive/docs/react-router-todo-crud.md
 folder: docs/90-archive/docs
 size_kb: 5.95
@@ -1100,11 +1121,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0072
+id: F0073
 path: docs/90-archive/docs/README.md
 folder: docs/90-archive/docs
 size_kb: 5.82
@@ -1121,13 +1142,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/docs/02-architecture
 
 ```yaml
-id: F0044
+id: F0045
 path: docs/90-archive/docs/02-architecture/backend-review.md
 folder: docs/90-archive/docs/02-architecture
 size_kb: 28.18
@@ -1144,13 +1165,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/docs/03-features
 
 ```yaml
-id: F0045
+id: F0046
 path: docs/90-archive/docs/03-features/README.md
 folder: docs/90-archive/docs/03-features
 size_kb: 3.49
@@ -1167,13 +1188,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/docs/04-operations
 
 ```yaml
-id: F0046
+id: F0047
 path: docs/90-archive/docs/04-operations/agent-workflow-analysis.md
 folder: docs/90-archive/docs/04-operations
 size_kb: 8.41
@@ -1190,11 +1211,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0047
+id: F0048
 path: docs/90-archive/docs/04-operations/context-loading-audit.md
 folder: docs/90-archive/docs/04-operations
 size_kb: 6.8
@@ -1211,13 +1232,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/docs/05-apis/contracts
 
 ```yaml
-id: F0048
+id: F0049
 path: docs/90-archive/docs/05-apis/contracts/todo-api-contract.md
 folder: docs/90-archive/docs/05-apis/contracts
 size_kb: 4.68
@@ -1234,13 +1255,13 @@ related_files: []
 target_path: docs/90-archive/docs/05-apis/contracts/todo-api-contract.md
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/docs/06-templates
 
 ```yaml
-id: F0049
+id: F0050
 path: docs/90-archive/docs/06-templates/app-contract-template.md
 folder: docs/90-archive/docs/06-templates
 size_kb: 7.43
@@ -1257,11 +1278,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0050
+id: F0051
 path: docs/90-archive/docs/06-templates/feature-contract-template.md
 folder: docs/90-archive/docs/06-templates
 size_kb: 4.16
@@ -1278,11 +1299,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0051
+id: F0052
 path: docs/90-archive/docs/06-templates/handover-checklist.md
 folder: docs/90-archive/docs/06-templates
 size_kb: 3.62
@@ -1299,13 +1320,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/docs/07-examples
 
 ```yaml
-id: F0052
+id: F0053
 path: docs/90-archive/docs/07-examples/README.md
 folder: docs/90-archive/docs/07-examples
 size_kb: 2.64
@@ -1322,13 +1343,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/docs/08-reference
 
 ```yaml
-id: F0053
+id: F0054
 path: docs/90-archive/docs/08-reference/changelog.md
 folder: docs/90-archive/docs/08-reference
 size_kb: 2.58
@@ -1345,11 +1366,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0054
+id: F0055
 path: docs/90-archive/docs/08-reference/migration-guide.md
 folder: docs/90-archive/docs/08-reference
 size_kb: 4.27
@@ -1366,11 +1387,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0055
+id: F0056
 path: docs/90-archive/docs/08-reference/tmux-cheatsheet.md
 folder: docs/90-archive/docs/08-reference
 size_kb: 4.01
@@ -1387,13 +1408,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/docs/issues
 
 ```yaml
-id: F0058
+id: F0059
 path: docs/90-archive/docs/issues/docs-reorg-01-foundation-rules-structure.md
 folder: docs/90-archive/docs/issues
 size_kb: 2.68
@@ -1410,11 +1431,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0059
+id: F0060
 path: docs/90-archive/docs/issues/docs-reorg-02-inventory-script.md
 folder: docs/90-archive/docs/issues
 size_kb: 1.73
@@ -1431,11 +1452,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0060
+id: F0061
 path: docs/90-archive/docs/issues/docs-reorg-03-deep-analysis-script.md
 folder: docs/90-archive/docs/issues
 size_kb: 1.56
@@ -1452,11 +1473,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0061
+id: F0062
 path: docs/90-archive/docs/issues/docs-reorg-04-verification-index-script.md
 folder: docs/90-archive/docs/issues
 size_kb: 1.48
@@ -1473,13 +1494,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/docs/plans
 
 ```yaml
-id: F0062
+id: F0063
 path: docs/90-archive/docs/plans/quotes-and-invoices.md
 folder: docs/90-archive/docs/plans
 size_kb: 3.45
@@ -1496,13 +1517,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/docs/react-guides
 
 ```yaml
-id: F0063
+id: F0064
 path: docs/90-archive/docs/react-guides/BEGINNER-GUIDE.md
 folder: docs/90-archive/docs/react-guides
 size_kb: 9.08
@@ -1519,11 +1540,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0064
+id: F0065
 path: docs/90-archive/docs/react-guides/CREATION-SUMMARY.md
 folder: docs/90-archive/docs/react-guides
 size_kb: 6.07
@@ -1540,11 +1561,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0065
+id: F0066
 path: docs/90-archive/docs/react-guides/INDEX.md
 folder: docs/90-archive/docs/react-guides
 size_kb: 9.25
@@ -1561,11 +1582,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0066
+id: F0067
 path: docs/90-archive/docs/react-guides/QUICKSTART.md
 folder: docs/90-archive/docs/react-guides
 size_kb: 15.42
@@ -1582,11 +1603,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0067
+id: F0068
 path: docs/90-archive/docs/react-guides/README.md
 folder: docs/90-archive/docs/react-guides
 size_kb: 5.56
@@ -1603,13 +1624,13 @@ related_files: []
 target_path: docs/90-archive/docs/react-guides/README.md
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/issues
 
 ```yaml
-id: F0073
+id: F0074
 path: docs/90-archive/issues/repair-calendar-2-worker-filter-pickupdates.md
 folder: docs/90-archive/issues
 size_kb: 1.46
@@ -1626,11 +1647,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0074
+id: F0075
 path: docs/90-archive/issues/repair-calendar-3-detail-drawer-view-toggle.md
 folder: docs/90-archive/issues
 size_kb: 1.57
@@ -1647,13 +1668,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/plans
 
 ```yaml
-id: F0075
+id: F0076
 path: docs/90-archive/plans/line-items-standardization-plan.md
 folder: docs/90-archive/plans
 size_kb: 15.18
@@ -1670,13 +1691,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/react-guides
 
 ```yaml
-id: F0076
+id: F0077
 path: docs/90-archive/react-guides/ADVANCED-GUIDE.md
 folder: docs/90-archive/react-guides
 size_kb: 24.33
@@ -1693,13 +1714,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/react-router-tutorials
 
 ```yaml
-id: F0077
+id: F0078
 path: docs/90-archive/react-router-tutorials/address-book.md
 folder: docs/90-archive/react-router-tutorials
 size_kb: 21.57
@@ -1716,11 +1737,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0078
+id: F0079
 path: docs/90-archive/react-router-tutorials/quickstart.md
 folder: docs/90-archive/react-router-tutorials
 size_kb: 5.54
@@ -1737,11 +1758,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0079
+id: F0080
 path: docs/90-archive/react-router-tutorials/README.md
 folder: docs/90-archive/react-router-tutorials
 size_kb: 5.4
@@ -1758,13 +1779,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/review
 
 ```yaml
-id: F0084
+id: F0085
 path: docs/90-archive/review/README.md
 folder: docs/90-archive/review
 size_kb: 5.02
@@ -1781,13 +1802,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/review/foundation
 
 ```yaml
-id: F0080
+id: F0081
 path: docs/90-archive/review/foundation/adr-template.md
 folder: docs/90-archive/review/foundation
 size_kb: 1.85
@@ -1804,11 +1825,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0081
+id: F0082
 path: docs/90-archive/review/foundation/handover-checklist.md
 folder: docs/90-archive/review/foundation
 size_kb: 4.89
@@ -1825,11 +1846,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0082
+id: F0083
 path: docs/90-archive/review/foundation/README.md
 folder: docs/90-archive/review/foundation
 size_kb: 5.63
@@ -1846,11 +1867,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0083
+id: F0084
 path: docs/90-archive/review/foundation/SUMMARY.md
 folder: docs/90-archive/review/foundation
 size_kb: 5.93
@@ -1867,13 +1888,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/roadmaps
 
 ```yaml
-id: F0085
+id: F0086
 path: docs/90-archive/roadmaps/backend-implementation-roadmap.md
 folder: docs/90-archive/roadmaps
 size_kb: 17.55
@@ -1890,13 +1911,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/90-archive/slices
 
 ```yaml
-id: F0086
+id: F0087
 path: docs/90-archive/slices/repair-bugs-slices.md
 folder: docs/90-archive/slices
 size_kb: 1.71
@@ -1913,13 +1934,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ### docs/agents
 
 ```yaml
-id: F0087
+id: F0088
 path: docs/agents/_index.md
 folder: docs/agents
 size_kb: 0.28
@@ -1936,11 +1957,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0088
+id: F0089
 path: docs/agents/domain.md
 folder: docs/agents
 size_kb: 0.89
@@ -1957,11 +1978,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0089
+id: F0090
 path: docs/agents/issue-tracker.md
 folder: docs/agents
 size_kb: 1.04
@@ -1978,11 +1999,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 
 ```yaml
-id: F0090
+id: F0091
 path: docs/agents/triage-labels.md
 folder: docs/agents
 size_kb: 2.83
@@ -1999,6 +2020,6 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-05-22T06:05:31.549Z
+last_updated: 2026-05-22T19:12:07.464Z
 ```
 

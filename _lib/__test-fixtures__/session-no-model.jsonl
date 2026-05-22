@@ -1,0 +1,2 @@
+{"type":"session","id":"no-model-001","timestamp":"2026-05-22T14:00:00.000Z"}
+{"type":"message","id":"m1","parentId":null,"timestamp":"2026-05-22T14:00:01.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Hello world"}]}}

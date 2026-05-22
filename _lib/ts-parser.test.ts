@@ -390,3 +390,362 @@ export const DEFAULT_CATEGORY = 'Electronics'
     }
   })
 })
+
+// ── Domain Model Extraction Tests ────────────────────────────────────
+
+describe('ts-parser — extractEntityTags', () => {
+  it('extracts entity name and description from @entity tag', async () => {
+    const content = `
+import { pgTable, uuid, varchar } from 'drizzle-orm/pg-core'
+
+/**
+ * @entity User - The person who owns accounts
+ */
+export const users = pgTable('users', {
+  id: uuid('id').primaryKey(),
+  name: varchar('name', { length: 100 }),
+})
+`
+    const fixturePath = await writeFixture('test-entity-tag.ts', content)
+
+    try {
+      const mod = await import('./ts-parser.js')
+      const project = mod.createProject()
+      const sourceFile = mod.loadSourceFile(project, fixturePath)
+
+      const entities = mod.extractEntityTags(sourceFile)
+
+      expect(entities.length).toBe(1)
+      expect(entities[0].name).toBe('User')
+      expect(entities[0].description).toBe('The person who owns accounts')
+      expect(entities[0].table).toBe('users')
+    } finally {
+      await cleanupFixture('test-entity-tag.ts')
+    }
+  })
+
+  it('extracts entity name without description (defaults to "EntityName entity")', async () => {
+    const content = `
+import { pgTable, uuid } from 'drizzle-orm/pg-core'
+
+/**
+ * @entity Sale
+ */
+export const sales = pgTable('sales', {
+  id: uuid('id').primaryKey(),
+})
+`
+    const fixturePath = await writeFixture('test-entity-no-desc.ts', content)
+
+    try {
+      const mod = await import('./ts-parser.js')
+      const project = mod.createProject()
+      const sourceFile = mod.loadSourceFile(project, fixturePath)
+
+      const entities = mod.extractEntityTags(sourceFile)
+
+      expect(entities.length).toBe(1)
+      expect(entities[0].name).toBe('Sale')
+      expect(entities[0].description).toBe('Sale entity')
+    } finally {
+      await cleanupFixture('test-entity-no-desc.ts')
+    }
+  })
+
+  it('extracts field names and types from pgTable object literal', async () => {
+    const content = `
+import { pgTable, uuid, varchar, text, boolean } from 'drizzle-orm/pg-core'
+
+/**
+ * @entity Config - System configuration
+ */
+export const config = pgTable('config', {
+  key: varchar('key').primaryKey(),
+  value: text('value'),
+  enabled: boolean('enabled').default(true),
+})
+`
+    const fixturePath = await writeFixture('test-entity-fields.ts', content)
+
+    try {
+      const mod = await import('./ts-parser.js')
+      const project = mod.createProject()
+      const sourceFile = mod.loadSourceFile(project, fixturePath)
+
+      const entities = mod.extractEntityTags(sourceFile)
+
+      expect(entities.length).toBe(1)
+      expect(entities[0].fields.length).toBe(3)
+      const fieldNames = entities[0].fields.map(f => f.name)
+      expect(fieldNames).toContain('key')
+      expect(fieldNames).toContain('value')
+      expect(fieldNames).toContain('enabled')
+      // Check types are extracted correctly
+      const keyField = entities[0].fields.find(f => f.name === 'key')
+      expect(keyField?.type).toBe('varchar')
+    } finally {
+      await cleanupFixture('test-entity-fields.ts')
+    }
+  })
+
+  it('skips non-exported declarations', async () => {
+    const content = `
+import { pgTable, uuid } from 'drizzle-orm/pg-core'
+
+/**
+ * @entity PrivateEntity - Should not be extracted
+ */
+const privateTable = pgTable('private', {
+  id: uuid('id').primaryKey(),
+})
+
+/**
+ * @entity PublicEntity - Should be extracted
+ */
+export const publicTable = pgTable('public', {
+  id: uuid('id').primaryKey(),
+})
+`
+    const fixturePath = await writeFixture('test-entity-non-exported.ts', content)
+
+    try {
+      const mod = await import('./ts-parser.js')
+      const project = mod.createProject()
+      const sourceFile = mod.loadSourceFile(project, fixturePath)
+
+      const entities = mod.extractEntityTags(sourceFile)
+
+      expect(entities.length).toBe(1)
+      expect(entities[0].name).toBe('PublicEntity')
+    } finally {
+      await cleanupFixture('test-entity-non-exported.ts')
+    }
+  })
+
+  it('returns empty array when no @entity tags exist', async () => {
+    const content = `
+/** Just a regular comment */
+export function something(): void {}
+`
+    const fixturePath = await writeFixture('test-entity-no-tag.ts', content)
+
+    try {
+      const mod = await import('./ts-parser.js')
+      const project = mod.createProject()
+      const sourceFile = mod.loadSourceFile(project, fixturePath)
+
+      const entities = mod.extractEntityTags(sourceFile)
+
+      expect(entities.length).toBe(0)
+    } finally {
+      await cleanupFixture('test-entity-no-tag.ts')
+    }
+  })
+
+  it('extracts multiple entities from one file', async () => {
+    const content = `
+import { pgTable, uuid, varchar } from 'drizzle-orm/pg-core'
+
+/**
+ * @entity User - A user account
+ */
+export const users = pgTable('users', {
+  id: uuid('id').primaryKey(),
+})
+
+/**
+ * @entity Post - A blog post
+ */
+export const posts = pgTable('posts', {
+  id: uuid('id').primaryKey(),
+})
+`
+    const fixturePath = await writeFixture('test-entity-multi.ts', content)
+
+    try {
+      const mod = await import('./ts-parser.js')
+      const project = mod.createProject()
+      const sourceFile = mod.loadSourceFile(project, fixturePath)
+
+      const entities = mod.extractEntityTags(sourceFile)
+
+      expect(entities.length).toBe(2)
+      expect(entities[0].name).toBe('User')
+      expect(entities[1].name).toBe('Post')
+    } finally {
+      await cleanupFixture('test-entity-multi.ts')
+    }
+  })
+})
+
+describe('ts-parser — extractRelationTags', () => {
+  it('extracts one-to-many relation from @relation tag', async () => {
+    const content = `
+import { pgTable, uuid } from 'drizzle-orm/pg-core'
+
+/**
+ * @entity Sale - A purchase transaction
+ * @relation User.sales -> Account (one-to-many)
+ */
+export const sales = pgTable('sales', {
+  id: uuid('id').primaryKey(),
+})
+`
+    const fixturePath = await writeFixture('test-relation-1.ts', content)
+
+    try {
+      const mod = await import('./ts-parser.js')
+      const project = mod.createProject()
+      const sourceFile = mod.loadSourceFile(project, fixturePath)
+
+      const relations = mod.extractRelationTags(sourceFile)
+
+      expect(relations.length).toBe(1)
+      expect(relations[0].fromEntity).toBe('User')
+      expect(relations[0].toEntity).toBe('Account')
+      expect(relations[0].direction).toBe('one-to-many')
+    } finally {
+      await cleanupFixture('test-relation-1.ts')
+    }
+  })
+
+  it('extracts many-to-one relation from @relation tag', async () => {
+    const content = `
+import { pgTable, uuid } from 'drizzle-orm/pg-core'
+
+/**
+ * @entity Sale - A purchase transaction
+ * @relation Sale.user -> User (many-to-one)
+ */
+export const sales = pgTable('sales', {
+  id: uuid('id').primaryKey(),
+})
+`
+    const fixturePath = await writeFixture('test-relation-2.ts', content)
+
+    try {
+      const mod = await import('./ts-parser.js')
+      const project = mod.createProject()
+      const sourceFile = mod.loadSourceFile(project, fixturePath)
+
+      const relations = mod.extractRelationTags(sourceFile)
+
+      expect(relations.length).toBe(1)
+      expect(relations[0].fromEntity).toBe('Sale')
+      expect(relations[0].toEntity).toBe('User')
+      expect(relations[0].direction).toBe('many-to-one')
+    } finally {
+      await cleanupFixture('test-relation-2.ts')
+    }
+  })
+
+  it('extracts one-to-one relation from @relation tag', async () => {
+    const content = `
+import { pgTable, uuid } from 'drizzle-orm/pg-core'
+
+/**
+ * @entity Profile - User profile
+ * @relation Profile.user -> User (one-to-one)
+ */
+export const profiles = pgTable('profiles', {
+  id: uuid('id').primaryKey(),
+})
+`
+    const fixturePath = await writeFixture('test-relation-3.ts', content)
+
+    try {
+      const mod = await import('./ts-parser.js')
+      const project = mod.createProject()
+      const sourceFile = mod.loadSourceFile(project, fixturePath)
+
+      const relations = mod.extractRelationTags(sourceFile)
+
+      expect(relations.length).toBe(1)
+      expect(relations[0].direction).toBe('one-to-one')
+    } finally {
+      await cleanupFixture('test-relation-3.ts')
+    }
+  })
+
+  it('parses multiple relations from one JSDoc block', async () => {
+    const content = `
+import { pgTable, uuid } from 'drizzle-orm/pg-core'
+
+/**
+ * @entity Post - A blog post
+ * @relation Author.posts -> Comment (one-to-many)
+ * @relation Comment.postId -> User (many-to-one)
+ */
+export const posts = pgTable('posts', {
+  id: uuid('id').primaryKey(),
+})
+`
+    const fixturePath = await writeFixture('test-relation-multi.ts', content)
+
+    try {
+      const mod = await import('./ts-parser.js')
+      const project = mod.createProject()
+      const sourceFile = mod.loadSourceFile(project, fixturePath)
+
+      const relations = mod.extractRelationTags(sourceFile)
+
+      expect(relations.length).toBe(2)
+    } finally {
+      await cleanupFixture('test-relation-multi.ts')
+    }
+  })
+
+  it('returns empty array when no @relation tags exist', async () => {
+    const content = `
+import { pgTable, uuid } from 'drizzle-orm/pg-core'
+
+/**
+ * @entity User - A user
+ */
+export const users = pgTable('users', {
+  id: uuid('id').primaryKey(),
+})
+`
+    const fixturePath = await writeFixture('test-relation-none.ts', content)
+
+    try {
+      const mod = await import('./ts-parser.js')
+      const project = mod.createProject()
+      const sourceFile = mod.loadSourceFile(project, fixturePath)
+
+      const relations = mod.extractRelationTags(sourceFile)
+
+      expect(relations.length).toBe(0)
+    } finally {
+      await cleanupFixture('test-relation-none.ts')
+    }
+  })
+
+  it('extracts relation with fromField', async () => {
+    const content = `
+import { pgTable, uuid } from 'drizzle-orm/pg-core'
+
+/**
+ * @entity Sale - A purchase transaction
+ * @relation Sale.userId -> User (many-to-one)
+ */
+export const sales = pgTable('sales', {
+  id: uuid('id').primaryKey(),
+})
+`
+    const fixturePath = await writeFixture('test-relation-field.ts', content)
+
+    try {
+      const mod = await import('./ts-parser.js')
+      const project = mod.createProject()
+      const sourceFile = mod.loadSourceFile(project, fixturePath)
+
+      const relations = mod.extractRelationTags(sourceFile)
+
+      expect(relations.length).toBe(1)
+      expect(relations[0].fromField).toBe('userId')
+    } finally {
+      await cleanupFixture('test-relation-field.ts')
+    }
+  })
+})

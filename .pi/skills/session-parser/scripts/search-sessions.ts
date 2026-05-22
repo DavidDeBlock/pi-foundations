@@ -21,6 +21,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { parseSessionLines, extractSessionMetadata } from '../../../../shared/index.js';
 
 // ── CLI parsing ────────────────────────────────────────────────
 
@@ -121,48 +122,28 @@ const results: SearchResult[] = [];
 
 for (const file of files) {
   const filePath = path.join(sessionDir, file);
-  const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(l => l.trim());
 
-  // Parse session metadata from first line
-  let sessionId = '';
-  let timestamp = '';
-  try {
-    const firstEvent = JSON.parse(lines[0]);
-    if (firstEvent.type === 'session') {
-      sessionId = firstEvent.id || '';
-      timestamp = firstEvent.timestamp || '';
-    }
-  } catch {
-    continue;
-  }
+  // Extract session metadata using shared parser
+  const meta = extractSessionMetadata(filePath);
+  if (!meta.id) continue;
+
+  const sessionId = meta.id || '';
+  const timestamp = meta.timestamp || '';
+
+  // Parse all events using shared parser (no inline JSONL parsing)
+  const events = parseSessionLines(filePath);
 
   // If errors-only, check for any error tool results first
   if (errorsOnly) {
-    const hasErrors = lines.some(line => {
-      try {
-        const event = JSON.parse(line);
-        return event.message?.role === 'toolResult' && event.message?.isError;
-      } catch {
-        return false;
-      }
-    });
-
+    const hasErrors = events.some(e => e.message?.role === 'toolResult' && e.message?.isError);
     if (!hasErrors) continue;
   }
 
-  // Search for matches
+  // Search for matches across parsed events
   const matches: Match[] = [];
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    let event: any;
-
-    try {
-      event = JSON.parse(line);
-    } catch {
-      continue;
-    }
-
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
     if (!event.message) continue;
 
     const msg = event.message;
@@ -181,8 +162,8 @@ for (const file of files) {
               eventType: event.type || '',
               matchType,
               snippet: `Tool call: ${part.name}`,
-              contextBefore: getContext(lines, i, contextLines),
-              contextAfter: getContextAfter(lines, i, contextLines),
+              contextBefore: getContext(events, i, contextLines),
+              contextAfter: getContextAfter(events, i, contextLines),
             });
           }
 
@@ -197,8 +178,8 @@ for (const file of files) {
                 eventType: event.type || '',
                 matchType,
                 snippet: `Tool ${part.name} → path in args`,
-                contextBefore: getContext(lines, i, contextLines),
-                contextAfter: getContextAfter(lines, i, contextLines),
+                contextBefore: getContext(events, i, contextLines),
+                contextAfter: getContextAfter(events, i, contextLines),
               });
             }
           }
@@ -213,8 +194,8 @@ for (const file of files) {
                 eventType: event.type || '',
                 matchType,
                 snippet: truncate(JSON.stringify(part).substring(0, 200)),
-                contextBefore: getContext(lines, i, contextLines),
-                contextAfter: getContextAfter(lines, i, contextLines),
+                contextBefore: getContext(events, i, contextLines),
+                contextAfter: getContextAfter(events, i, contextLines),
               });
             }
           }
@@ -230,8 +211,8 @@ for (const file of files) {
                 eventType: event.type || '',
                 matchType,
                 snippet: truncate(part.text.substring(0, 200)),
-                contextBefore: getContext(lines, i, contextLines),
-                contextAfter: getContextAfter(lines, i, contextLines),
+                contextBefore: getContext(events, i, contextLines),
+                contextAfter: getContextAfter(events, i, contextLines),
               });
             }
           }
@@ -250,8 +231,8 @@ for (const file of files) {
           eventType: event.type || '',
           matchType,
           snippet: truncate(content?.substring(0, 200) || '(empty error)'),
-          contextBefore: getContext(lines, i, contextLines),
-          contextAfter: getContextAfter(lines, i, contextLines),
+          contextBefore: getContext(events, i, contextLines),
+          contextAfter: getContextAfter(events, i, contextLines),
         });
       }
 
@@ -263,8 +244,8 @@ for (const file of files) {
             eventType: event.type || '',
             matchType,
             snippet: truncate(content.substring(0, 200)),
-            contextBefore: getContext(lines, i, contextLines),
-            contextAfter: getContextAfter(lines, i, contextLines),
+            contextBefore: getContext(events, i, contextLines),
+            contextAfter: getContextAfter(events, i, contextLines),
           });
         }
       }
@@ -280,8 +261,8 @@ for (const file of files) {
           eventType: event.type || '',
           matchType,
           snippet: truncate(content.substring(0, 200)),
-          contextBefore: getContext(lines, i, contextLines),
-          contextAfter: getContextAfter(lines, i, contextLines),
+          contextBefore: getContext(events, i, contextLines),
+          contextAfter: getContextAfter(events, i, contextLines),
         });
       }
     }
@@ -325,15 +306,15 @@ for (const result of results) {
     console.log(`   ${typeLabel} [line ${match.lineIndex}]`);
     console.log(`     ${match.snippet}`);
 
+    // Context lines are already truncated strings from truncateEvent()
     if (match.contextAfter?.length > 0) {
       const ctxLine = match.contextAfter[0];
-      // Show a short snippet of the next event type for context
-      try {
-        const ctxEvent = JSON.parse(ctxLine);
-        if (ctxEvent.message?.role === 'toolResult') {
-          console.log(`     → result: ${ctxEvent.message.isError ? '❌ error' : '✅ success'}`);
-        }
-      } catch {}
+      // Show result status indicator if the context line mentions it
+      if (ctxLine.includes('success')) {
+        console.log(`     → ✅ success`);
+      } else if (ctxLine.includes('error') || ctxLine.includes('Error')) {
+        console.log(`     → ❌ error`);
+      }
     }
 
     console.log();
@@ -352,14 +333,39 @@ console.log(`   tsx .pi/skills/session-parser/scripts/parse-session.ts <path>`);
 
 // ── Helpers ────────────────────────────────────────────────────
 
-function getContext(lines: string[], index: number, count: number): string[] {
+function getContext(events: import('../../../../shared/index.js').ParsedEvent[], index: number, count: number): string[] {
   const start = Math.max(0, index - count);
-  return lines.slice(start, index).map(l => truncate(l));
+  return events.slice(start, index).map(e => truncateEvent(e));
 }
 
-function getContextAfter(lines: string[], index: number, count: number): string[] {
-  const end = Math.min(lines.length, index + 1 + count);
-  return lines.slice(index + 1, end).map(l => truncate(l));
+function getContextAfter(events: import('../../../../shared/index.js').ParsedEvent[], index: number, count: number): string[] {
+  const end = Math.min(events.length, index + 1 + count);
+  return events.slice(index + 1, end).map(e => truncateEvent(e));
+}
+
+function truncateEvent(event: import('../../../../shared/index.js').ParsedEvent): string {
+  if (event.message?.role === 'assistant') {
+    const content = event.message.content;
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        if (part.type === 'text' && typeof part.text === 'string') {
+          return truncate(part.text.substring(0, 120));
+        }
+        if (part.type === 'toolCall') {
+          return `Tool: ${part.name}`;
+        }
+      }
+    }
+  }
+  if (event.message?.role === 'toolResult') {
+    const content = extractToolContentString(event.message.content);
+    return truncate(content || '(empty result)');
+  }
+  if (event.message?.role === 'user') {
+    const content = extractTextContent(event.message.content);
+    return truncate(content || '(empty message)');
+  }
+  return `[${event.type}]`;
 }
 
 function truncate(s: string, max = 120): string {

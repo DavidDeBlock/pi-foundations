@@ -16,12 +16,13 @@
  */
 
 import {
-  readdirSync,
   statSync,
   existsSync,
   readFileSync
 } from "node:fs";
 import { resolve, join, relative, dirname, basename } from "node:path";
+import { scanDirectory as _scanFiles } from "../../_lib/scanner.js";
+import { markdownTable, toJson } from "../../_lib/format.js";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -42,49 +43,32 @@ export interface TestCoverageReport {
 
 // ── Configuration ─────────────────────────────────────────────────────
 
-const SKIP_DIRS = new Set([
-  "node_modules",
-  ".git",
-  "dist",
-  ".cache",
-  "__test__",
-  "__snapshots__",
-]);
-
-/** Patterns for source and test files */
-const SOURCE_EXTS = [".ts", ".tsx"];
-const TEST_PATTERNS = [".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"];
+/** Scan options for test coverage — includes .ts/.tsx, excludes tests */
+const TEST_COVERAGE_SCAN_OPTIONS = {
+  skipDirs: new Set([
+    "node_modules",
+    ".git",
+    "dist",
+    ".cache",
+    "__test__",
+    "__snapshots__",
+  ]),
+  extensions: [".ts", ".tsx"],
+  excludePatterns: [
+    ".d.ts",
+    ".test.ts",
+    ".test.tsx",
+    ".spec.ts",
+    ".spec.tsx",
+  ],
+  skipHidden: true,
+};
 
 // ── Core Functions ────────────────────────────────────────────────────
 
-/** Recursively find all .ts source files (excluding tests) */
+/** Recursively find all .ts/.tsx source files (excluding tests) */
 function findSourceFiles(dirPath: string): string[] {
-  const files: string[] = [];
-
-  try {
-    const entries = readdirSync(dirPath);
-
-    for (const entry of entries.sort()) {
-      if (entry.startsWith(".") || SKIP_DIRS.has(entry)) continue;
-
-      const fullPath = join(dirPath, entry);
-      const stat = statSync(fullPath);
-
-      if (stat.isDirectory()) {
-        files.push(...findSourceFiles(fullPath));
-      } else if (
-        SOURCE_EXTS.some(ext => entry.endsWith(ext)) &&
-        !entry.endsWith(".d.ts") &&
-        !TEST_PATTERNS.some((p) => entry.endsWith(p))
-      ) {
-        files.push(fullPath);
-      }
-    }
-  } catch {
-    // Ignore permission errors or missing dirs
-  }
-
-  return files;
+  return _scanFiles(dirPath, TEST_COVERAGE_SCAN_OPTIONS);
 }
 
 /** Check if a corresponding test file exists */
@@ -214,38 +198,6 @@ Examples:
   tsx scripts/validate/test-coverage.ts --json                # JSON output`;
 }
 
-/** Generate a Markdown table from headers and rows */
-function markdownTable(headers: string[], rows: string[][]): string {
-  if (headers.length === 0) return "";
-
-  const escape = (cell: string): string => cell.replace(/\|/g, "\\|");
-
-  let result = `| ${headers.map(escape).join(" | ")} |\n`;
-
-  const colWidths = headers.map((_, i) => {
-    let maxLen = headers[i].length;
-    for (const row of rows) {
-      if (row[i]) maxLen = Math.max(maxLen, row[i].length);
-    }
-    return maxLen;
-  });
-
-  const separator = `|${colWidths.map((w) => "-".repeat(Math.max(w, 3) + 2)).join("|")}|\n`;
-  result += separator;
-
-  for (const row of rows) {
-    const cells = headers.map((_, i) => escape(row[i] ?? ""));
-    result += `| ${cells.join(" | ")} |\n`;
-  }
-
-  return result;
-}
-
-/** Serialize data to JSON string */
-function toJson(data: unknown): string {
-  return JSON.stringify(data, null, 2) + "\n";
-}
-
 // ── Main Output Generator ─────────────────────────────────────────────
 
 export function generateOutput(targetPath: string, json = false, help = false): string {
@@ -268,26 +220,12 @@ export function generateOutput(targetPath: string, json = false, help = false): 
 }
 
 // ── CLI Entry Point ───────────────────────────────────────────────────
-const SCRIPT_NAME = "test-coverage.ts";
-const isDirectExecution = process.argv[1] && basename(process.argv[1]) === SCRIPT_NAME;
+import { runScriptIfDirect } from '../../_lib/script-runner.js'
 
-if (isDirectExecution) {
-  const args = process.argv.slice(2);
-
-  if (args.includes("--help")) {
-    console.log(generateHelp());
-    process.exit(0);
-  }
-
-  let jsonMode = false;
-  let targetPath: string | undefined;
-
-  for (const arg of args) {
-    if (arg === "--json") jsonMode = true;
-    else if (!arg.startsWith("-")) {
-      if (!targetPath) targetPath = arg;
-    }
-  }
-
-  console.log(generateOutput(targetPath ?? ".", jsonMode));
-}
+runScriptIfDirect(
+  (targetPath: string, json = false, help = false) => {
+    return generateOutput(targetPath, json, help)
+  },
+  'test-coverage.ts',
+  { defaultPath: '.' }
+)

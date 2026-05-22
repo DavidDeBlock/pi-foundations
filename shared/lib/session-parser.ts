@@ -36,6 +36,23 @@ export interface RawMessageEntry {
   timestamp: string;
 }
 
+/** Parsed event from a single JSONL line. */
+export interface ParsedEvent {
+  type: string;
+  id?: string;
+  parentId?: string;
+  timestamp?: number | string;
+  message?: {
+    role: string;
+    content?: unknown;
+    toolCallId?: string;
+    isError?: boolean;
+  };
+  provider?: string;
+  modelId?: string;
+  thinkingLevel?: string;
+}
+
 // --- Internal types ---
 
 interface LogEvent {
@@ -212,6 +229,70 @@ export function parseSessionLog(filePath: string): SessionSummary {
   };
 
   return { markdown, json };
+}
+
+/**
+ * Parse a session log file into structured events without generating summaries.
+ *
+ * Returns the raw parsed event stream — useful for searching, filtering,
+ * or building custom views over session data.
+ */
+export function parseSessionLines(filePath: string): ParsedEvent[] {
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const lines = content.split('\n').filter(line => line.trim() !== '');
+
+  const events: ParsedEvent[] = [];
+
+  for (const line of lines) {
+    try {
+      const event: LogEvent = JSON.parse(line);
+      // Normalize into a flat ParsedEvent structure
+      events.push({
+        type: event.type,
+        id: event.id,
+        parentId: event.parentId,
+        timestamp: event.timestamp,
+        message: event.message,
+        provider: event.provider,
+        modelId: event.modelId,
+        thinkingLevel: event.thinkingLevel,
+      });
+    } catch {
+      // Skip malformed lines silently
+    }
+  }
+
+  return events;
+}
+
+/**
+ * Extract lightweight session metadata from the first line of a JSONL file.
+ *
+ * This is a fast path for listing sessions — reads only the first line
+ * instead of parsing the entire file.
+ */
+export function extractSessionMetadata(filePath: string): {
+  id?: string;
+  timestamp?: string;
+} {
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const lines = content.split('\n').filter(line => line.trim() !== '');
+
+  if (lines.length === 0) return {};
+
+  try {
+    const firstEvent: LogEvent = JSON.parse(lines[0]);
+    if (firstEvent.type === 'session') {
+      return {
+        id: firstEvent.id,
+        timestamp: String(firstEvent.timestamp || ''),
+      };
+    }
+  } catch {
+    // Malformed first line — return empty metadata
+  }
+
+  return {};
 }
 
 // --- Helpers ---

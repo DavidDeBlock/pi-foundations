@@ -16,12 +16,13 @@
  */
 
 import {
-  readdirSync,
   statSync,
   existsSync,
   readFileSync
 } from "node:fs";
 import { resolve, join, relative, dirname, basename } from "node:path";
+import { scanDirectory as _scanFiles } from "../../_lib/scanner.js";
+import { markdownTable, toJson } from "../../_lib/format.js";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -41,41 +42,26 @@ export interface ApiSurfaceMap {
 
 // ── Configuration ─────────────────────────────────────────────────────
 
-const SKIP_DIRS = new Set([
-  "node_modules",
-  ".git",
-  "dist",
-  ".cache",
-  "__test__",
-  "__snapshots__",
-]);
+/** Scan options for API surface — skips common dirs, includes .ts only */
+const API_SURFACE_SCAN_OPTIONS = {
+  skipDirs: new Set([
+    "node_modules",
+    ".git",
+    "dist",
+    ".cache",
+    "__test__",
+    "__snapshots__",
+  ]),
+  extensions: [".ts"],
+  excludePatterns: [".d.ts", ".test.ts"],
+  skipHidden: true,
+};
 
 // ── Core Functions ────────────────────────────────────────────────────
 
-/** Recursively find all .ts files in a directory */
+/** Recursively find all .ts files in a directory (using shared scanner) */
 function findTsFiles(dirPath: string): string[] {
-  const files: string[] = [];
-
-  try {
-    const entries = readdirSync(dirPath);
-
-    for (const entry of entries.sort()) {
-      if (entry.startsWith(".") || SKIP_DIRS.has(entry)) continue;
-
-      const fullPath = join(dirPath, entry);
-      const stat = statSync(fullPath);
-
-      if (stat.isDirectory()) {
-        files.push(...findTsFiles(fullPath));
-      } else if (entry.endsWith(".ts") && !entry.endsWith(".d.ts")) {
-        files.push(fullPath);
-      }
-    }
-  } catch {
-    // Ignore permission errors or missing dirs
-  }
-
-  return files;
+  return _scanFiles(dirPath, API_SURFACE_SCAN_OPTIONS);
 }
 
 /** Extract Hono route patterns from file content */
@@ -210,38 +196,6 @@ Examples:
 }
 
 /** Generate a Markdown table from headers and rows */
-function markdownTable(headers: string[], rows: string[][]): string {
-  if (headers.length === 0) return "";
-
-  const escape = (cell: string): string => cell.replace(/\|/g, "\\|");
-
-  let result = `| ${headers.map(escape).join(" | ")} |\n`;
-
-  const colWidths = headers.map((_, i) => {
-    let maxLen = headers[i].length;
-    for (const row of rows) {
-      if (row[i]) maxLen = Math.max(maxLen, row[i].length);
-    }
-    return maxLen;
-  });
-
-  const separator = `|${colWidths.map((w) => "-".repeat(Math.max(w, 3) + 2)).join("|")}|\n`;
-  result += separator;
-
-  for (const row of rows) {
-    const cells = headers.map((_, i) => escape(row[i] ?? ""));
-    result += `| ${cells.join(" | ")} |\n`;
-  }
-
-  return result;
-}
-
-/** Serialize data to JSON string */
-function toJson(data: unknown): string {
-  return JSON.stringify(data, null, 2) + "\n";
-}
-
-// ── Main Output Generator ─────────────────────────────────────────────
 
 export function generateOutput(targetPath: string, json = false, help = false): string {
   if (help) return generateHelp();
@@ -263,26 +217,12 @@ export function generateOutput(targetPath: string, json = false, help = false): 
 }
 
 // ── CLI Entry Point ───────────────────────────────────────────────────
-const SCRIPT_NAME = "api-surface.ts";
-const isDirectExecution = process.argv[1] && basename(process.argv[1]) === SCRIPT_NAME;
+import { runScriptIfDirect } from '../../_lib/script-runner.js'
 
-if (isDirectExecution) {
-  const args = process.argv.slice(2);
-
-  if (args.includes("--help")) {
-    console.log(generateHelp());
-    process.exit(0);
-  }
-
-  let jsonMode = false;
-  let targetPath: string | undefined;
-
-  for (const arg of args) {
-    if (arg === "--json") jsonMode = true;
-    else if (!arg.startsWith("-")) {
-      if (!targetPath) targetPath = arg;
-    }
-  }
-
-  console.log(generateOutput(targetPath ?? ".", jsonMode));
-}
+runScriptIfDirect(
+  (targetPath: string, json = false, help = false) => {
+    return generateOutput(targetPath, json, help)
+  },
+  'api-surface.ts',
+  { defaultPath: '.' }
+)

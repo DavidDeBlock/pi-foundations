@@ -17,32 +17,24 @@
 
 import {
   mkdirSync,
-  readdirSync,
-  statSync,
   existsSync,
   readFileSync,
   writeFileSync,
 } from "node:fs";
 import { resolve, join, basename, relative } from "node:path";
+import { scanDirectory as _scanFiles } from "../../_lib/scanner.js";
+import { markdownTable, toJson } from "../../_lib/format.js";
+import {
+  createProject,
+  loadSourceFile,
+  extractEntityTags,
+  extractRelationTags,
+} from "../../_lib/ts-parser.js";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
-/** Represents a parsed entity with its fields and business description */
-export interface DomainEntity {
-  name: string;
-  table?: string;
-  description: string;
-  fields: Array<{ name: string; type: string }>;
-}
-
-/** A relationship between two entities */
-export interface DomainRelation {
-  fromEntity: string;
-  toEntity: string;
-  fromField: string;
-  direction: "one-to-one" | "one-to-many" | "many-to-one";
-  description?: string;
-}
+/** Re-export domain model types from ts-parser for backward compatibility */
+export type { DomainEntity, DomainRelation } from "../../_lib/ts-parser.js";
 
 /** Complete domain model output */
 export interface DomainModel {
@@ -53,188 +45,44 @@ export interface DomainModel {
 
 // ── Configuration ─────────────────────────────────────────────────────
 
-/** Directories to skip during scanning */
-const SKIP_DIRS = new Set([
-  "node_modules",
-  ".git",
-  "dist",
-  ".cache",
-  "__snapshots__",
-  "__test-fixtures__",
-]);
+/** Scan options for domain model — skips common dirs, includes .ts only */
+const DOMAIN_MODEL_SCAN_OPTIONS = {
+  skipDirs: new Set([
+    "node_modules",
+    ".git",
+    "dist",
+    ".cache",
+    "__snapshots__",
+    "__test-fixtures__",
+  ]),
+  extensions: [".ts"],
+  excludePatterns: [".d.ts", ".test.ts"],
+  skipHidden: true,
+};
 
 /** Cache directory for timestamp-based invalidation */
 const CACHE_DIR = resolve(process.cwd(), ".cache");
 const CACHE_FILE = join(CACHE_DIR, "domain-model.json");
 
-// ── JSDoc Parsing ─────────────────────────────────────────────────────
-
-/**
- * Extract @entity tag from a JSDoc comment.
- * Format: @entity EntityName - Optional description
- */
-function parseEntityTag(
-  jsDoc: string,
-): { name: string; description: string } | undefined {
-  const match = jsDoc.match(/@entity\s+(\w+)(?:\s*[-–]\s*(.+))?/);
-  if (!match) return undefined;
-
-  return {
-    name: match[1],
-    description: (match[2] || "").trim(),
-  };
-}
-
-/**
- * Extract @relation tags from a JSDoc comment.
- * Format: @relation EntityName.field -> TargetEntity (cardinality)
- *         or: @relation SourceEntity.sourceField -> TargetEntity.targetField (cardinality)
- */
-function parseRelationTags(jsDoc: string): DomainRelation[] {
-  const relations: DomainRelation[] = [];
-
-  // Pattern 1: Entity.field -> TargetEntity.field (full form)
-  const fullPattern =
-    /@relation\s+(\w+)\.(\w+)\s*->\s*(\w+)\.(\w+)\s*\(([^)]+)\)/g;
-  let match;
-
-  while ((match = fullPattern.exec(jsDoc)) !== null) {
-    const [, fromEntity, fromField, toEntity] = match;
-    relations.push({
-      fromEntity,
-      toEntity,
-      fromField,
-      direction: parseCardinality(match[5].trim()),
-      description: `Links ${fromEntity} to ${toEntity}`,
-    });
-  }
-
-  // Pattern 2: Entity.field -> TargetEntity (target field implied)
-  const shortPattern = /@relation\s+(\w+)\.(\w+)\s*->\s*(\w+)\s*\(([^)]+)\)/g;
-  while ((match = shortPattern.exec(jsDoc)) !== null) {
-    // Skip if already matched by full pattern (check for dot after arrow target)
-    const [, fromEntity, fromField, toEntity] = match;
-    relations.push({
-      fromEntity,
-      toEntity,
-      fromField,
-      direction: parseCardinality(match[4].trim()),
-      description: `Links ${fromEntity} to ${toEntity}`,
-    });
-  }
-
-  return relations;
-}
-
-/** Parse cardinality string into a relation type */
-function parseCardinality(cardinality: string): DomainRelation["direction"] {
-  const lower = cardinality.toLowerCase();
-  if (lower.includes("one-to-many") || lower.includes("1-n"))
-    return "one-to-many";
-  if (lower.includes("many-to-one") || lower.includes("n-1"))
-    return "many-to-one";
-  if (lower.includes("one-to-one") || lower.includes("1-1"))
-    return "one-to-one";
-  // Default: infer from context — most common is one-to-many
-  return "one-to-many";
-}
-
-// ── AST Parsing (lightweight, no ts-morph dependency) ────────────────
+// ── Domain Schema Parsing (ts-morph AST) ─────────────────────────────
 
 /**
  * Parse a domain schema file and extract entities and relations.
- * Uses regex-based JSDoc parsing for speed — sufficient for @entity/@relation tags.
+ * Uses ts-morph AST via _lib/ts-parser.ts for reliable extraction.
  */
 export function parseDomainSchema(filePath: string): {
   entities: DomainEntity[];
   relations: DomainRelation[];
 } {
-  const content = readFileSync(filePath, "utf-8");
-  const entities: DomainEntity[] = [];
-  const relations: DomainRelation[] = [];
+  const project = createProject();
+  const sourceFile = loadSourceFile(project, filePath);
 
-  // Extract all JSDoc blocks with their associated code
-  const jsDocPattern = /\/\*\*([\s\S]*?)\*\//g;
-  let match;
-
-  while ((match = jsDocPattern.exec(content)) !== null) {
-    const jsDoc = match[1];
-    const entityTag = parseEntityTag(jsDoc);
-
-    if (!entityTag) continue;
-
-    // Extract table name from pgTable('table_name', ...) pattern
-    const tableMatch = content
-      .slice(match.index)
-      .match(/pgTable\s*\(\s*['"]([^'"]+)['"]/);
-    const tableName = tableMatch ? tableMatch[1] : undefined;
-
-    // Extract field names and types from the table definition.
-    // Only capture top-level column definitions (indented at body level), not nested params.
-    const fields: Array<{ name: string; type: string }> = [];
-
-    // Find the pgTable body (between { and })
-    const braceStart = content.indexOf("{", match.index);
-    if (braceStart === -1) continue;
-
-    let depth = 0;
-    let inBraces = false;
-    let bodyStart = -1;
-    let bodyEnd = -1;
-
-    for (let i = braceStart; i < content.length; i++) {
-      const ch = content[i];
-      if (ch === "{") {
-        depth++;
-        inBraces = true;
-        if (bodyStart === -1) bodyStart = i + 1;
-      } else if (ch === "}") {
-        depth--;
-        if (depth === 0 && inBraces) {
-          bodyEnd = i;
-          break;
-        }
-      }
-    }
-
-    if (bodyStart !== -1 && bodyEnd !== -1) {
-      const body = content.slice(bodyStart, bodyEnd);
-      // Match top-level field definitions: name followed by colon and type call
-      // Pattern: optional whitespace + identifier + colon + identifier (the Drizzle function)
-      const fieldRegex = /^\s+(\w+)\s*:\s*(\w+)\(/gm;
-      let fieldMatch;
-
-      while ((fieldMatch = fieldRegex.exec(body)) !== null) {
-        const fieldName = fieldMatch[1];
-        // Skip known Drizzle column types and keywords
-        if (
-          [
-            "uuid",
-            "varchar",
-            "text",
-            "integer",
-            "decimal",
-            "timestamp",
-            "boolean",
-            "date",
-          ].includes(fieldName)
-        )
-          continue;
-        fields.push({ name: fieldName, type: fieldMatch[2] });
-      }
-    }
-
-    entities.push({
-      name: entityTag.name,
-      table: tableName,
-      description: entityTag.description || `${entityTag.name} entity`,
-      fields,
-    });
-
-    // Parse relations from this JSDoc block
-    const fileRelations = parseRelationTags(jsDoc);
-    relations.push(...fileRelations);
+  if (!sourceFile) {
+    throw new Error(`Could not load source file: ${filePath}`);
   }
+
+  const entities = extractEntityTags(sourceFile);
+  const relations = extractRelationTags(sourceFile);
 
   return { entities, relations };
 }
@@ -242,31 +90,10 @@ export function parseDomainSchema(filePath: string): {
 // ── Directory Scanning ────────────────────────────────────────────────
 
 /**
- * Recursively find all .ts files in a directory.
+ * Recursively find all .ts files in a directory (using shared scanner).
  */
 function findTsFiles(dirPath: string): string[] {
-  const files: string[] = [];
-
-  try {
-    const entries = readdirSync(dirPath);
-
-    for (const entry of entries.sort()) {
-      if (entry.startsWith(".") || SKIP_DIRS.has(entry)) continue;
-
-      const fullPath = join(dirPath, entry);
-      const stat = statSync(fullPath);
-
-      if (stat.isDirectory()) {
-        files.push(...findTsFiles(fullPath));
-      } else if (entry.endsWith(".ts") && !entry.endsWith(".d.ts")) {
-        files.push(fullPath);
-      }
-    }
-  } catch {
-    // Directory doesn't exist or can't be read — return empty
-  }
-
-  return files;
+  return _scanFiles(dirPath, DOMAIN_MODEL_SCAN_OPTIONS);
 }
 
 /**
@@ -336,8 +163,11 @@ function getCachedModelForDir(dirPath: string): DomainModel | null {
     const allFiles = findTsFiles(dirPath);
     const schemaFiles = allFiles.filter((f) => {
       try {
-        const content = readFileSync(f, "utf-8");
-        return /@entity/.test(content);
+        const project = createProject();
+        const sf = loadSourceFile(project, f);
+        if (!sf) return false;
+        const entities = extractEntityTags(sf);
+        return entities.length > 0;
       } catch {
         return false;
       }
@@ -366,8 +196,11 @@ function saveCachedModelForDir(dirPath: string, model: DomainModel): void {
     const allFiles = findTsFiles(dirPath);
     const schemaFiles = allFiles.filter((f) => {
       try {
-        const content = readFileSync(f, "utf-8");
-        return /@entity/.test(content);
+        const project = createProject();
+        const sf = loadSourceFile(project, f);
+        if (!sf) return false;
+        const entities = extractEntityTags(sf);
+        return entities.length > 0;
       } catch {
         return false;
       }
@@ -505,40 +338,6 @@ Examples:
   tsx scripts/synthesize/domain-model.ts --json             # JSON output`;
 }
 
-// ── Markdown Table Helper (inline to avoid dependency) ────────────────
-
-/** Generate a Markdown table from headers and rows */
-function markdownTable(headers: string[], rows: string[][]): string {
-  if (headers.length === 0) return "";
-
-  const escape = (cell: string): string => cell.replace(/\|/g, "\\|");
-
-  let result = `| ${headers.map(escape).join(" | ")} |\n`;
-
-  const colWidths = headers.map((_, i) => {
-    let maxLen = headers[i].length;
-    for (const row of rows) {
-      if (row[i]) maxLen = Math.max(maxLen, row[i].length);
-    }
-    return maxLen;
-  });
-
-  const separator = `|${colWidths.map((w) => "-".repeat(Math.max(w, 3) + 2)).join("|")}|\n`;
-  result += separator;
-
-  for (const row of rows) {
-    const cells = headers.map((_, i) => escape(row[i] ?? ""));
-    result += `| ${cells.join(" | ")} |\n`;
-  }
-
-  return result;
-}
-
-/** Serialize data to JSON string */
-function toJson(data: unknown): string {
-  return JSON.stringify(data, null, 2) + "\n";
-}
-
 // ── Main Output Generator ─────────────────────────────────────────────
 
 /**
@@ -584,29 +383,12 @@ export function generateOutput(
 }
 
 // ── CLI Entry Point ───────────────────────────────────────────────────
-// Only run when executed directly (not imported as a module by tests)
-const SCRIPT_NAME = "domain-model.ts";
-const isDirectExecution =
-  process.argv[1] && basename(process.argv[1]) === SCRIPT_NAME;
+import { runScriptIfDirect } from '../../_lib/script-runner.js'
 
-if (isDirectExecution) {
-  const args = process.argv.slice(2);
-
-  if (args.includes("--help")) {
-    console.log(generateHelp());
-    process.exit(0);
-  }
-
-  let jsonMode = false;
-  let targetPath: string | undefined;
-
-  for (const arg of args) {
-    if (arg === "--json") {
-      jsonMode = true;
-    } else if (!arg.startsWith("-")) {
-      if (!targetPath) targetPath = arg;
-    }
-  }
-
-  console.log(generateOutput(targetPath ?? ".", jsonMode));
-}
+runScriptIfDirect(
+  (targetPath: string, json = false, help = false) => {
+    return generateOutput(targetPath, json, help)
+  },
+  'domain-model.ts',
+  { defaultPath: '.' }
+)

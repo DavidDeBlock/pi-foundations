@@ -15,8 +15,9 @@
  * @usage tsx scripts/tree/code-tree.ts [path] [--json]
  */
 
-import { readdirSync, statSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { resolve, join, extname, basename } from 'node:path'
+import { scanDirectory as _scanFiles } from '../../_lib/scanner.js'
 import { fileURLToPath } from 'node:url'
 import { toJson } from '../../_lib/format.js'
 
@@ -38,16 +39,21 @@ type TreeNode = Record<string, TreeNode | TreeEntry>
 
 // ── Configuration ─────────────────────────────────────────────────────
 
-/** Directories to skip entirely during scanning */
-const SKIP_DIRS = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  '.cache',
-  '__test__',
-  '__test-fixtures__',
-  '__snapshots__',
-])
+/** Scan options for code tree — all file types, keeps .pi */
+const CODE_TREE_SCAN_OPTIONS = {
+  skipDirs: new Set([
+    'node_modules',
+    '.git',
+    'dist',
+    '.cache',
+    '__test__',
+    '__test-fixtures__',
+    '__snapshots__',
+  ]),
+  extensions: [], // empty = accept all files
+  excludePatterns: [],
+  skipHidden: true,
+}
 
 /** Extensions that classify a file as source code */
 const SOURCE_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mts', '.mjs', '.cjs'])
@@ -161,8 +167,8 @@ export function buildTree(
     const fullPath = join(dirPath, name)
     const stat = statSync(fullPath)
 
-    // Skip directories in SKIP_DIRS
-    if (stat.isDirectory() && SKIP_DIRS.has(name)) continue
+    // Skip directories in CODE_TREE_SCAN_OPTIONS.skipDirs
+    if (stat.isDirectory() && CODE_TREE_SCAN_OPTIONS.skipDirs!.has(name)) continue
 
     if (stat.isDirectory()) {
       // Only recurse if we haven't hit max depth
@@ -171,7 +177,7 @@ export function buildTree(
       } else {
         // At max depth — show as a placeholder with count
         const childCount = readdirSync(fullPath).filter(
-          c => !c.startsWith('.') && !SKIP_DIRS.has(c)
+          c => !c.startsWith('.') && !CODE_TREE_SCAN_OPTIONS.skipDirs!.has(c)
         ).length
         tree[name] = { name: `${name}/ (${childCount} items)`, category: categorizeDir(name), _truncated: true } as unknown as TreeNode | TreeEntry
       }
@@ -377,33 +383,25 @@ Examples:
 }
 
 // ── CLI Entry Point ───────────────────────────────────────────────────
+import { runScriptIfDirect } from '../../_lib/script-runner.js'
 
-const args = process.argv.slice(2)
+runScriptIfDirect(
+  (targetPath: string, json = false, help = false) => {
+    // code-tree.ts has extra params (--depth, --max-files)
+    const args = process.argv.slice(2)
+    let depth = 2
+    let maxFiles = 25
 
-if (args.includes('--help')) {
-  console.log(generateOutput(process.cwd(), false, true))
-  process.exit(0)
-}
+    for (const arg of args) {
+      if (arg === '--depth' && args[args.indexOf(arg) + 1]) {
+        depth = parseInt(args[args.indexOf(arg) + 1], 10) || 3
+      } else if (arg === '--max-files' && args[args.indexOf(arg) + 1]) {
+        maxFiles = parseInt(args[args.indexOf(arg) + 1], 10) || 60
+      }
+    }
 
-let jsonMode = false
-let depth = 2
-let maxFiles = 25
-let targetPath: string | undefined
-
-// Parse flags and collect positional arguments
-for (let i = 0; i < args.length; i++) {
-  const arg = args[i]
-
-  if (arg === '--json') {
-    jsonMode = true
-  } else if (arg === '--depth' && args[i + 1]) {
-    depth = parseInt(args[++i], 10) || 3
-  } else if (arg === '--max-files' && args[i + 1]) {
-    maxFiles = parseInt(args[++i], 10) || 60
-  } else if (!arg.startsWith('-')) {
-    // First non-flag argument is the target path
-    if (!targetPath) targetPath = arg
-  }
-}
-
-console.log(generateOutput(targetPath ?? '.', jsonMode, false, depth, maxFiles))
+    return generateOutput(targetPath, json, help, depth, maxFiles)
+  },
+  'code-tree.ts',
+  { defaultPath: process.cwd() }
+)

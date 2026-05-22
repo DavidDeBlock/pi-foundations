@@ -95,25 +95,40 @@ function removeTree(dirsToRemove: string[]): CleanupResult[] {
   return results
 }
 
-// ── Main ────────────────────────────────────────────────────────
+// ── Output Generator ───────────────────────────────────────────
 
-async function main(args: string[] = process.argv.slice(2)): Promise<void> {
-  let docsDir = 'docs'
-  let dryRun = false
-  
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--dry-run') dryRun = true
-    else if (!args[i].startsWith('-')) {
-      docsDir = resolve(args[i])
-    }
+/**
+ * Generate output for cleanup-empty-dirs.
+ * Returns cleanup summary as string. Accepts custom flags via args object.
+ */
+export function generateOutput(
+  targetPath: string,
+  json = false,
+  help = false,
+  dryRun = false
+): string {
+  if (help) {
+    return `Usage: npx tsx scripts/cleanup-empty-dirs.ts [docs-root] [--dry-run]
+
+Phase 5: Remove empty directories after migration.
+
+Scans docs/ for empty directories (excluding _system/) and removes them safely.
+Supports dry-run mode to preview what would be deleted.
+
+Arguments:
+  docs-root     Path to docs directory (default: ./docs)
+
+Options:
+  --dry-run     Preview only — don't remove anything
+  --json        Output as JSON (not supported for this script)
+  --help        Show this help message
+
+Output:
+  Prints cleanup summary to stdout.`
   }
-  
-  // Always work with absolute paths internally
-  const absDocsDir = resolve(docsDir)
-  const cwd = process.cwd()
-  
-  console.log(`🔍 Scanning for empty directories in: ${absDocsDir}\n`)
-  if (dryRun) console.log('📋 DRY RUN MODE — no directories will be removed\n')
+
+  const docsDir = resolve(targetPath || 'docs')
+  const absDocsDir = docsDir
   
   // Find all empty dirs (returns absolute paths)
   const emptyDirs = findEmptyDirs(absDocsDir)
@@ -121,18 +136,28 @@ async function main(args: string[] = process.argv.slice(2)): Promise<void> {
   // Convert to relative for display
   const relPaths = emptyDirs.map(d => d.replace(absDocsDir + '/', ''))
   
-  console.log(`📊 Found ${emptyDirs.length} empty directory/directories:\n`)
+  const lines: string[] = [
+    `🔍 Scanning for empty directories in: ${absDocsDir}`,
+    '',
+  ]
+  
+  if (dryRun) {
+    lines.push('📋 DRY RUN MODE — no directories will be removed')
+    lines.push('')
+  }
+  
+  lines.push(`📊 Found ${emptyDirs.length} empty directory/directories:`)
+  lines.push('')
   
   if (emptyDirs.length === 0) {
-    console.log('✅ No empty directories found — nothing to clean up.\n')
-    return
+    return lines.join('\n') + '\n✅ No empty directories found — nothing to clean up.\n'
   }
   
   for (const p of relPaths) {
-    console.log(`   📁 ${p}`)
+    lines.push(`   📁 ${p}`)
   }
   
-  console.log()
+  lines.push('')
   
   if (!dryRun && emptyDirs.length > 0) {
     // Remove directories (findEmptyDirs already returns absolute paths)
@@ -142,40 +167,55 @@ async function main(args: string[] = process.argv.slice(2)): Promise<void> {
     const skipped = results.filter(r => r.action === 'skipped').length
     const errors = results.filter(r => r.action === 'error').length
     
-    console.log('═══ CLEANUP SUMMARY ═══\n')
-    console.log(`📊 Results:`)
-    console.log(`   ✅ Removed: ${removed}`)
-    if (skipped > 0) console.log(`   ⏭️  Skipped: ${skipped}`)
-    if (errors > 0) console.log(`   ❌ Errors: ${errors}\n`)
+    lines.push('═══ CLEANUP SUMMARY ═══')
+    lines.push('')
+    lines.push(`📊 Results:`)
+    lines.push(`   ✅ Removed: ${removed}`)
+    if (skipped > 0) lines.push(`   ⏭️  Skipped: ${skipped}`)
+    if (errors > 0) lines.push(`   ❌ Errors: ${errors}`)
+    lines.push('')
     
     // Show removed directories
     const removedResults = results.filter(r => r.action === 'removed')
     if (removedResults.length > 0 && removedResults.length <= 30) {
-      console.log('── Removed ──────────────────────────────────────\n')
+      lines.push('── Removed ──────────────────────────────────────')
+      lines.push('')
       for (const r of removedResults) {
         const relPath = r.path.replace(resolve(process.cwd() + '/') + '/', '')
-        console.log(`   ✅ ${relPath}`)
+        lines.push(`   ✅ ${relPath}`)
       }
     }
     
     // Show errors
     const errorResults = results.filter(r => r.action === 'error')
     if (errorResults.length > 0) {
-      console.log('\n❌ Errors:')
+      lines.push('')
+      lines.push('❌ Errors:')
       for (const r of errorResults) {
         const relPath = r.path.replace(resolve(process.cwd() + '/') + '/', '')
-        console.log(`   ❌ ${relPath}: ${r.message}`)
+        lines.push(`   ❌ ${relPath}: ${r.message}`)
       }
     }
     
-    console.log()
+    lines.push('')
   } else if (dryRun) {
-    console.log('💡 To remove these directories, run without --dry-run:\n')
-    console.log(`   npx tsx scripts/cleanup-empty-dirs.ts docs\n`)
+    lines.push('💡 To remove these directories, run without --dry-run:')
+    lines.push('')
+    lines.push(`   npx tsx scripts/cleanup-empty-dirs.ts docs`)
+    lines.push('')
   }
+  
+  return lines.join('\n') + '\n'
 }
 
-main().catch(err => {
-  console.error('Fatal:', err)
-  process.exit(2)
-})
+// ── CLI Entry Point ────────────────────────────────────────────
+import { runScriptWithCustomFlags } from '../../../../_lib/script-runner.js'
+
+runScriptWithCustomFlags(
+  (args) => {
+    const dryRun = args.rawArgs.includes('--dry-run')
+    return generateOutput(args.targetPath, false, args.help, dryRun)
+  },
+  'cleanup-empty-dirs.ts',
+  { defaultPath: 'docs' }
+)

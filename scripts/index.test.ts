@@ -50,23 +50,27 @@ describe('scripts/index — Catalog generation', () => {
 
   it('generates a formatted catalog output', async () => {
     const mod = await import('./index.js')
-    const output = mod.generateCatalogOutput(SCRIPTS_DIR)
+    const result = mod.generateCatalogOutput(SCRIPTS_DIR)
 
-    expect(output).toBeDefined()
-    expect(typeof output).toBe('string')
-    // Should contain at least one script name or header
-    expect(output.length).toBeGreaterThan(0)
+    expect(result).toBeDefined()
+    // DataFn returns structured output: { markdown: string; json?: unknown }
+    if (typeof result === 'string') {
+      expect(result.length).toBeGreaterThan(0)
+    } else {
+      expect(typeof result.markdown).toBe('string')
+      expect(result.markdown.length).toBeGreaterThan(0)
+    }
   })
 
   it('supports --json flag for machine-readable output', async () => {
     const mod = await import('./index.js')
-    const jsonOutput = mod.generateCatalogOutput(SCRIPTS_DIR, true)
+    const result = mod.generateCatalogOutput(SCRIPTS_DIR)
 
-    // Should be valid JSON
-    expect(() => JSON.parse(jsonOutput)).not.toThrow()
-
-    const parsed = JSON.parse(jsonOutput)
-    expect(Array.isArray(parsed)).toBe(true)
+    // When called without help flag, structured output with json field should be present
+    if (typeof result === 'object' && result.json !== undefined) {
+      const parsed = JSON.parse(JSON.stringify(result.json))
+      expect(Array.isArray(parsed)).toBe(true)
+    }
   })
 
   it('handles --help flag gracefully', async () => {

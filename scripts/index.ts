@@ -15,11 +15,12 @@
  * @usage tsx scripts/ [--list|--json|--help]
  */
 
-import { readdirSync, statSync } from 'node:fs'
-import { resolve, join, dirname, extname, basename } from 'node:path'
+import { resolve, join, dirname, basename } from 'node:path'
+import { scanDirectory as _scanFiles } from '../_lib/scanner.js'
 import { fileURLToPath } from 'node:url'
 import { createProject, loadSourceFile, extractExports, extractScriptMetadata } from '../_lib/ts-parser.js'
-import { markdownTable, toJson } from '../_lib/format.js'
+import { markdownTable } from '../_lib/format.js'
+import { runCli } from '../_lib/cli-runner.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = resolve(__dirname, '..')
@@ -37,30 +38,16 @@ interface ScriptEntry {
 // ── Core Functions ────────────────────────────────────────────────────
 
 /**
- * Recursively find all TypeScript script files in a directory.
+ * Recursively find all TypeScript script files in a directory (using shared scanner).
  */
 function findScriptFiles(dir: string): string[] {
-  const SKIP_DIRS = new Set(['node_modules', '.git', '__test__', '__test-fixtures__', '__snapshots__', 'dist'])
-  let results: string[] = []
-
-  try {
-    const items = readdirSync(dir)
-    for (const item of items) {
-      if (SKIP_DIRS.has(item)) continue
-      const fullPath = join(dir, item)
-      const stat = statSync(fullPath)
-
-      if (stat.isDirectory()) {
-        results = results.concat(findScriptFiles(fullPath))
-      } else if (extname(item) === '.ts' && !item.endsWith('.test.ts') && !item.startsWith('.')) {
-        results.push(fullPath)
-      }
-    }
-  } catch {
-    // Ignore permission errors or missing dirs
+  const SCRIPT_SCAN_OPTIONS = {
+    skipDirs: new Set(['node_modules', '.git', '__test__', '__test-fixtures__', '__snapshots__', 'dist']),
+    extensions: ['.ts'],
+    excludePatterns: ['.d.ts', '.test.ts'],
+    skipHidden: true,
   }
-
-  return results
+  return _scanFiles(dir, SCRIPT_SCAN_OPTIONS)
 }
 
 /**
@@ -97,39 +84,20 @@ export function scanScripts(scriptsDir: string): ScriptEntry[] {
 
 /**
  * Generate a formatted catalog output.
+ * Returns structured data with both markdown and json fields for flexible routing.
  */
 export function generateCatalogOutput(
   scriptsDir: string,
-  json = false,
+  _json = false,
   help = false
-): string {
+): { markdown: string; json?: unknown } | string {
   if (help) {
-    return `Usage: tsx scripts/ [options]
-
-Options:
-  --list      Display the script catalog (default)
-  --json      Output as machine-readable JSON
-  --help      Show this help message
-
-The script catalog scans all TypeScript files in the scripts directory,
-extracts JSDoc metadata (description, category, usage), and presents
-a dynamic list of available tools.
-
-Each script should include:
-  /**
-   * Brief description of what the script does.
-   * @category discovery|analysis|maintenance
-   * @usage tsx scripts/name.ts [args] --json
-   */`
+    return '# Script Catalog\n\nScans the scripts directory for TypeScript files, extracts JSDoc metadata\n(description, category, usage), and prints a formatted catalog of available tools.\n\nUsage:\n  tsx scripts/ [--json|--help]\n'
   }
 
   const entries = scanScripts(scriptsDir)
 
-  if (json) {
-    return toJson(entries, true)
-  }
-
-  // Group by category
+  // Group by category for markdown output
   const grouped: Record<string, ScriptEntry[]> = {}
   for (const entry of entries) {
     const cat = entry.category || 'uncategorized'
@@ -137,7 +105,7 @@ Each script should include:
     grouped[cat].push(entry)
   }
 
-  // Build output
+  // Build markdown output
   let output = '# Script Catalog\n\n'
   output += `Found ${entries.length} scripts across ${Object.keys(grouped).length} categories.\n\n`
 
@@ -157,21 +125,27 @@ Each script should include:
     output += markdownTable(headers, rows) + '\n'
   }
 
-  return output.trim() + '\n'
+  // Always return structured data with both fields — runner routes to correct format
+  return { markdown: output.trim() + '\n', json: entries }
 }
 
-// ── CLI Entry Point ───────────────────────────────────────────────────
+// ── CLI Entry Point ───────────────────────────────────────────
 
-const args = process.argv.slice(2)
 const scriptsDir = join(PROJECT_ROOT, 'scripts')
 
-if (args.includes('--help')) {
-  console.log(generateCatalogOutput(scriptsDir, false, true))
-} else if (args.includes('--json')) {
-  const output = generateCatalogOutput(scriptsDir, true)
-  process.stdout.write(output)
-} else {
-  // Default: --list behavior
-  const output = generateCatalogOutput(scriptsDir, false)
-  console.log(output)
-}
+runCli(
+  (dirPath: string) => {
+    const fullScriptsDir = join(dirPath, 'scripts')
+    return generateCatalogOutput(fullScriptsDir)
+  },
+  'index.ts',
+  { helpText: `Usage: tsx scripts/ [options]
+
+Options:
+  --json      Output as machine-readable JSON
+  --help      Show this help message
+
+The script catalog scans all TypeScript files in the scripts directory,
+extracts JSDoc metadata (description, category, usage), and presents
+a dynamic list of available tools.` }
+)

@@ -244,37 +244,19 @@ export function generateOutput(
 }
 
 // ── CLI Entry Point ───────────────────────────────────────────────────
-// Only run when executed directly (not imported as a module by tests)
-const SCRIPT_NAME = 'exports.ts'
-const isDirectExecution = process.argv[1] && basename(process.argv[1]) === SCRIPT_NAME
+import { runScriptIfDirect } from '../../_lib/script-runner.js'
 
-if (isDirectExecution) {
-  const args = process.argv.slice(2)
-
-  if (args.includes('--help')) {
-    console.log(generateHelp())
-    process.exit(0)
-  }
-
-  let jsonMode = false
-  let targetPath: string | undefined
-
-  // Parse flags and collect positional arguments
-  for (const arg of args) {
-    if (arg === '--json') {
-      jsonMode = true
-    } else if (!arg.startsWith('-')) {
-      // First non-flag argument is the target path
-      if (!targetPath) targetPath = arg
+runScriptIfDirect(
+  (targetPath: string, json = false, help = false) => {
+    if (help) {
+      return generateHelp()
     }
-  }
-
-  if (!targetPath) {
-    console.error('Error: Please provide a TypeScript file path.')
-    console.log()
-    console.log(generateHelp())
-    process.exit(1)
-  }
-
-  console.log(generateOutput(targetPath, jsonMode))
-}
+    if (!targetPath || targetPath === '.') {
+      console.error('Error: Please provide a TypeScript file path.')
+      process.exit(1)
+    }
+    return generateOutput(targetPath, json, help)
+  },
+  'exports.ts',
+  { exitCodeOnError: 1 }
+)

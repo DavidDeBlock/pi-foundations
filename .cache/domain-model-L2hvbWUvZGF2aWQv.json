@@ -1,8 +1,175 @@
 {
-  "key": "[]",
+  "key": "[\"/home/david/projects/pi-foundations/scripts/synthesize/__test-fixtures__/domain-schema-1.ts:1779404005230.548\",\"/home/david/projects/pi-foundations/scripts/synthesize/__test-fixtures__/domain-schema-2.ts:1779404027478.4385\"]",
   "model": {
-    "entities": [],
-    "relations": [],
-    "sourceFiles": []
+    "entities": [
+      {
+        "name": "User",
+        "table": "users",
+        "description": "The person who owns accounts and makes purchases",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "name",
+            "type": "varchar"
+          },
+          {
+            "name": "email",
+            "type": "varchar"
+          },
+          {
+            "name": "createdAt",
+            "type": "timestamp"
+          }
+        ]
+      },
+      {
+        "name": "Sale",
+        "table": "sales",
+        "description": "A completed purchase transaction",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "userId",
+            "type": "uuid"
+          },
+          {
+            "name": "total",
+            "type": "decimal"
+          },
+          {
+            "name": "status",
+            "type": "varchar"
+          }
+        ]
+      },
+      {
+        "name": "LineItem",
+        "table": "line_items",
+        "description": "An individual product within a sale",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "saleId",
+            "type": "uuid"
+          },
+          {
+            "name": "productName",
+            "type": "varchar"
+          },
+          {
+            "name": "quantity",
+            "type": "integer"
+          }
+        ]
+      },
+      {
+        "name": "Author",
+        "table": "authors",
+        "description": "A content creator in the system",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "name",
+            "type": "varchar"
+          },
+          {
+            "name": "bio",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "name": "Post",
+        "table": "posts",
+        "description": "A blog post or article",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "authorId",
+            "type": "uuid"
+          },
+          {
+            "name": "title",
+            "type": "varchar"
+          },
+          {
+            "name": "slug",
+            "type": "varchar"
+          },
+          {
+            "name": "publishedAt",
+            "type": "timestamp"
+          }
+        ]
+      },
+      {
+        "name": "Comment",
+        "table": "comments",
+        "description": "A reader comment on a post",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid"
+          },
+          {
+            "name": "postId",
+            "type": "uuid"
+          },
+          {
+            "name": "body",
+            "type": "text"
+          }
+        ]
+      }
+    ],
+    "relations": [
+      {
+        "fromEntity": "Sale",
+        "toEntity": "User",
+        "fromField": "user",
+        "direction": "many-to-one",
+        "description": "Links Sale to User"
+      },
+      {
+        "fromEntity": "LineItem",
+        "toEntity": "Sale",
+        "fromField": "sale",
+        "direction": "many-to-one",
+        "description": "Links LineItem to Sale"
+      },
+      {
+        "fromEntity": "Post",
+        "toEntity": "Author",
+        "fromField": "author",
+        "direction": "many-to-one",
+        "description": "Links Post to Author"
+      },
+      {
+        "fromEntity": "Comment",
+        "toEntity": "Post",
+        "fromField": "post",
+        "direction": "many-to-one",
+        "description": "Links Comment to Post"
+      }
+    ],
+    "sourceFiles": [
+      "/home/david/projects/pi-foundations/scripts/synthesize/__test-fixtures__/domain-schema-1.ts",
+      "/home/david/projects/pi-foundations/scripts/synthesize/__test-fixtures__/domain-schema-2.ts"
+    ]
   }
 }

@@ -16,6 +16,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { parseSessionLines, extractSessionMetadata } from '../../../../shared/index.js';
 
 // ── CLI parsing ────────────────────────────────────────────────
 
@@ -104,30 +105,21 @@ for (const file of files) {
   const filePath = path.join(sessionDir, file);
   const stat = fs.statSync(filePath);
 
-  // Read first line for session metadata
-  const firstLine = readFirstLine(filePath);
-  if (!firstLine) continue;
+  // Extract metadata using shared parser (reads only first line)
+  const meta = extractSessionMetadata(filePath);
+  if (!meta.id) continue;
 
-  let parsed: any;
-  try {
-    parsed = JSON.parse(firstLine);
-  } catch {
-    continue;
-  }
+  // Count total events using shared parser
+  const eventCount = parseSessionLines(filePath).length;
 
-  if (parsed.type !== 'session') continue;
-
-  // Count total events
-  const eventCount = countLines(filePath);
-
-  // Extract title from first user message
-  const title = extractTitle(filePath);
+  // Extract title from parsed events
+  const title = extractTitleFromEvents(parseSessionLines(filePath));
 
   sessions.push({
     filePath,
     fileName: file,
-    id: parsed.id?.substring(0, 8) || 'unknown',
-    timestamp: new Date(parsed.timestamp),
+    id: meta.id.substring(0, 8),
+    timestamp: new Date(meta.timestamp || ''),
     sizeBytes: stat.size,
     eventCount,
     title,
@@ -199,72 +191,37 @@ console.log(`   tsx .pi/skills/session-parser/scripts/parse-session.ts <path>`);
 
 // ── Helpers ────────────────────────────────────────────────────
 
-function readFirstLine(filePath: string): string | null {
-  const fd = fs.openSync(filePath, 'r');
-  try {
-    let buf = Buffer.alloc(65536);
-    const bytesRead = fs.readSync(fd, buf);
-    const chunk = buf.toString('utf8', 0, bytesRead);
-    const newlineIdx = chunk.indexOf('\n');
-    if (newlineIdx === -1) return chunk.trim();
-    return chunk.substring(0, newlineIdx).trim();
-  } finally {
-    fs.closeSync(fd);
-  }
-}
-
-function countLines(filePath: string): number {
-  const content = fs.readFileSync(filePath, 'utf8');
-  return content.split('\n').filter(l => l.trim()).length;
-}
-
-function extractTitle(filePath: string): string {
-  // Read lines until we find the first user message, then grab a short snippet.
-  // Skip messages that are mostly skill/system content (contain <skill> tags).
+/** Extract a title from the first user message in parsed events. */
+function extractTitleFromEvents(events: import('../../../../shared/index.js').ParsedEvent[]): string {
   const maxLines = 50;
-  let lineCount = 0;
+  let count = 0;
 
-  const fileContent = fs.readFileSync(filePath, 'utf8');
-  for (const rawLine of fileContent.split('\n')) {
-    if (!rawLine.trim()) continue;
-    lineCount++;
-    if (lineCount > maxLines) break;
+  for (const event of events) {
+    if (++count > maxLines) break;
 
-    try {
-      const event = JSON.parse(rawLine);
-      if (event.type === 'message' && event.message?.role === 'user') {
-        const textContent = extractTextContent(event.message.content);
-        // Skip messages that are mostly skill content or system prompts
-        if (textContent.includes('<skill ') || textContent.includes('You are the **')) continue;
+    if (event.type === 'message' && event.message?.role === 'user') {
+      const textContent = extractTextContent(event.message.content);
+      // Skip messages that are mostly skill content or system prompts
+      if (textContent.includes('<skill ') || textContent.includes('You are the **')) continue;
 
-        // Strip XML tags, collapse whitespace
-        const cleaned = textContent.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-        if (cleaned) return cleaned;
-      }
-    } catch {
-      continue;
+      // Strip XML tags, collapse whitespace
+      const cleaned = textContent.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+      if (cleaned) return cleaned;
     }
   }
 
   // Fallback: use first user message even if it's skill content
-  lineCount = 0;
-  for (const rawLine of fileContent.split('\n')) {
-    if (!rawLine.trim()) continue;
-    lineCount++;
-    if (lineCount > maxLines) break;
+  count = 0;
+  for (const event of events) {
+    if (++count > maxLines) break;
 
-    try {
-      const event = JSON.parse(rawLine);
-      if (event.type === 'message' && event.message?.role === 'user') {
-        const textContent = extractTextContent(event.message.content);
-        // Skip system prompt fragments entirely in fallback too
-        if (textContent.includes('You are the **')) continue;
-        // Extract the user's actual question from after skill tags
-        let cleaned = textContent.replace(/<skill[^>]*>[\s\S]*?<\/skill>/g, '').replace(/\s+/g, ' ').trim();
-        if (cleaned) return cleaned;
-      }
-    } catch {
-      continue;
+    if (event.type === 'message' && event.message?.role === 'user') {
+      const textContent = extractTextContent(event.message.content);
+      // Skip system prompt fragments entirely in fallback too
+      if (textContent.includes('You are the **')) continue;
+      // Extract the user's actual question from after skill tags
+      let cleaned = textContent.replace(/<skill[^>]*>[\s\S]*?<\/skill>/g, '').replace(/\s+/g, ' ').trim();
+      if (cleaned) return cleaned;
     }
   }
 

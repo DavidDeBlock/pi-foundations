@@ -272,18 +272,19 @@ Related to [ADR-01](../adr/001-decision.md) and [Issue #5](https://github.com/ex
       const testFile = join(DOCS_ROOT, '_system', 'DOCS_RULES.md')
       expect(isFile(testFile)).toBe(true)
 
-      // Capture stdout via console.log spy
+      // Capture stdout via process.stdout.write spy (runner uses writeOutput)
       let capturedOutput = ''
-      const originalLog = console.log
-      console.log = (chunk: string) => {
+      const originalWrite = process.stdout.write.bind(process.stdout)
+      ;(process.stdout.write as unknown as (chunk: string) => boolean) = (chunk: string) => {
         capturedOutput += chunk
+        return true
       }
 
       try {
         await mod.main([testFile])
       } finally {
-        // Restore console.log
-        console.log = originalLog
+        // Restore process.stdout.write
+        ;(process.stdout.write as unknown as Function) = originalWrite
       }
 
       // Should output valid JSON

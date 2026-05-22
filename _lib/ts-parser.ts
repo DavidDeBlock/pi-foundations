@@ -18,6 +18,25 @@ import {
   SyntaxKind
 } from 'ts-morph'
 
+// ── Domain Model Types ────────────────────────────────────────────────
+
+/** Represents a domain entity extracted from @entity JSDoc tags */
+export interface DomainEntity {
+  name: string;
+  table?: string;
+  description: string;
+  fields: Array<{ name: string; type: string }>;
+}
+
+/** A relationship between two entities extracted from @relation JSDoc tags */
+export interface DomainRelation {
+  fromEntity: string;
+  toEntity: string;
+  fromField: string;
+  direction: 'one-to-one' | 'one-to-many' | 'many-to-one';
+  description?: string;
+}
+
 // ── Types ─────────────────────────────────────────────────────────────
 
 /** Represents a parsed export from a TypeScript file */
@@ -272,4 +291,275 @@ export function extractScriptMetadata(sourceFile: SourceFile): ScriptMetadata | 
   }
 
   return Object.keys(metadata).length > 0 ? metadata : undefined
+}
+
+// ── Domain Model Extraction (ts-morph AST) ───────────────────────────
+
+/**
+ * Extract @entity tags from a source file using ts-morph AST.
+ *
+ * Iterates over exported const declarations, reads their attached JSDoc,
+ * and extracts entities defined with `@entity EntityName - Description`.
+ *
+ * For each entity it also extracts:
+ *   - table name from the pgTable('tableName', ...) call
+ *   - field names/types by navigating into the object literal argument
+ */
+export function extractEntityTags(sourceFile: SourceFile): DomainEntity[] {
+  const entities: DomainEntity[] = []
+  const statements = sourceFile.getStatements()
+
+  for (const stmt of statements) {
+    // Only process exported const declarations
+    if (!(stmt instanceof VariableStatement)) continue
+
+    const anyStmt = stmt as unknown as Record<string, unknown>
+    let isExported = false
+
+    if ('isExported' in anyStmt && typeof anyStmt.isExported === 'function') {
+      isExported = (anyStmt.isExported as () => boolean)()
+    }
+    if (!isExported && 'getModifiers' in anyStmt) {
+      const modifiers = (
+        stmt as unknown as {
+          getModifiers: () => Array<{ getKind: () => number }>
+        }
+      ).getModifiers()
+      isExported = modifiers.some(
+        m => m.getKind() === SyntaxKind.ExportKeyword
+      )
+    }
+    if (!isExported) continue
+
+    // Get JSDoc comment from the declaration
+    let jsDocText: string | undefined
+    if ('getJsDocs' in anyStmt && typeof anyStmt.getJsDocs === 'function') {
+      const jsDocs = (
+        stmt as unknown as {
+          getJsDocs: () => Array<{ getInnerText: () => string }>
+        }
+      ).getJsDocs()
+      if (jsDocs.length > 0) {
+        jsDocText = jsDocs[0].getInnerText()
+      }
+    }
+
+    if (!jsDocText || !/@entity\s+\w+/i.test(jsDocText)) continue
+
+    // Extract entity name and description from @entity tag
+    const entityMatch = jsDocText.match(
+      /@entity\s+(\w+)(?:\s*[-–]\s*(.+))?/i
+    )
+    if (!entityMatch) continue
+
+    const entityName = entityMatch[1]
+    const description = (entityMatch[2] || '').trim() || `${entityName} entity`
+
+    // Extract table name from pgTable('tableName', ...) call in the source text
+    const stmtText = stmt.getText()
+    const tableMatch = stmtText.match(/pgTable\s*\(\s*['"]([^'"]+)['"]/)
+    const tableName = tableMatch ? tableMatch[1] : undefined
+
+    // Extract field names by navigating into the object literal argument of pgTable
+    const fields: Array<{ name: string; type: string }> = []
+    const declarations = stmt.getDeclarations()
+    for (const decl of declarations) {
+      const initializer = decl.getInitializer()
+      if (
+        initializer &&
+        initializer.isKind(SyntaxKind.CallExpression)
+      ) {
+        const callExpr = initializer as import('ts-morph').CallExpression
+        const args = callExpr.getArguments()
+        // Second argument is the object literal with field definitions
+        if (args.length >= 2) {
+          const secondArg = args[1]
+          if (
+            secondArg.isKind(SyntaxKind.ObjectLiteralExpression)
+          ) {
+            const objLit = secondArg as import('ts-morph').ObjectLiteralExpression
+            const properties = objLit.getProperties()
+            for (const prop of properties) {
+              if (prop.isKind(SyntaxKind.PropertyAssignment)) {
+                const propAssign =
+                  prop as import('ts-morph').PropertyAssignment
+                const propName = propAssign.getNameNode().getText()
+                // Skip known Drizzle column type helpers
+                if (
+                  [
+                    'uuid',
+                    'varchar',
+                    'text',
+                    'integer',
+                    'decimal',
+                    'timestamp',
+                    'boolean',
+                    'date',
+                  ].includes(propName)
+                ) {
+                  continue
+                }
+                // Get the type from the call expression (e.g., varchar, text, etc.)
+                // Handle nested calls like `varchar('key').primaryKey()` or
+                // `varchar('email').unique().notNull()` by walking left through
+                // PropertyAccessExpressions to find the base CallExpression,
+                // then extract its identifier.
+                const propInit = propAssign.getInitializer()
+                let fieldType = 'unknown'
+                if (propInit) {
+                  // Walk left through chained method calls until we reach a node that is NOT
+                  // a PropertyAccessExpression. This handles arbitrary nesting like:
+                  //   varchar('key').primaryKey()           → base: varchar('key')
+                  //   varchar('email').unique().notNull()   → base: varchar('email', ...)
+                  let current: import('ts-morph').Node | null = propInit
+                  while (current) {
+                    if (current.isKind(SyntaxKind.CallExpression)) {
+                      const callExpr =
+                        current as import('ts-morph').CallExpression
+                      const expr = callExpr.getExpression()
+                      if (
+                        expr.isKind(SyntaxKind.PropertyAccessExpression)
+                      ) {
+                        // Walk left through the PAE chain to find what's before it
+                        let paeCurrent: import('ts-morph').Node | null = expr
+                        while (
+                          paeCurrent &&
+                          paeCurrent.isKind(SyntaxKind.PropertyAccessExpression)
+                        ) {
+                          const pae = paeCurrent as import('ts-morph').PropertyAccessExpression
+                          paeCurrent = pae.getExpression()
+                        }
+                        current = paeCurrent
+                      } else if (expr.isKind(SyntaxKind.Identifier)) {
+                        // Base case: identifier → this is the type function name
+                        fieldType = expr.getText()
+                        break
+                      } else {
+                        // Unexpected structure, stop
+                        break
+                      }
+                    } else if (
+                      current.isKind(SyntaxKind.PropertyAccessExpression)
+                    ) {
+                      // Walk left through chained method calls
+                      const pae =
+                        current as import('ts-morph').PropertyAccessExpression
+                      current = pae.getExpression()
+                    } else if (current.isKind(SyntaxKind.Identifier)) {
+                      fieldType = current.getText()
+                      break
+                    } else {
+                      // Unexpected structure, stop
+                      break
+                    }
+                  }
+                }
+                fields.push({ name: propName, type: fieldType })
+              }
+            }
+          }
+        }
+      }
+    }
+
+    entities.push({
+      name: entityName,
+      table: tableName,
+      description,
+      fields,
+    })
+  }
+
+  return entities
+}
+
+/**
+ * Extract @relation tags from a source file using ts-morph AST.
+ *
+ * Iterates over exported const declarations, reads their attached JSDoc,
+ * and extracts relationships defined with `@relation` tags.
+ *
+ * Supported formats:
+ *   - @relation Entity.field -> TargetEntity (cardinality)
+ *   - @relation SourceEntity.sourceField -> TargetEntity.targetField (cardinality)
+ */
+export function extractRelationTags(sourceFile: SourceFile): DomainRelation[] {
+  const relations: DomainRelation[] = []
+  const statements = sourceFile.getStatements()
+
+  for (const stmt of statements) {
+    // Only process exported const declarations
+    if (!(stmt instanceof VariableStatement)) continue
+
+    const anyStmt = stmt as unknown as Record<string, unknown>
+    let isExported = false
+
+    if ('isExported' in anyStmt && typeof anyStmt.isExported === 'function') {
+      isExported = (anyStmt.isExported as () => boolean)()
+    }
+    if (!isExported && 'getModifiers' in anyStmt) {
+      const modifiers = (
+        stmt as unknown as {
+          getModifiers: () => Array<{ getKind: () => number }>
+        }
+      ).getModifiers()
+      isExported = modifiers.some(
+        m => m.getKind() === SyntaxKind.ExportKeyword
+      )
+    }
+    if (!isExported) continue
+
+    // Get JSDoc comment from the declaration
+    let jsDocText: string | undefined
+    if ('getJsDocs' in anyStmt && typeof anyStmt.getJsDocs === 'function') {
+      const jsDocs = (
+        stmt as unknown as {
+          getJsDocs: () => Array<{ getInnerText: () => string }>
+        }
+      ).getJsDocs()
+      if (jsDocs.length > 0) {
+        jsDocText = jsDocs[0].getInnerText()
+      }
+    }
+
+    if (!jsDocText) continue
+
+    // Extract all @relation tags from the JSDoc
+    const relationPattern =
+      /@relation\s+(\w+)\.?(\w*)\s*->\s*(\w+)(?:\.(\w+))?\s*\(([^)]+)\)/g
+    let match: RegExpExecArray | null
+
+    while ((match = relationPattern.exec(jsDocText)) !== null) {
+      const fromEntity = match[1]
+      const fromField = match[2] || ''
+      const toEntity = match[3]
+      // match[4] is optional target field (ignored for output)
+      const cardinality = match[5].trim()
+
+      relations.push({
+        fromEntity,
+        toEntity,
+        fromField,
+        direction: parseCardinality(cardinality),
+        description: `Links ${fromEntity} to ${toEntity}`,
+      })
+    }
+  }
+
+  return relations
+}
+
+/** Parse cardinality string into a relation type */
+function parseCardinality(
+  cardinality: string
+): DomainRelation['direction'] {
+  const lower = cardinality.toLowerCase()
+  if (lower.includes('one-to-many') || lower.includes('1-n'))
+    return 'one-to-many'
+  if (lower.includes('many-to-one') || lower.includes('n-1'))
+    return 'many-to-one'
+  if (lower.includes('one-to-one') || lower.includes('1-1'))
+    return 'one-to-one'
+  // Default: infer from context — most common is one-to-many
+  return 'one-to-many'
 }

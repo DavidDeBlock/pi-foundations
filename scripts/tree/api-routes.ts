@@ -15,8 +15,9 @@
  * @usage tsx scripts/tree/api-routes.ts [path] [--json]
  */
 
-import { readdirSync, statSync, existsSync } from 'node:fs'
+import { statSync, existsSync } from 'node:fs'
 import { resolve, join, basename, relative } from 'node:path'
+import { scanDirectory as _scanFiles } from '../../_lib/scanner.js'
 import { Node, Project, CallExpression, SyntaxKind } from 'ts-morph'
 import { createProject, loadSourceFile } from '../../_lib/ts-parser.js'
 import { markdownTable, toJson } from '../../_lib/format.js'
@@ -36,14 +37,19 @@ export interface RouteInfo {
 /** HTTP methods recognized by Hono route definitions */
 const ROUTE_METHODS = new Set(['get', 'post', 'patch', 'delete'])
 
-/** Directories to skip during scanning */
-const SKIP_DIRS = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  '.cache',
-  '__snapshots__',
-])
+/** Scan options for API routes — skips common dirs, includes .ts only */
+const API_ROUTES_SCAN_OPTIONS = {
+  skipDirs: new Set([
+    'node_modules',
+    '.git',
+    'dist',
+    '.cache',
+    '__snapshots__',
+  ]),
+  extensions: ['.ts'],
+  excludePatterns: ['.d.ts', '.test.ts'],
+  skipHidden: true,
+}
 
 // ── AST Parsing ───────────────────────────────────────────────────────
 
@@ -139,32 +145,10 @@ export function extractRoutes(filePath: string): RouteInfo[] {
 // ── Directory Scanning ────────────────────────────────────────────────
 
 /**
- * Recursively find all .ts files in a directory, skipping common non-source dirs.
+ * Recursively find all .ts files in a directory (using shared scanner).
  */
 function findTsFiles(dirPath: string): string[] {
-  const files: string[] = []
-
-  try {
-    const entries = readdirSync(dirPath)
-
-    for (const entry of entries.sort()) {
-      // Skip hidden and known non-source directories
-      if (entry.startsWith('.') || SKIP_DIRS.has(entry)) continue
-
-      const fullPath = join(dirPath, entry)
-      const stat = statSync(fullPath)
-
-      if (stat.isDirectory()) {
-        files.push(...findTsFiles(fullPath))
-      } else if (entry.endsWith('.ts') && !entry.endsWith('.d.ts')) {
-        files.push(fullPath)
-      }
-    }
-  } catch {
-    // Directory doesn't exist or can't be read — return empty
-  }
-
-  return files
+  return _scanFiles(dirPath, API_ROUTES_SCAN_OPTIONS)
 }
 
 /**
@@ -321,30 +305,12 @@ export function generateOutput(
 }
 
 // ── CLI Entry Point ───────────────────────────────────────────────────
-// Only run when executed directly (not imported as a module by tests)
-const SCRIPT_NAME = 'api-routes.ts'
-const isDirectExecution = process.argv[1] && basename(process.argv[1]) === SCRIPT_NAME
+import { runScriptIfDirect } from '../../_lib/script-runner.js'
 
-if (isDirectExecution) {
-  const args = process.argv.slice(2)
-
-  if (args.includes('--help')) {
-    console.log(generateHelp())
-    process.exit(0)
-  }
-
-  let jsonMode = false
-  let targetPath: string | undefined
-
-  // Parse flags and collect positional arguments
-  for (const arg of args) {
-    if (arg === '--json') {
-      jsonMode = true
-    } else if (!arg.startsWith('-')) {
-      // First non-flag argument is the target path
-      if (!targetPath) targetPath = arg
-    }
-  }
-
-  console.log(generateOutput(targetPath ?? '.', jsonMode))
-}
+runScriptIfDirect(
+  (targetPath: string, json = false, help = false) => {
+    return generateOutput(targetPath, json, help)
+  },
+  'api-routes.ts',
+  { defaultPath: '.' }
+)

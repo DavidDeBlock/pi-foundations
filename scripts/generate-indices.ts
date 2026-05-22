@@ -97,11 +97,49 @@ function generateIndex(folder: string): void {
   console.log(`✅ Generated: ${indexPath} (${files.length} files indexed)`)
 }
 
-// Main execution
-const FOLDERS = discoverFolders()
+// ── Output Generator ───────────────────────────────────────────
 
-for (const folder of FOLDERS) {
-  generateIndex(folder)
+/**
+ * Generate output for generate-indices.
+ * Returns index generation summary as string.
+ */
+export function generateOutput(
+  targetPath: string,
+  json = false,
+  help = false
+): string {
+  if (help) {
+    return `Usage: npx tsx scripts/generate-indices.ts
+
+Auto-generate _index.md files for every docs subfolder.
+
+Scans the directory structure, extracts file titles (first H1/H2), and writes a table of contents
+per folder. Uses hardcoded folder descriptions from the canonical docs structure.
+
+Options:
+  --json        Output as JSON (not supported for this script)
+  --help        Show this help message
+
+Output:
+  Writes _index.md files to each docs subfolder.
+  Prints generation summary to stdout.`
+  }
+
+  // Main execution
+  const FOLDERS = discoverFolders()
+
+  for (const folder of FOLDERS) {
+    generateIndex(folder)
+  }
+
+  return `\n✨ Index generation complete. (${FOLDERS.length} folders indexed).`
 }
 
-console.log('\n✨ Index generation complete.')
+// ── CLI Entry Point ────────────────────────────────────────────
+import { runScriptIfDirect } from '../_lib/script-runner.js'
+
+runScriptIfDirect(
+  generateOutput,
+  'generate-indices.ts',
+  { defaultPath: '.' }
+)

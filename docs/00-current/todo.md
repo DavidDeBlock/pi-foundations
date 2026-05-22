@@ -11,3 +11,21 @@ For example, I saw you creating a lot of scripts to extract the data from the se
 I know reading a file before implementation is unavoidable, but the reason why I need some scripts is to identify code flows to have an overview of how systems work. When using scripts to synthesize codebases, I think it's much easier for an agent to find his way. Let's say it like that. 
 
 
+I want to make some changes to the Maestro script.
+
+
+
+I want to make some changes to the autonomous pipeline. Currently, we have the builder review flow chained with the PRD-audit flow. 
+Also, the issues that are taken by the agent are the ones with needs-triage, but that's actually wrong. We should only take the issues that are ready-for-agent. 
+
+Some of the issues will have PRD as a parent. 
+Some of the issues have not. 
+
+
+Here are the following flows:
+
+**.pi/maestro/flows/builder-reviewer.json**
+
+**.pi/maestro/flows/prd-audit.json**. 
+
+
