@@ -1,3 +1,20 @@
+#!/usr/bin/env tsx
+/**
+ * scripts/classify-inventory.ts — Phase 2: Classify inventory entries.
+ *
+ * Reads DOCS_INVENTORY.md and classifies each file as canonical/stale/duplicate/archive/
+ * experiment/decision. Outputs a detailed report with confidence, risk level,
+ * proposed action, and reviewer questions for uncertain entries.
+ *
+ * Usage:
+ *   npx tsx scripts/classify-inventory.ts [docs-root]              # Full classification
+ *   npx tsx scripts/classify-inventory.ts docs --uncertain          # Only uncertain entries as JSONL
+ *   npx tsx scripts/classify-inventory.ts docs --batch-size=5       # Process in batches of 5
+ *
+ * @category maintenance
+ * @usage npx tsx scripts/classify-inventory.ts [docs-root] [--uncertain] [--batch-size=N]
+ */
+
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { resolve, join, basename, dirname } from 'path'
 

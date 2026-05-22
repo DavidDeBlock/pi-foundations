@@ -1,11 +1,16 @@
 #!/usr/bin/env tsx
 /**
- * cleanup-empty-dirs.ts — Phase 5: Remove empty directories after migration.
- * 
+ * scripts/cleanup-empty-dirs.ts — Phase 5: Remove empty directories after migration.
+ *
  * Scans docs/ for empty directories (excluding _system/) and removes them safely.
  * Supports dry-run mode to preview what would be deleted.
- * 
- * Usage: npx tsx scripts/cleanup-empty-dirs.ts [docs-root] [--dry-run]
+ *
+ * Usage:
+ *   npx tsx scripts/cleanup-empty-dirs.ts [docs-root]              # Remove empty dirs
+ *   npx tsx scripts/cleanup-empty-dirs.ts docs --dry-run           # Preview only
+ *
+ * @category maintenance
+ * @usage npx tsx scripts/cleanup-empty-dirs.ts [docs-root] [--dry-run]
  */
 
 import { readdirSync, statSync, rmdirSync } from 'fs'

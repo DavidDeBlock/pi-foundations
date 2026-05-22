@@ -1,3 +1,19 @@
+#!/usr/bin/env tsx
+/**
+ * scripts/verify-structure.ts — Verify docs/ folder structure against canonical rules.
+ *
+ * Checks that all folders exist with correct numbering (00-current through 90-archive),
+ * identifies orphaned files at root level, detects non-canonical folders,
+ * and generates a DOCS_INDEX.md in _system/. Outputs pass/fail status.
+ *
+ * Usage:
+ *   npx tsx scripts/verify-structure.ts [docs-root]           # Verify docs/ (default)
+ *   npx tsx scripts/verify-structure.ts /path/to/docs        # Specific directory
+ *
+ * @category validation
+ * @usage npx tsx scripts/verify-structure.ts [docs-root]
+ */
+
 import { readdirSync, statSync, writeFileSync } from 'fs'
 import { resolve, join } from 'path'
 

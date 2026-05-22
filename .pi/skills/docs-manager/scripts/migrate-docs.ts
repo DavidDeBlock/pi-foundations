@@ -1,11 +1,17 @@
 #!/usr/bin/env tsx
 /**
- * migrate-docs.ts — Phase 4: Migrate files from current locations to target structure.
+ * scripts/migrate-docs.ts — Phase 4: Migrate files from current locations to target structure.
  *
  * Reads DOCS_INVENTORY.md, validates each entry with proposed_action = move/archive/merge-into,
  * then performs the moves on disk while updating paths in inventory and logging to archive log.
  *
- * Usage: npx tsx scripts/migrate-docs.ts [docs-root] [--dry-run] [--batch-size=N]
+ * Usage:
+ *   npx tsx scripts/migrate-docs.ts [docs-root]                    # Execute migrations
+ *   npx tsx scripts/migrate-docs.ts docs --dry-run                 # Preview only
+ *   npx tsx scripts/migrate-docs.ts docs --batch-size=10           # Process in batches
+ *
+ * @category maintenance
+ * @usage npx tsx scripts/migrate-docs.ts [docs-root] [--dry-run] [--batch-size=N]
  */
 
 import { readdirSync, readFileSync, writeFileSync, statSync, mkdirSync } from 'fs'

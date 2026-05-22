@@ -1,3 +1,19 @@
+#!/usr/bin/env tsx
+/**
+ * scripts/parse-doc-file.ts — Parse a single markdown doc file.
+ *
+ * Extracts headings (with levels), section summaries, cross-references,
+ * file flags (large file, draft/temp), and structural metadata. Outputs JSON
+ * suitable for agent consumption or pipeline processing.
+ *
+ * Usage:
+ *   npx tsx scripts/parse-doc-file.ts <path>                           # Parse single file to stdout
+ *   npx tsx scripts/parse-doc-file.ts docs/10-domain/glossary.md       # Specific file
+ *
+ * @category analysis
+ * @usage npx tsx scripts/parse-doc-file.ts <path>
+ */
+
 import { readFileSync, statSync, openSync, readSync, closeSync, existsSync } from 'fs'
 import { resolve } from 'path'
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { resolve, join } from 'path'
+import { resolve, join, basename } from 'path'
 import { existsSync, statSync, readdirSync, readFileSync, mkdirSync, writeFileSync, rmSync } from 'fs'
+import type { ScanResult } from './verify-structure'
 
 const DOCS_ROOT = resolve(__dirname, '..', 'docs')
 
@@ -65,11 +66,34 @@ describe('verify-structure.ts — Structure Scanner', () => {
   describe('detectOrphanedFiles', () => {
     it('identifies root-level .md files as orphans', async () => {
       const mod = await import('./verify-structure')
-      const scanResult = mod.scanDocsStructure(DOCS_ROOT)
-      const result = mod.detectOrphanedFiles(scanResult, DOCS_ROOT)
 
-      // docs/ has root-level .md files (README.md, flows.md, index.md, etc.)
-      expect(result.orphanRootFiles.length).toBeGreaterThan(0)
+      // Create a temp test directory with root-level .md files and subfolders
+      const testDir = join(__dirname, '__test-orphan-detection')
+      if (!existsSync(testDir)) mkdirSync(testDir, { recursive: true })
+
+      // Create root-level orphans (not in numbered folders)
+      writeFileSync(join(testDir, 'README.md'), '# README\ncontent here')
+      writeFileSync(join(testDir, 'notes.md'), '# Notes\nsome notes')
+
+      // Create a canonical folder with files
+      const canonicalFolder = join(testDir, '10-domain')
+      mkdirSync(canonicalFolder)
+      writeFileSync(join(canonicalFolder, 'glossary.md'), '# Glossary\nterms here')
+
+      // Scan and detect orphans
+      const scanResult: ScanResult = {
+        folders: [{ name: basename(canonicalFolder), fileCount: 1 }],
+        rootFiles: ['README.md', 'notes.md'],
+      }
+      const result = mod.detectOrphanedFiles(scanResult, testDir)
+
+      // Should identify the root-level .md files as orphans
+      expect(result.orphanRootFiles.length).toBe(2)
+      expect(result.orphanRootFiles).toContain('README.md')
+      expect(result.orphanRootFiles).toContain('notes.md')
+
+      // Cleanup
+      rmSync(testDir, { recursive: true })
     })
 
     it('identifies non-canonical folders as orphan sources', async () => {

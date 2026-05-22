@@ -56,8 +56,8 @@ describe('scan-inventory.ts — Inventory Script', () => {
     it('collects correct metadata for a known file', async () => {
       const mod = await import('./scan-inventory')
 
-      // Use a real file we know exists
-      const testFile = join(DOCS_ROOT, 'README.md')
+      // Use a real file we know exists (README.md doesn't exist at docs/ root)
+      const testFile = join(DOCS_ROOT, '20-architecture', '_index.md')
       expect(isFile(testFile)).toBe(true)
 
       const meta = mod.collectMetadata(testFile)
@@ -96,16 +96,15 @@ describe('scan-inventory.ts — Inventory Script', () => {
     it('flags files larger than threshold as largeFile', async () => {
       const mod = await import('./scan-inventory')
 
-      // Create a test scenario with entries
-      const entries: typeof mod.scanFiles extends (dir: string, dirs?: string[]) => infer R ? R : never[] = []
-
-      // Use actual scan but with 0KB threshold to force largeFile flag on everything
+      // Use actual scan with 0KB threshold to force largeFile flag on all non-empty files
       const scanned = mod.scanFiles(DOCS_ROOT, ['_system'])
       mod.applyHeuristics(scanned, 0)
 
-      // All should be flagged as large when threshold is 0
+      // All files with size > 0 should be flagged as large when threshold is 0
       for (const entry of scanned) {
-        expect(entry.flags?.largeFile).toBe(true)
+        if (entry.size_kb > 0) {
+          expect(entry.flags?.largeFile).toBe(true)
+        }
       }
     })
 

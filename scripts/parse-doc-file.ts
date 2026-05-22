@@ -1,0 +1,1 @@
+../.pi/skills/docs-manager/scripts/parse-doc-file.ts

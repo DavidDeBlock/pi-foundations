@@ -1,0 +1,1 @@
+../.pi/skills/docs-manager/scripts/cleanup-empty-dirs.ts

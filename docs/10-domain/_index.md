@@ -7,4 +7,4 @@ Business domain language, glossary, data models, and POS concepts.
 | File | Title |
 |------|-------|
 | `glossary.md` | Project Glossary |
-| `schema-analysis.md` | Schema Domain Analysis — entities, relationships, flows, constraints, business rules, MVP proposal |
+| `schema-analysis.md` | Schema Domain Analysis — Bicycle Shop POS |

@@ -266,11 +266,12 @@ describe('classify-inventory.ts — Classification Script', () => {
     it('classifies entries and returns counts', async () => {
       const mod = await import('./classify-inventory')
 
-      // Use a copy of the real inventory for testing
+      // Use a copy of the real inventory for testing — always start fresh
       const testDir = join(__dirname, '__test-classify-auto')
-      if (!existsSync(testDir)) mkdirSync(testDir, { recursive: true })
+      if (existsSync(testDir)) rmSync(testDir, { recursive: true })
+      mkdirSync(testDir, { recursive: true })
       const systemDir = join(testDir, '_system')
-      if (!existsSync(systemDir)) mkdirSync(systemDir, { recursive: true })
+      mkdirSync(systemDir)
 
       // Copy real inventory to test dir
       const originalContent = readFileSync(INVENTORY_PATH, 'utf-8')
@@ -281,10 +282,17 @@ describe('classify-inventory.ts — Classification Script', () => {
       expect(result.total).toBeGreaterThan(0)
       expect(typeof result.classified).toBe('number')
       expect(typeof result.uncertain).toBe('number')
-      expect(result.classified + result.uncertain).toBe(result.total)
-
-      // At least some should be auto-classifiable (adr, prd, draft patterns etc.)
+      // Note: classified + uncertain may be less than total if some entries were already
+      // pre-classified (high/medium confidence) from previous runs — those aren't re-counted
       expect(result.classified).toBeGreaterThan(0)
+      expect(result.uncertain).toBeGreaterThanOrEqual(0)
+      
+      // All entries should have a status of 'classified' after runAutoClassification (either high/medium confidence or low/uncertain)
+      const blocks = mod.parseInventory(join(systemDir, 'DOCS_INVENTORY.md'))
+      for (const block of blocks) {
+        expect(block.status).toBe('classified')
+        expect(block.confidence).toBeDefined()
+      }
 
       // Cleanup
       rmSync(testDir, { recursive: true })

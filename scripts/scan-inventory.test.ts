@@ -1,0 +1,1 @@
+../.pi/skills/docs-manager/scripts/scan-inventory.test.ts

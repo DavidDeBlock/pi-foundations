@@ -1,3 +1,19 @@
+#!/usr/bin/env tsx
+/**
+ * scripts/scan-inventory.ts — Phase 1: Scan docs/ and produce DOCS_INVENTORY.md.
+ *
+ * Recursively scans a docs directory, collects file metadata (size, lines, preview),
+ * preserves existing YAML classification blocks from previous runs,
+ * and writes a structured inventory file.
+ *
+ * Usage:
+ *   npx tsx scripts/scan-inventory.ts [docs-root]           # Scan docs/ (default)
+ *   npx tsx scripts/scan-inventory.ts /path/to/docs        # Scan specific directory
+ *
+ * @category maintenance
+ * @usage npx tsx scripts/scan-inventory.ts [docs-root]
+ */
+
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { resolve, join, basename, relative } from 'path'
 

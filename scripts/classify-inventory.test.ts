@@ -1,0 +1,1 @@
+../.pi/skills/docs-manager/scripts/classify-inventory.test.ts
