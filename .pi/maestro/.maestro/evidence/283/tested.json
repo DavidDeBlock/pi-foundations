@@ -1,0 +1,17 @@
+{
+  "issue": 283,
+  "type": "tested",
+  "verified": true,
+  "created_at": "2026-06-05T13:24:30.635086+00:00",
+  "created_by": "test_runner_phase",
+  "data": {
+    "command": "pnpm test --run",
+    "exit_code": 0,
+    "tests_run": 1895,
+    "tests_passed": 1895,
+    "tests_failed": 0,
+    "output_file": "/tmp/test_output.log",
+    "output_file_size": 713279
+  },
+  "content_hash": "4b4d0c610a75cb98fca4c73fbd7c7b56743574f63b52bcb3f65d87412a1cfea9"
+}

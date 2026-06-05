@@ -18,16 +18,14 @@
 3. After implementing, self-review your work against the issue requirements
 
 **RESULT FORMAT:**
-Write a result file to `.pi/maestro/state/slice-result.json`:
-
-If APPROVED:
-```json
-{"status":"approved","slice":{issue_number}}
+Output your verdict as a JSON code block with language tag `verdict`:
+```verdict
+{"status":"approved","verdict":"complete","details":"","issues":[],"labels":{"add":[],"remove":[]},"findings":[]}
 ```
 
-If REJECTED:
-```json
-{"status":"rejected","slice":{issue_number},"issues":["issue1","issue2"]}
+If REJECTED, include the issues array and label changes:
+```verdict
+{"status":"rejected","verdict":"incomplete","details":"","issues":["issue1","issue2"],"labels":{"add":[],"remove":[]},"findings":[]}
 ```
 
-Do NOT write the result file until you have completed implementation AND self-review.
+Do NOT emit the verdict block until you have completed implementation AND self-review.

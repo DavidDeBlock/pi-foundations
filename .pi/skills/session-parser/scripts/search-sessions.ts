@@ -3,7 +3,7 @@
  * Search across session logs for tool calls, file paths, errors, or text.
  *
  * Usage:
- *   npx tsx .pi/skills/session-parser/scripts/search-sessions.ts <query> [options] [session-dir]
+ *   npx tsx .pi/skills/session-parser/scripts/search-sessions.ts <query> [options]
  *
  * Options:
  *   --tool-name      Match against tool call names (e.g., "edit", "bash")
@@ -11,6 +11,13 @@
  *   --errors-only    Only show sessions that contain errors
  *   --context N      Show N lines of context around matches (default: 1)
  *   --json           Output structured JSON instead of human-readable text
+ *   --source agent|maestro|both  Which session store to scan (default: both)
+ *
+ * Session stores:
+ *   agent    — ~/.pi/agent/sessions/--home-david-projects-pi-pos-v1--/
+ *             Flat .jsonl files from direct agent runs.
+ *   maestro  — .pi/maestro/sessions/<number>/<flow>/session.jsonl
+ *             Nested dirs from multi-agent pipeline runs.
  *
  * Examples:
  *   tsx .pi/skills/session-parser/scripts/search-sessions.ts "pricing"
@@ -19,9 +26,12 @@
  */
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
-import { parseSessionLines, extractSessionMetadata } from '../../../../shared/index.js';
+
+// ── Constants ──────────────────────────────────────────────────
+
+const AGENT_SESSION_DIR = '/home/david/.pi/agent/sessions/--home-david-projects-pi-pos-v1--';
+const MAESTRO_SESSION_DIR = path.resolve('.pi/maestro/sessions');
 
 // ── CLI parsing ────────────────────────────────────────────────
 
@@ -32,7 +42,7 @@ let matchFilePath = false;
 let errorsOnly = false;
 let contextLines = 1;
 let jsonOutput = false;
-let sessionDir: string;
+let sourceFilter: 'agent' | 'maestro' | 'both' = 'both';
 
 const positionalArgs: string[] = [];
 
@@ -48,6 +58,13 @@ for (let i = 0; i < args.length; i++) {
     contextLines = parseInt(args[++i], 10);
   } else if (arg === '--json') {
     jsonOutput = true;
+  } else if (arg === '--source' && i + 1 < args.length) {
+    const val = args[++i];
+    if (!['agent', 'maestro', 'both'].includes(val)) {
+      console.error(`❌ Invalid --source value: ${val}. Must be agent, maestro, or both.`);
+      process.exit(1);
+    }
+    sourceFilter = val as 'agent' | 'maestro' | 'both';
   } else if (!arg.startsWith('-')) {
     positionalArgs.push(arg);
   }
@@ -61,41 +78,31 @@ if (positionalArgs.length < 1 && !errorsOnly) {
 
 query = positionalArgs[0] || '';
 
-// Resolve session directory dynamically
-if (positionalArgs.length > 1) {
-  sessionDir = path.resolve(positionalArgs[1]);
-} else {
-  const home = process.env.HOME || os.homedir();
-  const sessionsRoot = path.join(home, '.pi', 'agent', 'sessions');
-  const cwdProjectSlug = '--' + process.cwd().replace(/\/+/g, '-') + '--';
-  const candidatePath = path.join(sessionsRoot, cwdProjectSlug);
+// ── Discover .jsonl files ──────────────────────────────────────
 
-  if (fs.existsSync(candidatePath)) {
-    sessionDir = candidatePath;
+const jsonlFiles: string[] = [];
+
+if (sourceFilter === 'agent' || sourceFilter === 'both') {
+  if (fs.existsSync(AGENT_SESSION_DIR)) {
+    const agentFiles = fs.readdirSync(AGENT_SESSION_DIR)
+      .filter(f => f.endsWith('.jsonl'))
+      .map(f => path.join(AGENT_SESSION_DIR, f));
+    jsonlFiles.push(...agentFiles);
   } else {
-    console.error('⚠️ No session directory found for current project.');
-    console.error('   Specify a path as the last argument, or use one of these:');
-    if (fs.existsSync(sessionsRoot)) {
-      const dirs = fs.readdirSync(sessionsRoot)
-        .filter(d => !d.startsWith('.'))
-        .sort()
-        .slice(0, 10);
-      for (const d of dirs) console.error(`     ${path.join(sessionsRoot, d)}`);
-    }
-    process.exit(1);
+    console.warn(`⚠️  Agent session dir not found: ${AGENT_SESSION_DIR}`);
   }
 }
 
-// ── Read directory ─────────────────────────────────────────────
-
-if (!fs.existsSync(sessionDir)) {
-  console.error(`❌ Session directory not found: ${sessionDir}`);
-  process.exit(1);
+if (sourceFilter === 'maestro' || sourceFilter === 'both') {
+  if (fs.existsSync(MAESTRO_SESSION_DIR)) {
+    const maestroFiles = findJsonlRecursive(MAESTRO_SESSION_DIR);
+    jsonlFiles.push(...maestroFiles);
+  } else {
+    console.warn(`⚠️  Maestro session dir not found: ${MAESTRO_SESSION_DIR}`);
+  }
 }
 
-const files = fs.readdirSync(sessionDir).filter(f => f.endsWith('.jsonl'));
-
-if (files.length === 0) {
+if (jsonlFiles.length === 0) {
   console.log('📭 No session files found.');
   process.exit(0);
 }
@@ -104,6 +111,7 @@ if (files.length === 0) {
 
 interface SearchResult {
   filePath: string;
+  source: 'agent' | 'maestro';
   sessionId: string;
   timestamp: string;
   matches: Match[];
@@ -120,30 +128,49 @@ interface Match {
 
 const results: SearchResult[] = [];
 
-for (const file of files) {
-  const filePath = path.join(sessionDir, file);
+for (const filePath of jsonlFiles) {
+  const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(l => l.trim());
 
-  // Extract session metadata using shared parser
-  const meta = extractSessionMetadata(filePath);
-  if (!meta.id) continue;
-
-  const sessionId = meta.id || '';
-  const timestamp = meta.timestamp || '';
-
-  // Parse all events using shared parser (no inline JSONL parsing)
-  const events = parseSessionLines(filePath);
+  // Parse session metadata from first line
+  let sessionId = '';
+  let timestamp = '';
+  try {
+    const firstEvent = JSON.parse(lines[0]);
+    if (firstEvent.type === 'session') {
+      sessionId = firstEvent.id || '';
+      timestamp = firstEvent.timestamp || '';
+    }
+  } catch {
+    continue;
+  }
 
   // If errors-only, check for any error tool results first
   if (errorsOnly) {
-    const hasErrors = events.some(e => e.message?.role === 'toolResult' && e.message?.isError);
+    const hasErrors = lines.some(line => {
+      try {
+        const event = JSON.parse(line);
+        return event.message?.role === 'toolResult' && event.message?.isError;
+      } catch {
+        return false;
+      }
+    });
+
     if (!hasErrors) continue;
   }
 
-  // Search for matches across parsed events
+  // Search for matches
   const matches: Match[] = [];
 
-  for (let i = 0; i < events.length; i++) {
-    const event = events[i];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    let event: any;
+
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
     if (!event.message) continue;
 
     const msg = event.message;
@@ -162,8 +189,8 @@ for (const file of files) {
               eventType: event.type || '',
               matchType,
               snippet: `Tool call: ${part.name}`,
-              contextBefore: getContext(events, i, contextLines),
-              contextAfter: getContextAfter(events, i, contextLines),
+              contextBefore: getContext(lines, i, contextLines),
+              contextAfter: getContextAfter(lines, i, contextLines),
             });
           }
 
@@ -178,8 +205,8 @@ for (const file of files) {
                 eventType: event.type || '',
                 matchType,
                 snippet: `Tool ${part.name} → path in args`,
-                contextBefore: getContext(events, i, contextLines),
-                contextAfter: getContextAfter(events, i, contextLines),
+                contextBefore: getContext(lines, i, contextLines),
+                contextAfter: getContextAfter(lines, i, contextLines),
               });
             }
           }
@@ -194,8 +221,8 @@ for (const file of files) {
                 eventType: event.type || '',
                 matchType,
                 snippet: truncate(JSON.stringify(part).substring(0, 200)),
-                contextBefore: getContext(events, i, contextLines),
-                contextAfter: getContextAfter(events, i, contextLines),
+                contextBefore: getContext(lines, i, contextLines),
+                contextAfter: getContextAfter(lines, i, contextLines),
               });
             }
           }
@@ -211,8 +238,8 @@ for (const file of files) {
                 eventType: event.type || '',
                 matchType,
                 snippet: truncate(part.text.substring(0, 200)),
-                contextBefore: getContext(events, i, contextLines),
-                contextAfter: getContextAfter(events, i, contextLines),
+                contextBefore: getContext(lines, i, contextLines),
+                contextAfter: getContextAfter(lines, i, contextLines),
               });
             }
           }
@@ -231,8 +258,8 @@ for (const file of files) {
           eventType: event.type || '',
           matchType,
           snippet: truncate(content?.substring(0, 200) || '(empty error)'),
-          contextBefore: getContext(events, i, contextLines),
-          contextAfter: getContextAfter(events, i, contextLines),
+          contextBefore: getContext(lines, i, contextLines),
+          contextAfter: getContextAfter(lines, i, contextLines),
         });
       }
 
@@ -244,8 +271,8 @@ for (const file of files) {
             eventType: event.type || '',
             matchType,
             snippet: truncate(content.substring(0, 200)),
-            contextBefore: getContext(events, i, contextLines),
-            contextAfter: getContextAfter(events, i, contextLines),
+            contextBefore: getContext(lines, i, contextLines),
+            contextAfter: getContextAfter(lines, i, contextLines),
           });
         }
       }
@@ -261,15 +288,21 @@ for (const file of files) {
           eventType: event.type || '',
           matchType,
           snippet: truncate(content.substring(0, 200)),
-          contextBefore: getContext(events, i, contextLines),
-          contextAfter: getContextAfter(events, i, contextLines),
+          contextBefore: getContext(lines, i, contextLines),
+          contextAfter: getContextAfter(lines, i, contextLines),
         });
       }
     }
   }
 
   if (matches.length > 0) {
-    results.push({ filePath, sessionId, timestamp, matches });
+    results.push({
+      filePath,
+      source: filePath.startsWith(MAESTRO_SESSION_DIR) ? 'maestro' : 'agent',
+      sessionId,
+      timestamp,
+      matches
+    });
   }
 }
 
@@ -288,11 +321,13 @@ if (results.length === 0) {
   process.exit(0);
 }
 
-console.log(`\n🔍 Found ${results.length} session(s) matching "${query}" (${files.length} total)\n`);
+const sourceLabel = sourceFilter === 'both' ? '(agent + maestro)' : `(${sourceFilter})`;
+console.log(`\n🔍 Found ${results.length} session(s) matching "${query}" in ${jsonlFiles.length} files ${sourceLabel}\n`);
 
 for (const result of results) {
   const timeStr = result.timestamp ? new Date(result.timestamp).toLocaleString() : 'unknown';
-  console.log(`📁 Session: ${result.sessionId?.substring(0, 8)}... | ${timeStr}`);
+  const srcIcon = result.source === 'maestro' ? '🎼' : '🤖';
+  console.log(`${srcIcon} Session: ${result.sessionId?.substring(0, 8)}... | ${timeStr}`);
   console.log(`   File: ${path.basename(result.filePath)}`);
   console.log(`   Matches: ${result.matches.length}\n`);
 
@@ -306,15 +341,15 @@ for (const result of results) {
     console.log(`   ${typeLabel} [line ${match.lineIndex}]`);
     console.log(`     ${match.snippet}`);
 
-    // Context lines are already truncated strings from truncateEvent()
     if (match.contextAfter?.length > 0) {
       const ctxLine = match.contextAfter[0];
-      // Show result status indicator if the context line mentions it
-      if (ctxLine.includes('success')) {
-        console.log(`     → ✅ success`);
-      } else if (ctxLine.includes('error') || ctxLine.includes('Error')) {
-        console.log(`     → ❌ error`);
-      }
+      // Show a short snippet of the next event type for context
+      try {
+        const ctxEvent = JSON.parse(ctxLine);
+        if (ctxEvent.message?.role === 'toolResult') {
+          console.log(`     → result: ${ctxEvent.message.isError ? '❌ error' : '✅ success'}`);
+        }
+      } catch {}
     }
 
     console.log();
@@ -331,41 +366,37 @@ for (const result of results) {
 console.log(`💡 Parse a session for full details:`);
 console.log(`   tsx .pi/skills/session-parser/scripts/parse-session.ts <path>`);
 
-// ── Helpers ────────────────────────────────────────────────────
+// ── Recursive file discovery ───────────────────────────────────
 
-function getContext(events: import('../../../../shared/index.js').ParsedEvent[], index: number, count: number): string[] {
-  const start = Math.max(0, index - count);
-  return events.slice(start, index).map(e => truncateEvent(e));
-}
-
-function getContextAfter(events: import('../../../../shared/index.js').ParsedEvent[], index: number, count: number): string[] {
-  const end = Math.min(events.length, index + 1 + count);
-  return events.slice(index + 1, end).map(e => truncateEvent(e));
-}
-
-function truncateEvent(event: import('../../../../shared/index.js').ParsedEvent): string {
-  if (event.message?.role === 'assistant') {
-    const content = event.message.content;
-    if (Array.isArray(content)) {
-      for (const part of content) {
-        if (part.type === 'text' && typeof part.text === 'string') {
-          return truncate(part.text.substring(0, 120));
-        }
-        if (part.type === 'toolCall') {
-          return `Tool: ${part.name}`;
-        }
+/** Recursively find all .jsonl files in a directory tree. */
+function findJsonlRecursive(dir: string): string[] {
+  const results: string[] = [];
+  try {
+    for (const entry of fs.readdirSync(dir)) {
+      const fullPath = path.join(dir, entry);
+      const stat = fs.statSync(fullPath);
+      if (stat.isDirectory()) {
+        results.push(...findJsonlRecursive(fullPath));
+      } else if (entry.endsWith('.jsonl')) {
+        results.push(fullPath);
       }
     }
+  } catch {
+    // Ignore permission errors on unreadable dirs
   }
-  if (event.message?.role === 'toolResult') {
-    const content = extractToolContentString(event.message.content);
-    return truncate(content || '(empty result)');
-  }
-  if (event.message?.role === 'user') {
-    const content = extractTextContent(event.message.content);
-    return truncate(content || '(empty message)');
-  }
-  return `[${event.type}]`;
+  return results;
+}
+
+// ── Helpers ────────────────────────────────────────────────────
+
+function getContext(lines: string[], index: number, count: number): string[] {
+  const start = Math.max(0, index - count);
+  return lines.slice(start, index).map(l => truncate(l));
+}
+
+function getContextAfter(lines: string[], index: number, count: number): string[] {
+  const end = Math.min(lines.length, index + 1 + count);
+  return lines.slice(index + 1, end).map(l => truncate(l));
 }
 
 function truncate(s: string, max = 120): string {

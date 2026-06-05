@@ -9,7 +9,7 @@ Usage:
     from lib.github_client import GithubClient
     
     client = GithubClient()
-    issues = await client.fetch_issues_by_label("ready-for-agent")
+    issues = await client.fetch_issues_by_label("needs-triage")
     await client.post_phase_comment(issue_num=42, phase="builder", status="success", details="Implemented feature X")
 """
 
@@ -150,7 +150,7 @@ class GithubClient:
         consider using fetch_issue() individually to avoid payload limits.
         
         Args:
-            label: GitHub label to filter by (e.g., 'ready-for-agent').
+            label: GitHub label to filter by (e.g., 'needs-triage').
             
         Returns:
             List of Issue objects sorted by number ascending.
@@ -189,7 +189,76 @@ class GithubClient:
         except json.JSONDecodeError as e:
             print(f"[github] ERROR parsing issue list: {e}", file=sys.stderr)
             return []
-    
+
+    def fetch_issues_by_labels(self, labels: list[str]) -> list[Issue]:
+        """Fetch all open issues matching ANY of the given labels.
+
+        Merges results from multiple label queries, deduplicates by issue
+        number, and sorts by recency (newest first).
+
+        Args:
+            labels: List of GitHub labels to filter by (e.g., ['needs-triage', 'parent-prd']).
+
+        Returns:
+            List of Issue objects sorted by created_at descending.
+        """
+        if not labels:
+            return []
+
+        # Fetch issues for each label, including createdAt
+        all_issues: dict[int, Issue] = {}  # Deduplicate by number
+
+        for label in labels:
+            success, raw_output = self._run_gh([
+                "issue", "list",
+                "--label", label,
+                "--json", "number,title,body,state,labels,createdAt",
+                "--state", "open",
+                "--limit", "100"
+            ])
+
+            if not success:
+                print(f"[github] WARNING: Could not fetch issues with label '{label}': {raw_output}",
+                      file=sys.stderr)
+                continue
+
+            try:
+                data = json.loads(raw_output)
+                for issue_data in data:
+                    number = issue_data['number']
+                    labels_list = [l.get('name', '') if isinstance(l, dict) else str(l)
+                                   for l in issue_data.get('labels', [])]
+
+                    # Merge: keep the most complete version of each issue
+                    if number not in all_issues:
+                        all_issues[number] = Issue(
+                            number=number,
+                            title=issue_data['title'],
+                            body=issue_data.get('body', ''),
+                            labels=labels_list,
+                            comments=[],
+                            created_at=issue_data.get('createdAt')
+                        )
+                    else:
+                        # Merge labels (union of all label sets)
+                        existing = all_issues[number]
+                        for lbl in labels_list:
+                            if lbl not in existing.labels:
+                                existing.labels.append(lbl)
+            except json.JSONDecodeError as e:
+                print(f"[github] WARNING: Error parsing issues for label '{label}': {e}",
+                      file=sys.stderr)
+
+        # Sort by recency (newest first) using createdAt
+        result = sorted(
+            all_issues.values(),
+            key=lambda x: x.created_at or "",
+            reverse=True
+        )
+
+        print(f"[github] Found {len(result)} open issues across labels {labels}")
+        return result
+
     def find_issue_by_label(self, label: str) -> Optional[Issue]:
         """Find a single specific issue by label (returns the first match)."""
         issues = self.fetch_issues_by_label(label)
@@ -291,7 +360,7 @@ class GithubClient:
             success1, _ = self._run_gh([
                 "issue", "edit", str(issue_num),
                 "--repo", self.repo,
-                "--remove-label", "ready-for-agent"  # Adjust based on your config
+                "--remove-label", "needs-triage"  # Adjust based on your config
             ])
             
             success2, _ = self._run_gh([
@@ -313,7 +382,7 @@ class GithubClient:
             success2, _ = self._run_gh([
                 "issue", "edit", str(issue_num),
                 "--repo", self.repo,
-                "--remove-label", "ready-for-agent"
+                "--remove-label", "needs-triage"
             ])
             
             return success1 and success2

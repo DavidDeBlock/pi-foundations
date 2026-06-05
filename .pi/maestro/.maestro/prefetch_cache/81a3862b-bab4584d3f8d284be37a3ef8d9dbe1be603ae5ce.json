@@ -1,0 +1,32 @@
+{
+  "git_sha": "bab4584d3f8d284be37a3ef8d9dbe1be603ae5ce",
+  "test_command": "",
+  "build_command": "",
+  "lint_command": "",
+  "package_manager": "",
+  "dependencies": {},
+  "scripts": {},
+  "test_files": [
+    "tests/test_build_pass_rate.py",
+    "tests/test_flow_evidence.py",
+    "tests/test_integration_working_memory.py",
+    "tests/test_session_browser.py",
+    "tests/test_prompt_loader.py",
+    "tests/test_pipeline_context.py",
+    "tests/test_verdict_regression.py",
+    "tests/test_flow_engine_tools.py",
+    "tests/test_integration_scout.py",
+    "tests/test_pipeline_monitor_panel.py",
+    "tests/test_flow_engine_integration.py",
+    "tests/test_integration_onboarding.py",
+    "tests/test_evidence.py",
+    "tests/test_repo_probe.py",
+    "tests/test_wave1_dod_check.py",
+    "tests/test_integration_data_layer.py",
+    "tests/test_retrospective_phase.py",
+    "tests/test_run_single_flow.py",
+    "tests/test_integration_retrospective.py",
+    "tests/test_scout_findings.py"
+  ],
+  "convention_hints": []
+}

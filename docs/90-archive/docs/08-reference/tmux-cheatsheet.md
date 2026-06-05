@@ -27,6 +27,8 @@ All commands are pressed as a **sequence**: press prefix, release it, then press
 | Rename current window | `Ctrl+b` then `,` |
 | Move window to position | `Ctrl+b` then `M-<number>` (Shift+number) |
 | Rearrange windows interactively | `Ctrl+b` then `q`, then type the number |
+| Kill windows | `Ctrl+b` then `&`|
+
 
 ### Pane Management (split a window into panes)
 

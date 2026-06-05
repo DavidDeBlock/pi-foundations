@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "paths": {
+      "@/*": ["./../server/src/*"],
+      "@shared": ["./../shared/dist/index.d.ts"],
+      "@shared/types/*": ["./../shared/dist/types/*"],
+      "@shared/validations/*": ["./../shared/dist/validations/*"],
+      "@shared/lib/*": ["./../shared/dist/lib/*"]
+    }
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "playwright-report", "test-results"]
+}

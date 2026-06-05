@@ -1,59 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-
-// --- Types (inlined for self-contained usage) ---
-
-export interface SessionSummary {
-  markdown: string;
-  json: Record<string, unknown>;
-}
-
-export interface FileOperation {
-  path: string;
-  action: string;
-  status: 'success' | 'failed';
-  timestamp: string;
-  error_message?: string;
-}
-
-export interface Decision {
-  topic: string;
-  decision: string;
-  confidence: string;
-  source_pattern: string;
-}
-
-export interface ToolError {
-  type: string;
-  message: string;
-  context: string;
-}
-
-export interface RawMessageEntry {
-  id: string;
-  role: string;
-  content: string;
-  timestamp: string;
-}
-
-/** Parsed event from a single JSONL line. */
-export interface ParsedEvent {
-  type: string;
-  id?: string;
-  parentId?: string;
-  timestamp?: number | string;
-  message?: {
-    role: string;
-    content?: unknown;
-    toolCallId?: string;
-    isError?: boolean;
-  };
-  provider?: string;
-  modelId?: string;
-  thinkingLevel?: string;
-}
-
-// --- Internal types ---
+import { SessionSummary, FileOperation, Decision, ToolError, RawMessageEntry } from '../types/session-parser';
 
 interface LogEvent {
   type: string;
@@ -69,7 +16,7 @@ interface LogEvent {
 export function parseSessionLog(filePath: string): SessionSummary {
   const content = fs.readFileSync(filePath, 'utf-8');
   const lines = content.split('\n').filter(line => line.trim() !== '');
-
+  
   let metadata: any = {};
   const fileOperations: FileOperation[] = [];
   const decisions: Decision[] = [];
@@ -101,7 +48,7 @@ export function parseSessionLog(filePath: string): SessionSummary {
 
       if (event.message) {
         const msg = event.message;
-
+        
         // Handle Tool Calls
         if (msg.role === 'assistant' && Array.isArray(msg.content)) {
           for (const part of msg.content) {
@@ -114,7 +61,7 @@ export function parseSessionLog(filePath: string): SessionSummary {
               });
             } else if (part.type === 'text') {
               const text = part.text;
-
+              
               // Detect Decisions
               if (isDecisionPattern(text)) {
                 decisions.push({
@@ -123,7 +70,7 @@ export function parseSessionLog(filePath: string): SessionSummary {
                   confidence: 'high',
                   source_pattern: text.substring(0, 100) + '...'
                 });
-
+                
                 // Add to raw messages for context
                 rawMessages.push({
                   id: event.id!,
@@ -149,7 +96,7 @@ export function parseSessionLog(filePath: string): SessionSummary {
         if (msg.role === 'toolResult') {
           const toolCallId = msg.toolCallId || msg.parentId; // Fallback to parentId if ID not explicit in result
           const isFailure = msg.isError || false;
-
+          
           let op: FileOperation | undefined;
           let toolName = '';
 
@@ -157,7 +104,7 @@ export function parseSessionLog(filePath: string): SessionSummary {
           const callInfo = pendingToolCalls.get(toolCallId);
           if (callInfo) {
             toolName = callInfo.toolName;
-
+            
             // Extract file path from arguments if available
             let toolFilePath = 'unknown';
             const args = callInfo.arguments || {};
@@ -218,7 +165,7 @@ export function parseSessionLog(filePath: string): SessionSummary {
 
   // Generate Markdown
   const markdown = generateMarkdown(metadata, fileOperations, decisions, errors, rawMessages);
-
+  
   // Generate JSON
   const json = {
     session: metadata,
@@ -229,70 +176,6 @@ export function parseSessionLog(filePath: string): SessionSummary {
   };
 
   return { markdown, json };
-}
-
-/**
- * Parse a session log file into structured events without generating summaries.
- *
- * Returns the raw parsed event stream — useful for searching, filtering,
- * or building custom views over session data.
- */
-export function parseSessionLines(filePath: string): ParsedEvent[] {
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const lines = content.split('\n').filter(line => line.trim() !== '');
-
-  const events: ParsedEvent[] = [];
-
-  for (const line of lines) {
-    try {
-      const event: LogEvent = JSON.parse(line);
-      // Normalize into a flat ParsedEvent structure
-      events.push({
-        type: event.type,
-        id: event.id,
-        parentId: event.parentId,
-        timestamp: event.timestamp,
-        message: event.message,
-        provider: event.provider,
-        modelId: event.modelId,
-        thinkingLevel: event.thinkingLevel,
-      });
-    } catch {
-      // Skip malformed lines silently
-    }
-  }
-
-  return events;
-}
-
-/**
- * Extract lightweight session metadata from the first line of a JSONL file.
- *
- * This is a fast path for listing sessions — reads only the first line
- * instead of parsing the entire file.
- */
-export function extractSessionMetadata(filePath: string): {
-  id?: string;
-  timestamp?: string;
-} {
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const lines = content.split('\n').filter(line => line.trim() !== '');
-
-  if (lines.length === 0) return {};
-
-  try {
-    const firstEvent: LogEvent = JSON.parse(lines[0]);
-    if (firstEvent.type === 'session') {
-      return {
-        id: firstEvent.id,
-        timestamp: String(firstEvent.timestamp || ''),
-      };
-    }
-  } catch {
-    // Malformed first line — return empty metadata
-  }
-
-  return {};
 }
 
 // --- Helpers ---
@@ -335,11 +218,11 @@ function isDecisionPattern(text: string): boolean {
 function extractTopic(text: string): string {
   const match = text.match(/## 🔥 Question \d+: (.+)/);
   if (match) return match[1];
-
+  
   // Fallback to first few words of the decision confirmation
   const confirmMatch = text.match(/✅ \*\*(.*?)\*\*/);
   if (confirmMatch) return confirmMatch[1].substring(0, 50);
-
+  
   return 'Unknown Topic';
 }
 
@@ -347,7 +230,7 @@ function extractDecision(text: string): string {
   // Try to find the specific option or decision statement
   const match = text.match(/✅ \*\*(.*?)\*\*/);
   if (match) return match[1];
-
+  
   const optMatch = text.match(/\bOption ([A-Z])\b/);
   if (optMatch) return `Option ${optMatch[1]}`;
 

@@ -1,46 +1,117 @@
 {
   "name": "builder-reviewer",
-  "description": "Builder writes code, reviewer validates quality. Retry loops on rejection.",
-  
-  "default_provider": "llama-cpp-3090",
+  "description": "Builder writes code, reviewer validates quality. Retry loops on rejection. Optional scout phase runs first when scout_enabled is true.",
+
+  "default_provider": "minimax",
+
+  "scout_enabled": true,
+  "scout_timeout_seconds": 240,
+
+  "evidence_policy": {
+    "required_on_success": ["tested", "reviewed"],
+    "on_missing_evidence": "warn_but_proceed"
+  },
 
   "phases": {
-    "builder": { 
-      "skill": "/skill:tdd", 
-      "model": "qwen-35b-a3b-118k-bf16",
-      "provider": "llama-cpp-3090",
+    "scout": {
+      "skill": "/skill:scout",
+      "model": "MiniMax-M3",
+      "provider": "minimax",
+      "timeout_seconds": 240,
+      "retries": 1
+    },
+    "builder": {
+      "skill": "/skill:tdd",
+      "model": "MiniMax-M3",
+      "provider": "minimax",
       "timeout_seconds": 1800,
       "retries": 3
     },
-    "reviewer": { 
-      "skill": "/skill:reviewer", 
-      "model": "qwen-35b-a3b-118k-bf16",
-      "provider": "llama-cpp-3090",
-      "timeout_seconds": 900,
+    "test_runner": {
+      "skill": "/skill:test_runner",
+      "model": "MiniMax-M3",
+      "provider": "minimax",
+      "timeout_seconds": 600,
+      "retries": 1,
+      "on_success_evidence": "tested"
+    },
+    "reviewer": {
+      "skill": "/skill:reviewer",
+      "model": "MiniMax-M3",
+      "provider": "minimax",
+      "timeout_seconds": 1200,
       "retries": 2
-    }    ,
-    "diagnostic": { 
-      "skill": "/skill:debugger", 
-      "model": "qwen-35b-a3b-118k-bf16",
-      "provider": "llama-cpp-3090",
+    },
+    "close": {
+      "skill": "/skill:close",
+      "is_local": true,
+      "command": "python3 -m maestro.commands.evidence check {issue_number}",
+      "timeout_seconds": 30
+    },
+    "retrospective": {
+      "skill": "/skill:retrospective",
+      "timeout_seconds": 300,
+      "retries": 1,
+      "is_optional": true,
+      "description": "Self-improvement phase — runs after close to extract learnings into .maestro/learnings.md. Non-blocking: failures log but do not break the flow."
+    },
+    "diagnostic": {
+      "skill": "/skill:diagnose",
+      "model": "MiniMax-M3",
+      "provider": "minimax",
       "timeout_seconds": 600,
       "retries": 1
     }
   },
   "transitions": [
     {
+      "from": "scout",
+      "on_success": "builder",
+      "on_reject": "builder",
+      "on_error": "builder",
+      "description": "Scout is one-shot — failures are non-fatal; builder proceeds without findings."
+    },
+    {
       "from": "builder",
+      "on_success": "test_runner",
+      "on_reject": "builder",
+      "on_error": "diagnostic",
+      "description": "Builder success advances to test_runner (writes tested.json via mark-tested)"
+    },
+    {
+      "from": "test_runner",
       "on_success": "reviewer",
       "on_reject": "builder",
       "on_error": "diagnostic",
-      "description": "If builder self-rejects, retry with same phase"
+      "description": "Test runner success advances to reviewer; failures route back to builder."
     },
     {
       "from": "reviewer",
-      "on_success": "finish",
+      "on_success": "close",
       "on_reject": "builder",
+      "on_error": "diagnostic",
+      "description": "Reviewer approval advances to close phase (evidence gate)."
+    },
+    {
+      "from": "close",
+      "on_success": "retrospective",
+      "on_reject": "diagnostic",
+      "on_error": "diagnostic",
+      "description": "Close phase mechanically checks evidence. Rejection (policy=block + missing evidence) routes to diagnostic. Success always proceeds to retrospective (which is non-blocking)."
+    },
+    {
+      "from": "retrospective",
+      "on_success": "finish",
+      "on_reject": "finish",
       "on_error": "finish",
-      "description": "If reviewer rejects code, send critique back to builder for fixes"
+      "description": "Retrospective is non-blocking: ALL outcomes route to finish. A failed retrospective is logged but never fails the flow."
+    },
+    {
+      "from": "diagnostic",
+      "on_success": "builder",
+      "on_reject": "finish",
+      "on_error": "finish",
+      "description": "If diagnostics fails, end flow with failure"
     }
   ]
 }

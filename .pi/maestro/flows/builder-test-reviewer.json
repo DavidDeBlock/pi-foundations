@@ -1,6 +1,6 @@
 {
   "name": "builder-test-reviewer",
-  "description": "Three-phase loop: Builder writes code, TestRunner validates tests pass, Reviewer checks quality.",
+  "description": "Two-phase loop: Builder writes code (TDD), Reviewer checks quality.",
   
   "default_provider": "llama-cpp-3090",
 
@@ -12,21 +12,19 @@
       "timeout_seconds": 1800,
       "retries": 3
     },
-    "test_runner": { 
-      "skill": null, 
-      "model": null,
-      "provider": null,
-      "timeout_seconds": 60,
-      "is_local": true,
-      "command": "pnpm test --run",
-      "retries": 1
-    },
     "reviewer": { 
       "skill": "/skill:reviewer", 
       "model": "qwen-35b-a3b-118k-bf16",
       "provider": "llama-cpp-3090",
       "timeout_seconds": 900,
       "retries": 2
+    },
+    "retrospective": {
+      "skill": "/skill:retrospective",
+      "timeout_seconds": 300,
+      "retries": 0,
+      "is_optional": true,
+      "description": "Self-improvement phase — runs after reviewer to extract learnings. Non-blocking."
     },
     "diagnostic": { 
       "skill": "/skill:debugger", 
@@ -40,23 +38,24 @@
   "transitions": [
     { 
       "from": "builder", 
-      "on_success": "test_runner", 
+      "on_success": "reviewer",
       "on_reject": "builder",
       "on_error": "diagnostic" 
     },
-    { 
-      "from": "test_runner", 
-      "on_success": "reviewer", 
-      "on_reject": "builder",
-      "on_error": "diagnostic",
-      "description": "If tests fail, send feedback to builder for fixes"
-    },
+
     { 
       "from": "reviewer", 
-      "on_success": "finish", 
+      "on_success": "retrospective", 
       "on_reject": "builder",
       "on_error": "diagnostic",
-      "description": "If reviewer rejects code, send critique back to builder"
+      "description": "If reviewer rejects code, send critique back to builder. Success advances to retrospective (non-blocking)."
+    },
+    {
+      "from": "retrospective",
+      "on_success": "finish",
+      "on_reject": "finish",
+      "on_error": "finish",
+      "description": "Retrospective is non-blocking: ALL outcomes route to finish."
     }
   ]
 }

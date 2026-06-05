@@ -1,0 +1,67 @@
+{
+  "name": "prd-to-issues-reviewer",
+  "description": "Builder writes code, reviewer validates quality. Retry loops on rejection.",
+  
+  "default_provider": "llama-cpp-3090",
+
+  "phases": {
+    "issue-readiness": { 
+      "skill": "/skill:issue-readiness", 
+      "model": "qwen-27b-118k-q8",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 1800,
+      "retries": 3
+    },
+    "archivist": { 
+      "skill": "/skill:archivist", 
+      "model": "qwen-27b-118k-q8",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 900,
+      "retries": 2
+    } ,
+    "retrospective": {
+      "skill": "/skill:retrospective",
+      "timeout_seconds": 300,
+      "retries": 0,
+      "is_optional": true,
+      "description": "Self-improvement phase — runs after archivist. Non-blocking."
+    },
+    "diagnostic": { 
+      "skill": "/skill:diagnose", 
+      "model": "qwen-27b-118k-q8",
+      "provider": "llama-cpp-3090",
+      "timeout_seconds": 600,
+      "retries": 1
+    }
+  },
+  "transitions": [
+    {
+      "from": "issue-readiness",
+      "on_success": "finish",
+      "on_reject": "archivist",
+      "on_error": "diagnostic",
+      "description": "If builder self-rejects, retry with same phase"
+    },
+    {
+      "from": "archivist",
+      "on_success": "retrospective",
+      "on_reject": "issue-readiness",
+      "on_error": "diagnostic",
+      "description": "If archivist rejects code, send critique back to issue-readiness for fixes. Success advances to retrospective (non-blocking)."
+    },
+    {
+      "from": "retrospective",
+      "on_success": "finish",
+      "on_reject": "finish",
+      "on_error": "finish",
+      "description": "Retrospective is non-blocking: ALL outcomes route to finish."
+    },
+    {
+    "from": "diagnostic",
+    "on_success": "issue-readiness",
+    "on_reject": "finish",
+    "on_error": "finish",
+    "description": "If diagnostics fails, end flow with failure"
+    }
+  ]
+}

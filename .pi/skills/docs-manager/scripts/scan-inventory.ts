@@ -1,19 +1,3 @@
-#!/usr/bin/env tsx
-/**
- * scripts/scan-inventory.ts — Phase 1: Scan docs/ and produce DOCS_INVENTORY.md.
- *
- * Recursively scans a docs directory, collects file metadata (size, lines, preview),
- * preserves existing YAML classification blocks from previous runs,
- * and writes a structured inventory file.
- *
- * Usage:
- *   npx tsx scripts/scan-inventory.ts [docs-root]           # Scan docs/ (default)
- *   npx tsx scripts/scan-inventory.ts /path/to/docs        # Scan specific directory
- *
- * @category maintenance
- * @usage npx tsx scripts/scan-inventory.ts [docs-root]
- */
-
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { resolve, join, basename, relative } from 'path'
 
@@ -345,54 +329,34 @@ function formatInventoryMarkdown(result: InventoryResult): string {
   return output
 }
 
-// ── Output Generator ───────────────────────────────────────────
+// ── CLI Entry Point ────────────────────────────────────────────
 
-/**
- * Generate output for scan-inventory.
- * Writes DOCS_INVENTORY.md and returns console summary as string.
- */
-export function generateOutput(
-  targetPath: string,
-  json = false,
-  help = false
-): string {
-  if (help) {
-    return `Usage: npx tsx scripts/scan-inventory.ts [docs-root]
-
-Phase 1: Scan docs/ and produce DOCS_INVENTORY.md.
-
-Recursively scans a docs directory, collects file metadata (size, lines, preview),
-preserves existing YAML classification blocks from previous runs,
-and writes a structured inventory file.
-
-Arguments:
-  docs-root     Path to docs directory (default: ./docs)
-
-Options:
-  --json        Output as JSON (not supported for this script — always writes file)
-  --help        Show this help message
-
-Output:
-  Writes DOCS_INVENTORY.md to <docs-root>/_system/
-  Prints summary to stdout.`
-  }
-
-  const docsDir = resolve(targetPath || 'docs')
+export async function main(args: string[] = process.argv.slice(2)): Promise<void> {
+  const docsDir = args[0] ? resolve(args[0]) : resolve('docs')
   const inventoryPath = join(docsDir, '_system', 'DOCS_INVENTORY.md')
+
+  console.log(`📋 Scanning inventory from: ${docsDir}`)
 
   // Load existing classifications to preserve across re-scans
   const previousClassifications = loadExistingInventory(inventoryPath)
+  if (previousClassifications.size > 0) {
+    console.log(`♻️  Loaded ${previousClassifications.size} existing classification(s)`)
+  }
 
   // Scan excluding _system/ (the system dir holds state files, not content to classify)
   const entries = scanFiles(docsDir, ['_system'])
+  console.log(`📄 Found ${entries.length} .md files`)
 
   // Generate inventory with stable IDs and YAML blocks
   const result = generateInventory(entries, 50, previousClassifications)
+  console.log(`🏷️ Assigned IDs: F${Object.keys(result.blocks).length > 0 ? Object.keys(result.blocks)[0].slice(1) : '—'} to F${Object.keys(result.blocks).length > 0 ? Object.keys(result.blocks)[Object.keys(result.blocks).length - 1].slice(1) : '—'}`)
 
   // Write output
-  writeFileSync(inventoryPath, formatInventoryMarkdown(result), 'utf-8')
+  const markdown = formatInventoryMarkdown(result)
+  writeFileSync(inventoryPath, markdown, 'utf-8')
+  console.log(`✅ Wrote inventory to: ${inventoryPath}`)
 
-  // Build summary
+  // Print preservation summary
   let preserved = 0, fresh = 0
   for (const block of Object.values(result.blocks)) {
     if (block.class !== null || block.status !== 'scanned') {
@@ -401,44 +365,14 @@ Output:
       fresh++
     }
   }
+  console.log(`📊 Preserved: ${preserved} classification(s), Fresh: ${fresh}`)
+
+  // Print summary
   const folders = new Set(Object.values(result.blocks).map(b => b.folder))
-
-  // Return summary as string
-  return [
-    `📋 Scanning inventory from: ${docsDir}`,
-    previousClassifications.size > 0 ? `♻️  Loaded ${previousClassifications.size} existing classification(s)` : '',
-    `📄 Found ${entries.length} .md files`,
-    `🏷️ Assigned IDs: F${Object.keys(result.blocks).length > 0 ? Object.keys(result.blocks)[0].slice(1) : '—'} to F${Object.keys(result.blocks).length > 0 ? Object.keys(result.blocks)[Object.keys(result.blocks).length - 1].slice(1) : '—'}`,
-    `✅ Wrote inventory to: ${inventoryPath}`,
-    `📊 Preserved: ${preserved} classification(s), Fresh: ${fresh}`,
-    `📁 Folders found: ${folders.size} (${[...folders].join(', ')})`,
-  ].filter(Boolean).join('\n') + '\n'
+  console.log(`📁 Folders found: ${folders.size} (${[...folders].join(', ')})`)
 }
 
-// ── CLI Entry Point ────────────────────────────────────────────
-import { runScriptIfDirect, parseArgs, writeOutput } from '../../../../scripts/lib/script-runner.js'
-
-/** Main entry point for CLI execution (used by tests and direct execution) */
-export async function main(args: string[] = process.argv.slice(2)): Promise<void> {
-  const parsed = parseArgs(args, { defaultPath: 'docs' })
-
-  if (parsed.help) {
-    writeOutput(generateOutput(parsed.targetPath, false, true))
-    return
-  }
-
-  try {
-    const output = generateOutput(parsed.targetPath, parsed.json)
-    writeOutput(output)
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error(`Error: ${message}`)
-    process.exit(1)
-  }
+// Run if executed directly via tsx
+if (import.meta.url.includes('scan-inventory') && process.argv[1]?.endsWith('scan-inventory.ts')) {
+  main().catch(console.error)
 }
-
-runScriptIfDirect(
-  generateOutput,
-  'scan-inventory.ts',
-  { defaultPath: 'docs' }
-)

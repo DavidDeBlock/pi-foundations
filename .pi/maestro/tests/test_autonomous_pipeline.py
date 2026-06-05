@@ -52,7 +52,7 @@ def test_autonomous_setup():
 
 
 def test_autonomous_run_empty_backlog():
-    """Test autonomous pipeline run with empty ready-for-agent backlog."""
+    """Test autonomous pipeline run with empty needs-triage backlog."""
     from pipelines.autonomous import setup, run
     
     mock_term = MagicMock()
@@ -76,9 +76,9 @@ def test_autonomous_run_empty_backlog():
         run(ctx)
         
         # Verify GitHub calls were made for both labels
-        assert mock_gh.fetch_issues_by_label.call_count == 2, "Should fetch ready-for-agent and parent-prd"
+        assert mock_gh.fetch_issues_by_label.call_count == 2, "Should fetch needs-triage and parent-prd"
         fetch_calls = [c[0][0] for c in mock_gh.fetch_issues_by_label.call_args_list]
-        assert 'ready-for-agent' in fetch_calls, "Should fetch ready-for-agent issues"
+        assert 'needs-triage' in fetch_calls, "Should fetch needs-triage issues"
         assert 'parent-prd' in fetch_calls, "Should fetch parent-prd issues"
         
         # Dashboard should have been initialized and scorecard printed
@@ -90,7 +90,7 @@ def test_autonomous_run_empty_backlog():
 
 
 def test_autonomous_run_with_backlog():
-    """Test autonomous pipeline run with issues in ready-for-agent backlog."""
+    """Test autonomous pipeline run with issues in needs-triage backlog."""
     from pipelines.autonomous import setup, run
     
     # Create mock issue objects
@@ -105,9 +105,9 @@ def test_autonomous_run_with_backlog():
     mock_term = MagicMock()
     mock_gh = MagicMock()
     
-    # Mock: 2 issues in ready-for-agent, no parent-prd issues
+    # Mock: 2 issues in needs-triage, no parent-prd issues
     mock_gh.fetch_issues_by_label.side_effect = [
-        [mock_issue_1, mock_issue_2],  # ready-for-agent
+        [mock_issue_1, mock_issue_2],  # needs-triage
         []                              # parent-prd
     ]
     
@@ -163,9 +163,9 @@ def test_autonomous_run_prd_audit():
     mock_term = MagicMock()
     mock_gh = MagicMock()
     
-    # Mock: no ready-for-agent issues, but one parent-prd issue
+    # Mock: no needs-triage issues, but one parent-prd issue
     mock_gh.fetch_issues_by_label.side_effect = [
-        [],                              # ready-for-agent (empty)
+        [],                              # needs-triage (empty)
         [mock_prd]                       # parent-prd
     ]
     
@@ -215,9 +215,9 @@ def test_autonomous_run_mixed_success_failure():
     mock_term = MagicMock()
     mock_gh = MagicMock()
     
-    # Mock: one ready-for-agent issue that fails, no parent-prd issues
+    # Mock: one needs-triage issue that fails, no parent-prd issues
     mock_gh.fetch_issues_by_label.side_effect = [
-        [mock_issue],  # ready-for-agent (1 issue)
+        [mock_issue],  # needs-triage (1 issue)
         []             # parent-prd (empty)
     ]
     

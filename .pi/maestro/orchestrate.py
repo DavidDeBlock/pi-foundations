@@ -8,7 +8,7 @@ Usage:
     # Single issue mode
     python orchestrate.py --flow builder-reviewer --issue 42
     
-    # Autonomous loop mode (grabs ready-for-agent, runs them, then checks PRD)
+    # Autonomous loop mode (grabs needs-triage, runs them, then checks PRD)
     python orchestrate.py --flow builder-reviewer
 """
 
@@ -26,8 +26,20 @@ def main():
     parser = argparse.ArgumentParser(description="Maestro — Autonomous AI Workflow Orchestrator")
     parser.add_argument("--flow", required=True, help="Name of the flow to run (e.g., builder-reviewer)")
     parser.add_argument("--issue", type=int, help="Process specific issue number (Single Issue Mode)")
+    parser.add_argument(
+        "--issues",
+        type=str,
+        default=None,
+        help="Comma-separated list of issue numbers (e.g., '42,43,45')",
+    )
+    parser.add_argument(
+        "--auto",
+        action="store_true",
+        default=False,
+        help="Auto mode — fetch all open issues with label 'needs-triage'",
+    )
     args = parser.parse_args()
-    
+
     app = MaestroApp(args)
     app.run()
 

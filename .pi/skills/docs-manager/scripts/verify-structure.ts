@@ -1,19 +1,3 @@
-#!/usr/bin/env tsx
-/**
- * scripts/verify-structure.ts — Verify docs/ folder structure against canonical rules.
- *
- * Checks that all folders exist with correct numbering (00-current through 90-archive),
- * identifies orphaned files at root level, detects non-canonical folders,
- * and generates a DOCS_INDEX.md in _system/. Outputs pass/fail status.
- *
- * Usage:
- *   npx tsx scripts/verify-structure.ts [docs-root]           # Verify docs/ (default)
- *   npx tsx scripts/verify-structure.ts /path/to/docs        # Specific directory
- *
- * @category validation
- * @usage npx tsx scripts/verify-structure.ts [docs-root]
- */
-
 import { readdirSync, statSync, writeFileSync } from 'fs'
 import { resolve, join } from 'path'
 
@@ -305,39 +289,11 @@ export function runValidation(docsRoot: string): ValidationResult {
   }
 }
 
-// ── Output Generator ───────────────────────────────────────────
+// ── CLI Entry Point ───────────────────────────────────────────
 
-/**
- * Generate output for verify-structure.
- * Writes DOCS_INDEX.md and returns console summary as string.
- */
-export function generateOutput(
-  targetPath: string,
-  json = false,
-  help = false
-): string {
-  if (help) {
-    return `Usage: npx tsx scripts/verify-structure.ts [docs-root]
-
-Verify docs/ folder structure against canonical rules.
-
-Checks that all folders exist with correct numbering (00-current through 90-archive),
-identifies orphaned files at root level, detects non-canonical folders,
-and generates a DOCS_INDEX.md in _system/. Outputs pass/fail status.
-
-Arguments:
-  docs-root     Path to docs directory (default: ./docs)
-
-Options:
-  --json        Output as JSON (not supported for this script — always writes file)
-  --help        Show this help message
-
-Output:
-  Writes DOCS_INDEX.md to <docs-root>/_system/
-  Prints validation summary to stdout.`
-  }
-
-  const docsDir = resolve(targetPath || 'docs')
+export async function main(args: string[] = process.argv.slice(2)): Promise<void> {
+  const docsDir = args[0] ? resolve(args[0]) : resolve('docs')
+  console.log(`🔍 Verifying structure at: ${docsDir}\n`)
 
   const result = runValidation(docsDir)
 
@@ -348,91 +304,61 @@ Output:
   const emptyCount = result.emptyFolders.length
   const violationCount = result.violations.length
 
-  // ── Write DOCS_INDEX.md ──
-  const indexPath = join(docsDir, '_system', 'DOCS_INDEX.md')
-  writeFileSync(indexPath, result.indexContent, 'utf-8')
-
-  // Build summary lines
-  const lines: string[] = [
-    `🔍 Verifying structure at: ${docsDir}`,
-    '',
-    `📁 Folders scanned: ${totalFolders}`,
-    `📄 Root-level .md files: ${totalRootFiles}`,
-    `⚠️  Orphan folders (non-canonical): ${orphanFolderCount}`,
-    `⚠️  Empty folders: ${emptyCount}`,
-    `❌ Violations: ${violationCount}`,
-    '',
-    `📝 Generated: ${indexPath}`,
-  ]
+  console.log(`📁 Folders scanned: ${totalFolders}`)
+  console.log(`📄 Root-level .md files: ${totalRootFiles}`)
+  console.log(`⚠️  Orphan folders (non-canonical): ${orphanFolderCount}`)
+  console.log(`⚠️  Empty folders: ${emptyCount}`)
+  console.log(`❌ Violations: ${violationCount}\n`)
 
   // ── Violations detail ──
   if (result.violations.length > 0) {
-    lines.push('── Violations ─────────────────────────────────────')
+    console.log('── Violations ─────────────────────────────────────')
     for (const v of result.violations) {
-      lines.push(`  ❌ [${v.rule}] ${v.folder}/: ${v.message}`)
+      console.log(`  ❌ [${v.rule}] ${v.folder}/: ${v.message}`)
     }
-    lines.push('')
+    console.log()
   }
 
   // ── Orphaned files detail ──
   if (result.orphaned.orphanRootFiles.length > 0) {
-    lines.push('── Orphan Root Files ─────────────────────────────')
+    console.log('── Orphan Root Files ─────────────────────────────')
     for (const f of result.orphaned.orphanRootFiles.sort()) {
-      lines.push(`  ⚠️  ${f}`)
+      console.log(`  ⚠️  ${f}`)
     }
-    lines.push('')
+    console.log()
   }
 
   if (result.orphaned.orphanFolders.length > 0) {
-    lines.push('── Orphan Folders ────────────────────────────────')
+    console.log('── Orphan Folders ────────────────────────────────')
     for (const f of result.orphaned.orphanFolders.sort((a, b) => a.name.localeCompare(b.name))) {
-      lines.push(`  ⚠️  ${f.name}/ (${f.fileCount} files)`)
+      console.log(`  ⚠️  ${f.name}/ (${f.fileCount} files)`)
     }
-    lines.push('')
+    console.log()
   }
 
+  // ── Empty folders detail ──
   if (result.emptyFolders.length > 0) {
-    lines.push('── Empty Folders ─────────────────────────────────')
+    console.log('── Empty Folders ─────────────────────────────────')
     for (const f of result.emptyFolders.sort((a, b) => a.name.localeCompare(b.name))) {
-      lines.push(`  ⚠️  ${f.name}/`)
+      console.log(`  ⚠️  ${f.name}/`)
     }
-    lines.push('')
+    console.log()
   }
+
+  // ── Write DOCS_INDEX.md ──
+  const indexPath = join(docsDir, '_system', 'DOCS_INDEX.md')
+  writeFileSync(indexPath, result.indexContent, 'utf-8')
+  console.log(`📝 Generated: ${indexPath}`)
 
   // ── Final status ──
   if (result.passed) {
-    lines.push('\n✅ Structure validation PASSED — no violations found.')
+    console.log('\n✅ Structure validation PASSED — no violations found.')
   } else {
-    lines.push(`\n❌ Structure validation FAILED — ${violationCount} violation(s) found.`)
-  }
-
-  return lines.join('\n') + '\n'
-}
-
-// ── CLI Entry Point ───────────────────────────────────────────
-import { runScriptIfDirect, parseArgs, writeOutput } from '../../../../scripts/lib/script-runner.js'
-
-/** Main entry point for CLI execution (used by tests and direct execution) */
-export async function main(args: string[] = process.argv.slice(2)): Promise<void> {
-  const parsed = parseArgs(args, { defaultPath: 'docs' })
-
-  if (parsed.help) {
-    writeOutput(generateOutput(parsed.targetPath, false, true))
-    return
-  }
-
-  try {
-    const output = generateOutput(parsed.targetPath, parsed.json)
-    writeOutput(output)
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error(`Error: ${message}`)
-    process.exit(1)
+    console.log(`\n❌ Structure validation FAILED — ${violationCount} violation(s) found.`)
   }
 }
 
-runScriptIfDirect(
-  generateOutput,
-  'verify-structure.ts',
-  { defaultPath: 'docs' }
-)
+// Run if executed directly via tsx
+if (import.meta.url.includes('verify-structure') && process.argv[1]?.endsWith('verify-structure.ts')) {
+  main().catch(console.error)
+}

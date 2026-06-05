@@ -1,0 +1,31 @@
+{
+  "issue": 278,
+  "created_at": "2026-06-04T18:20:48.433447+00:00",
+  "updated_at": "2026-06-04T18:28:26.450978+00:00",
+  "repo_path": "/home/david/projects/pi-pos-v1/.pi/maestro",
+  "git_sha": "e280b9e8ac68c9e59321e2243c7d0675327da4d1",
+  "scout": {
+    "status": "error",
+    "details": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-pos-v1/.pi/maestro/sessions/278/builder-reviewer-scout-2026-06-04T18:25:53.jsonl/2026-06-04T18-25-54-207Z_019e93e2-7c1f-7975-a00c-4caeeb4b7a79.jsonl). The agent may not have emitted a verdict block.",
+    "session_log": "/home/david/projects/pi-pos-v1/.pi/maestro/sessions/278/builder-reviewer-scout-2026-06-04T18:25:53.jsonl/2026-06-04T18-25-54-207Z_019e93e2-7c1f-7975-a00c-4caeeb4b7a79.jsonl"
+  },
+  "builder": {
+    "status": "success",
+    "attempt": 1,
+    "details": "builder approved",
+    "session_log": "/home/david/projects/pi-pos-v1/.pi/maestro/sessions/278/builder-reviewer-builder-2026-06-04T18:26:36.jsonl/2026-06-04T18-26-37-019Z_019e93e3-235b-7f05-a9ce-b4ee43295290.jsonl"
+  },
+  "reviewer": {
+    "status": "success",
+    "attempt": 2,
+    "details": "reviewer approved",
+    "session_log": "/home/david/projects/pi-pos-v1/.pi/maestro/sessions/278/builder-reviewer-reviewer-2026-06-04T18:27:45.jsonl/2026-06-04T18-27-46-538Z_019e93e4-32ea-7f1b-b1d4-76e9a486c383.jsonl"
+  },
+  "test_runner": {},
+  "diagnostic": {},
+  "retrospective": {},
+  "files_touched": [],
+  "test_results": [],
+  "errors": [],
+  "notes": []
+}

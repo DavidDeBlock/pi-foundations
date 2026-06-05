@@ -35,28 +35,28 @@ def test_integration_fetch_store_display_issues():
     
     client = GithubClient()
     
-    # Mock GitHub response: 3 open issues with "ready-for-agent" label
+    # Mock GitHub response: 3 open issues with "needs-triage" label
     mock_output = json.dumps([
         {
             "number": 106,
             "title": "[PRD] Autonomous Pipeline Engine",
             "body": "Build a pipeline layer for the Maestro orchestrator...",
             "state": "open",
-            "labels": [{"name": "ready-for-agent"}, {"name": "prd"}]
+            "labels": [{"name": "needs-triage"}, {"name": "prd"}]
         },
         {
             "number": 107,
             "title": "[PRD] Pipeline Engine Foundation & Context API",
             "body": "Build the core pipeline engine with context API...",
             "state": "open",
-            "labels": [{"name": "ready-for-agent"}, {"name": "prd"}]
+            "labels": [{"name": "needs-triage"}, {"name": "prd"}]
         },
         {
             "number": 108,
             "title": "[PRD] Pipeline Data Interaction Layer",
             "body": "Implement ctx.github methods and hybrid artifact storage...",
             "state": "open",
-            "labels": [{"name": "ready-for-agent"}, {"name": "pipeline"}]
+            "labels": [{"name": "needs-triage"}, {"name": "pipeline"}]
         }
     ])
     
@@ -68,7 +68,7 @@ def test_integration_fetch_store_display_issues():
     # ── Step 1: Fetch issues by label ────────────────────────────────
     print("\n--- Step 1: Fetching issues by label ---")
     with patch.object(ctx.github, '_run_gh', mock_run_gh):
-        issues = ctx.github.fetch_issues_by_label("ready-for-agent")
+        issues = ctx.github.fetch_issues_by_label("needs-triage")
     
     assert len(issues) == 3, f"Expected 3 issues, got {len(issues)}"
     assert issues[0].number == 106
@@ -167,7 +167,7 @@ def test_integration_fetch_single_issue():
         "number": 108,
         "title": "[PRD] Pipeline Data Interaction Layer",
         "body": "Full body of issue #108 with all details...",
-        "labels": [{"name": "ready-for-agent"}, {"name": "pipeline"}],
+        "labels": [{"name": "needs-triage"}, {"name": "pipeline"}],
         "comments": [],
         "createdAt": "2024-05-20T00:00:00Z"
     })

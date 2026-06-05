@@ -10,7 +10,7 @@ Provides a clean, object-oriented interface for:
 
 Usage in pipeline scripts:
     def setup(ctx):
-        issues = ctx.github.fetch_issues_by_label("ready-for-agent")
+        issues = ctx.github.fetch_issues_by_label("needs-triage")
         for issue in issues:
             ctx.run_flow("builder-reviewer", issue.number)
 """
@@ -90,7 +90,8 @@ class PipelineContext:
         self,
         flow_name: str,
         issue_num: int,
-        max_retries: Optional[int] = None
+        max_retries: Optional[int] = None,
+        phase_callback=None,
     ) -> bool:
         """Execute a flow on a specific GitHub issue with retry logic.
         
@@ -104,6 +105,9 @@ class PipelineContext:
             issue_num: GitHub issue number to process.
             max_retries: Maximum retry attempts for transient failures.
                         Defaults to 3 if not specified.
+            phase_callback: Optional callable(phase_name, status, attempt_count,
+                          details) fired after each phase completes. Used by
+                          pipelines for deterministic label management.
         
         Returns:
             True if flow completed successfully, False after all retries exhausted.
@@ -132,7 +136,8 @@ class PipelineContext:
                     gh_client=self.github,
                     flow_name=flow_name,
                     issue_num=issue_num,
-                    initial_context=initial_context or None
+                    initial_context=initial_context or None,
+                    phase_callback=phase_callback,
                 )
                 
                 if success:

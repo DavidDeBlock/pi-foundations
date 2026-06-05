@@ -1,0 +1,10 @@
+{
+  "browser": {
+    "name": "chromium",
+    "path": "/home/david/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome"
+  },
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "issue": 288,
+  "created_at": "2026-06-05T20:02:16.193914+00:00",
+  "updated_at": "2026-06-05T20:06:46.249627+00:00",
+  "repo_path": "/home/david/projects/pi-pos-v1/.pi/maestro",
+  "git_sha": "bab4584d3f8d284be37a3ef8d9dbe1be603ae5ce",
+  "scout": {
+    "status": "error",
+    "details": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-pos-v1/.pi/maestro/sessions/288/builder-reviewer-scout-2026-06-05T20:02:16.jsonl/2026-06-05T20-02-16-882Z_019e9961-14b2-7f4e-967b-067ab5f9281d.jsonl). The agent may not have emitted a verdict block.",
+    "session_log": "/home/david/projects/pi-pos-v1/.pi/maestro/sessions/288/builder-reviewer-scout-2026-06-05T20:02:16.jsonl/2026-06-05T20-02-16-882Z_019e9961-14b2-7f4e-967b-067ab5f9281d.jsonl"
+  },
+  "builder": {},
+  "reviewer": {},
+  "test_runner": {},
+  "diagnostic": {},
+  "retrospective": {},
+  "files_touched": [],
+  "test_results": [],
+  "errors": [],
+  "notes": []
+}

@@ -1,0 +1,59 @@
+## PHASE: issue-readiness
+## ISSUE: {issue_number}
+
+### Issue Details
+{issue_body}
+
+**YOUR TASK:** Audit the GitHub issue for self-containment and builder readiness. Be strict — if a builder with zero context can't answer "What?" or "Where?", flag it.
+
+### Self-Containment Checklist
+
+#### 1. Goal Summary (The "Why")
+* **Check**: Is there a clear problem statement? Does it link to relevant docs (`CONTEXT.md`, `WORLD.md`) or define specific domain terms?
+* **Fail**: Vague goals ("Fix the login"), undefined jargon, no links.
+
+#### 2. Acceptance Criteria (The "What")
+* **Check**: Are ACs specific and testable? Look for checkboxes or clear behavior descriptions.
+* **Fail**: Missing ACs, vague language ("Make it faster"), subjective terms ("User-friendly").
+
+#### 3. Scope Boundaries (The "What Not")
+* **Check**: Does the issue explicitly state what is *out of scope*?
+* **Fail**: No explicit exclusion list or boundary definition.
+
+#### 4. Implementation Hints (The "Where")
+* **Check**: Are specific file paths, DB tables, or API endpoints mentioned?
+* **Fail**: Generic instructions ("Fix the backend"), forcing guesswork.
+
+#### 5. Test Expectations (The "Proof")
+* **Check**: Does it mention required test scenarios?
+* **Fail**: No mention of testing or verification steps.
+
+### Output Format
+
+Produce a structured report:
+
+```markdown
+### Readiness Report
+| Dimension | Status | Detail |
+|-----------|--------|--------|
+| Goal Summary | ✅ Pass / ❌ Fail | [Reason] |
+| Acceptance Criteria | ... | ... |
+| Scope Boundaries | ... | ... |
+| Implementation Hints | ... | ... |
+| Test Expectations | ... | ... |
+
+**Verdict**: READY or BLOCKED (with critical gaps)
+```
+
+### Result Format
+Output your verdict as a JSON code block with language tag `verdict`:
+```verdict
+{"status":"approved","verdict":"ready","details":"","issues":[],"labels":{"add":["ready-for-agent"],"remove":["needs-info","status:blocked"]},"findings":[]}
+```
+
+If BLOCKED (critical gaps found), map each gap to an issue string:
+```verdict
+{"status":"rejected","verdict":"blocked","details":"","issues":["<dimension>: <specific missing piece>"],"labels":{"add":["needs-info"],"remove":["ready-for-agent"]},"findings":[]}
+```
+
+**SKILL TO USE:** `/skill:issue-readiness`

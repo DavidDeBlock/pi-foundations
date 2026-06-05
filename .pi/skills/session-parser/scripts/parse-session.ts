@@ -5,7 +5,7 @@
  */
 
 // Note: Ensure 'tsx' is installed globally (npm i -g tsx) or available via npx.
-import { parseSessionLog } from '../../../../shared/index.js';
+import { parseSessionLog } from '../../../../shared/lib/session-parser';
 import * as path from 'path';
 
 const filePath = process.argv[2];

@@ -21,19 +21,17 @@ Produce a structured drift report with:
 - Each finding with category, description, and code evidence
 - Verified claims that are accurate (for completeness)
 
-**2. Result file** → `.pi/maestro/state/slice-result.json`
-
-If NO SIGNIFICANT GAPS (docs match code):
-```json
-{"status":"no_gaps","slice":{issue_number},"message":"No critical gaps found — flow complete."}
+**2. Verdict block** — Output your verdict as a JSON code block with language tag `verdict`:
+```verdict
+{"status":"approved","verdict":"complete","details":"No critical gaps found — flow complete.","issues":[],"labels":{"add":[],"remove":[]},"findings":[]}
 ```
 
-If APPROVED:
-```json
-{"status":"approved","slice":{issue_number}}
+If significant gaps were found (APPROVED for PRD generation):
+```verdict
+{"status":"approved","verdict":"gaps-found","details":"Gaps identified — see drift-report.md","issues":[],"labels":{"add":[],"remove":[]},"findings":[]}
 ```
 
-If REJECTED:
-```json
-{"status":"rejected","slice":{issue_number},"issues":["specific reason 1", "specific reason 2"]}
+If the audit itself failed:
+```verdict
+{"status":"rejected","verdict":"audit-failed","details":"","issues":["specific reason 1", "specific reason 2"],"labels":{"add":[],"remove":[]},"findings":[]}
 ```

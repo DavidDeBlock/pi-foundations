@@ -1,0 +1,7 @@
+{
+  "repo_override": null,
+  "gh_timeout": 30,
+  "default_model": "qwen-27b-64k-q8",
+  "default_provider": "llama-cpp-3090",
+  "session_dir": ".pi/maestro/sessions"
+}

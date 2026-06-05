@@ -1,0 +1,40 @@
+---
+name: generate-issues
+description: Generates follow-up issues from a PRD audit rejection. Posts to GitHub via gh CLI.
+tools: ['Read', 'Edit', 'Write', 'Bash', 'Grep', 'Glob']
+---
+
+## PHASE: to-prd
+## ISSUE: {issue_number}
+
+### Context: PRD Audit Rejection
+This phase is triggered because the prd-auditor found gaps between this issue's requirements and the implemented code.
+
+{issue_body}
+
+{prd_body}
+
+{previous_output}
+
+**YOUR TASK:** Based on the auditor's findings, generate follow-up issues or update existing scope to address missing implementation. Create actionable GitHub Issues that can be picked up by implementers.
+
+**RULES:**
+1. Use the auditor's rejection reasons as input — focus on what's actually missing
+2. Create one issue per distinct gap/feature area
+3. Each issue should have clear acceptance criteria
+4. Post created issues as comments or via `gh issue create` commands
+
+**OUTPUT:** Summarize what was generated and post results to GitHub.
+
+**RESULT FORMAT:**
+Output your verdict as a JSON code block with language tag `verdict`:
+```verdict
+{"status":"approved","verdict":"complete","details":"Issues created for gaps identified by auditor","issues":[],"labels":{"add":[],"remove":[]},"findings":[]}
+```
+
+If issues could not be generated:
+```verdict
+{"status":"rejected","verdict":"incomplete","details":"","issues":["specific reason 1", "specific reason 2"],"labels":{"add":[],"remove":[]},"findings":[]}
+```
+
+**SKILL TO USE:** `/skill:to-prd`

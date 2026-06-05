@@ -20,4 +20,15 @@ This phase is triggered because the prd-auditor found gaps between this issue's 
 
 **OUTPUT:** Summarize what was generated and post results to GitHub.
 
+**RESULT FORMAT:**
+Output your verdict as a JSON code block with language tag `verdict`:
+```verdict
+{"status":"approved","verdict":"complete","details":"Issues created for gaps identified by auditor","issues":[],"labels":{"add":[],"remove":[]},"findings":[]}
+```
+
+If issues could not be generated:
+```verdict
+{"status":"rejected","verdict":"incomplete","details":"","issues":["specific reason 1", "specific reason 2"],"labels":{"add":[],"remove":[]},"findings":[]}
+```
+
 **SKILL TO USE:** `/skill:to-prd`

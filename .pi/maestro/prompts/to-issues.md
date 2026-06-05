@@ -1,0 +1,47 @@
+---
+name: to-issues
+description: Breaks a PRD into independently-grabbable vertical slice issues and publishes them.
+tools: ['Read', 'Edit', 'Write', 'Bash', 'Grep', 'Glob']
+---
+
+## PHASE: to-issues
+## ISSUE: {issue_number}
+
+**YOUR TASK:** Break the PRD into independently-grabbable vertical slice issues.
+
+**CONTEXT:** The parent PRD was generated in the previous phase. Read `.pi/maestro/state/drift-report.md` for gap findings, and use the PRD body from issue #{issue_number} (or check `.pi/maestro/state/prd-output.json` if saved locally) as your source material.
+
+**YOUR TASK:** Break the PRD above into vertical slice issues and publish them to the issue tracker, do not ask questions at the end.
+
+**RULES:**
+1. Each issue is a complete vertical slice (schema → API → UI → tests), not a horizontal layer task
+2. A completed slice must be demoable or verifiable on its own
+3. Publish in dependency order (blockers first) so you can reference real issue IDs
+4. Use domain terminology from CONTEXT.md — do not invent your own terms
+5. Mark HITL slices only for genuine human-interaction needs; prefer AFK where possible
+6. Apply the `needs-triage` label to each published issue
+
+**ISSUE TEMPLATE:**
+For each slice, use:
+```
+## What to build
+[End-to-end description of this vertical slice]
+
+## Acceptance criteria
+- [ ] Criterion 1
+- [ ] Criterion 2
+
+## Blocked by
+- None / #<issue_number>
+```
+
+**RESULT FORMAT:**
+Output your verdict as a JSON code block with language tag `verdict`:
+```verdict
+{"status":"approved","verdict":"complete","details":"Issues created: #N, #M","issues":[],"labels":{"add":[],"remove":[]},"findings":[]}
+```
+
+If REJECTED:
+```verdict
+{"status":"rejected","verdict":"incomplete","details":"","issues":["specific reason 1", "specific reason 2"],"labels":{"add":[],"remove":[]},"findings":[]}
+```

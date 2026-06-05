@@ -28,14 +28,14 @@ def test_github_client_fetch_issues_by_label_success():
             "title": "Implement pipeline data layer",
             "body": "This is the issue body text.",
             "state": "open",
-            "labels": [{"name": "ready-for-agent"}, {"name": "pipeline"}]
+            "labels": [{"name": "needs-triage"}, {"name": "pipeline"}]
         },
         {
             "number": 106,
             "title": "Autonomous pipeline engine PRD",
             "body": "Parent issue body.",
             "state": "open",
-            "labels": [{"name": "ready-for-agent"}, {"name": "prd"}]
+            "labels": [{"name": "needs-triage"}, {"name": "prd"}]
         }
     ])
     
@@ -43,14 +43,14 @@ def test_github_client_fetch_issues_by_label_success():
     
     client = GithubClient()
     with patch.object(client, '_run_gh', mock_gh):
-        issues = client.fetch_issues_by_label("ready-for-agent")
+        issues = client.fetch_issues_by_label("needs-triage")
     
     assert len(issues) == 2
     assert isinstance(issues[0], Issue)
     # Should be sorted by number ascending
     assert issues[0].number == 106
     assert issues[1].number == 108
-    assert "ready-for-agent" in issues[0].labels
+    assert "needs-triage" in issues[0].labels
 
 
 def test_github_client_fetch_issues_by_label_empty():
@@ -70,7 +70,7 @@ def test_github_client_fetch_issues_by_label_failure():
     
     client = GithubClient()
     with patch.object(client, '_run_gh', mock_gh):
-        issues = client.fetch_issues_by_label("ready-for-agent")
+        issues = client.fetch_issues_by_label("needs-triage")
     
     assert issues == []
 

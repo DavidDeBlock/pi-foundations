@@ -1,7 +1,7 @@
 {
   "lastChangelogVersion": "0.70.0",
-  "defaultProvider": "llama-cpp-main",
-  "defaultModel": "qwen-35b-a3b-118k-bf16",
+  "defaultProvider": "minimax",
+  "defaultModel": "MiniMax-M3",
   "defaultThinkingLevel": "medium",
   "hideThinkingBlock": true,  
   "compaction": {

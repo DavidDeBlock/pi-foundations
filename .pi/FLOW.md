@@ -7,9 +7,9 @@
 
 ## 🔄 Standard Task Flow
 
-### Autonomous Loop Workflow (maestro)
+### Implementation Workflow (run-slices.sh)
 
-> **Note:** The maestro orchestrator runs autonomously via `orchestrate.py`. Agents do not execute this directly.
+> **Note:** `run-slices.sh` is a user-run script. Agents do not execute this directly.
 
 ```
 User Request
@@ -20,26 +20,17 @@ User Request
     ↓
 [to-issues] — Plan → GitHub issues (vertical slices)
     ↓
-[orchestrate.py --flow builder-reviewer] — Loop per issue:
+[run-slices.sh] — Loop per issue:
     ├── [tdd] (builder) — Implement with TDD red-green-refactor
     └── [reviewer] — Quality check + test execution
             │
             ├── approved → Post artifacts, update labels ✓
-            └── rejected → Retry builder with critique (flow engine handles retries)
-```
-
-**Quick start:**
-```bash
-# Process all pending issues in the needs-triage queue
-python3 .pi/maestro/orchestrate.py --flow builder-reviewer
-
-# Process a single issue directly
-python3 .pi/maestro/orchestrate.py --flow builder-reviewer --issue 42
+            └── rejected → Retry tdd with critique (up to max_retries)
 ```
 
 ### Ad-Hoc Workflow (Manual Agent Use)
 
-When working outside the autonomous loop:
+When working outside run-slices.sh:
 
 ```
 User Request
@@ -63,7 +54,7 @@ User Request
                       Done / Fixes needed
 ```
 
-**Note:** The maestro `builder-reviewer` flow uses `/skill:tdd` as the builder (not typescript-implementer).
+**Note:** `run-slices.sh` uses `/skill:tdd` as the builder (not typescript-implementer).
 The TDD skill enforces red-green-refactor discipline with integration-style tests.
 
 ---

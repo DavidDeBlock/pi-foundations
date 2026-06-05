@@ -6,7 +6,7 @@ description: Headless browser automation using Playwright for browsing, scraping
 # Browser Automation Skill
 
 ## Mission
-Headless browser automation using Playwright CLI for background browser tasks.
+Headless browser automation using Playwright (programmatic API) for background browser tasks.
 
 ---
 
@@ -81,8 +81,17 @@ All commands use the project-local wrapper script:
 
 ### Screenshots:
 ```bash
-# Full page screenshot to /tmp/screenshot.png
+# Viewport screenshot
 .pi/scripts/browser-automation.sh screenshot "https://example.com" /tmp/page.png
+
+# Full-page screenshot
+.pi/scripts/browser-automation.sh screenshot "https://example.com" /tmp/page.png --full-page
+
+# Wait for a selector before capturing
+.pi/scripts/browser-automation.sh screenshot "https://example.com" /tmp/page.png --wait-selector ".main-content"
+
+# Wait a fixed time (ms) before capturing
+.pi/scripts/browser-automation.sh screenshot "https://example.com" /tmp/page.png --wait-timeout 2000
 ```
 
 ### Parallel Sessions:
@@ -124,10 +133,12 @@ When presenting research findings:
 
 ## 🔧 Technical Notes
 
-- **Implementation:** Node.js ESM script (`browser.mjs`) wrapped by `.pi/scripts/browser-automation.sh`
-- **Engine:** Playwright (Chromium) — runs headless by default
-- **Module Resolution:** Explicitly imports `playwright/index.js` to avoid CJS/ESM conflicts in global node_modules
-- **Env Loading:** Auto-parses project `.env` for API keys (`SERPER_API_KEY`, etc.)
+- **Implementation:** Node.js ESM script (`.pi/scripts/browser.mjs`) wrapped by `.pi/scripts/browser-automation.sh`
+- **Engine:** Playwright via `@playwright/test` (Chromium) — runs headless by default
+- **Module Resolution:** Imports `chromium` from `@playwright/test` (the only Playwright package in this project; `playwright` is not installed separately)
+- **Config:** Reads chromium path and viewport from `.pi/playwright-cli.json`. Falls back to Playwright auto-detect if the path is empty.
+- **Env Loading:** Node 22's `--env-file=.env` flag auto-loads the project `.env` (provides `SERPER_API_KEY` to the `search` subcommand)
+- **Subcommands:** `open`/`navigate` (page info + console errors), `screenshot` (`--full-page`, `--wait-selector`, `--wait-timeout`), `extract` (selector → cleaned text), `search` (Serper API)
 - **Capabilities:** Headless browsing, screenshots, text extraction, Serper web search integration
 
 ---

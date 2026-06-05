@@ -1,0 +1,53 @@
+{
+  "issue": 285,
+  "created_at": "2026-06-05T19:12:26.231618+00:00",
+  "updated_at": "2026-06-05T19:59:52.044829+00:00",
+  "repo_path": "/home/david/projects/pi-pos-v1/.pi/maestro",
+  "git_sha": "87f545a442526c27640c9720c3b67cb701c10bc6",
+  "scout": {
+    "status": "error",
+    "details": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-pos-v1/.pi/maestro/sessions/285/builder-reviewer-scout-2026-06-05T19:12:26.jsonl/2026-06-05T19-12-26-974Z_019e9933-755e-7f70-8f60-2bdd3cb86ea4.jsonl). The agent may not have emitted a verdict block.",
+    "session_log": "/home/david/projects/pi-pos-v1/.pi/maestro/sessions/285/builder-reviewer-scout-2026-06-05T19:12:26.jsonl/2026-06-05T19-12-26-974Z_019e9933-755e-7f70-8f60-2bdd3cb86ea4.jsonl"
+  },
+  "builder": {
+    "status": "success",
+    "attempt": 1,
+    "details": "builder approved",
+    "session_log": "/home/david/projects/pi-pos-v1/.pi/maestro/sessions/285/builder-reviewer-builder-2026-06-05T19:16:56.jsonl/2026-06-05T19-16-56-955Z_019e9937-93fb-71c5-aa12-a52afab5ecd8.jsonl"
+  },
+  "reviewer": {
+    "status": "success",
+    "attempt": 2,
+    "details": "reviewer approved",
+    "session_log": "/home/david/projects/pi-pos-v1/.pi/maestro/sessions/285/builder-reviewer-reviewer-2026-06-05T19:44:08.jsonl/2026-06-05T19-44-09-052Z_019e9950-7b5b-7ead-8f55-1c2e2ecc7229.jsonl"
+  },
+  "test_runner": {
+    "status": "success",
+    "attempt": 2,
+    "details": "test_runner approved",
+    "session_log": "/home/david/projects/pi-pos-v1/.pi/maestro/sessions/285/builder-reviewer-test_runner-2026-06-05T19:39:16.jsonl/2026-06-05T19-39-17-251Z_019e994c-0783-7377-aaa8-e538a511c0a2.jsonl"
+  },
+  "diagnostic": {},
+  "retrospective": {
+    "status": "success",
+    "attempt": 2,
+    "details": "retrospective approved",
+    "session_log": "/home/david/projects/pi-pos-v1/.pi/maestro/sessions/285/builder-reviewer-retrospective-2026-06-05T19:57:10.jsonl/2026-06-05T19-57-10-864Z_019e995c-694f-72cb-b1fa-860387a000fd.jsonl"
+  },
+  "files_touched": [],
+  "test_results": [],
+  "errors": [],
+  "notes": [
+    {
+      "type": "unknown_phase",
+      "phase": "close",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "Missing evidence (warned): ['tested', 'reviewed'] (required: ['tested', 'reviewed'])",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-05T19:57:10.199581+00:00"
+    }
+  ]
+}

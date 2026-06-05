@@ -1,16 +1,12 @@
 #!/usr/bin/env tsx
 /**
- * scripts/verify-inventory-drift.ts — Compare DOCS_INVENTORY.md paths against actual filesystem.
+ * verify-inventory-drift.ts — Compare DOCS_INVENTORY.md paths against actual filesystem.
  *
  * Reads all YAML blocks from DOCS_INVENTORY.md, extracts the `path:` field for each entry,
  * and checks if that file actually exists on disk (relative to docs/ root).
  * Also discovers .md files on disk not covered by any inventory entry.
  *
- * Usage:
- *   npx tsx scripts/verify-inventory-drift.ts [docs-root]    # Check drift
- *
- * @category validation
- * @usage npx tsx scripts/verify-inventory-drift.ts [docs-root]
+ * Usage: npx tsx scripts/verify-inventory-drift.ts [docs-root]
  */
 
 import { readdirSync, readFileSync } from 'fs'

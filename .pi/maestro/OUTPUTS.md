@@ -8,20 +8,70 @@ This document defines every data artifact produced, consumed, or exchanged by th
 
 | Artifact | Producer | Format / Location | Schema Reference | Consumer(s) |
 |----------|----------|-------------------|------------------|-------------|
-| Phase Result JSON | LLM Agents (via RPC) | `.pi/maestro/state/slice-result.json` | [§1](#1-phase-result-slice-resultjson) | `flow_engine.py`, `rpc_client.py` |
+| Phase Verdict (Primary) | Session log parsing (`verdict_extractor`) | `.pi/maestro/sessions/<issue>/<flow>-<phase>-<timestamp>.jsonl` | [§1a](#1a-session-logs-jsonl-primary-verdict-source) | `flow_engine.py`, fallback chain |
+| Phase Result JSON (Fallback) | LLM Agents (via RPC) | `.pi/maestro/state/slice-result.json` | [§1b](#1b-phase-result-slice-resultjson-fallback) | `rpc_client.py`, legacy compatibility |
 | GitHub Phase Comment | Engine (`github_client`) | Issue comments on GitHub | [§2](#2-github-phase-comments) | Resume logic, human review, comment parser |
 | Drift Report (`.md`) | `analyze` phase agent | `.pi/maestro/state/drift-report.md` | [§3](#3-drift-report-drift-reportmd) | Human reviewer, future PRD generator |
 | PRD (GitHub Issue) | `to-prd` skill | GitHub Issue body + `[PRD]` label | [§4](#4-prd-github-issue-body) | `to-issues`, gap-check pipeline |
-| Implementation Issues | `to-issues` skill | GitHub Issue bodies + `ready-for-agent` label | [§5](#5-implementation-issues-github-issue-bodies) | Builder phase, autonomous loop |
-| Session Logs (`.jsonl`) | Pi RPC Client | `/tmp/maestro-sessions/<uuid>.jsonl` | [§6](#6-session-logs-jsonl) | `session_reader.py`, terminal metadata |
+| Implementation Issues | `to-issues` skill | GitHub Issue bodies + `needs-triage` label | [§5](#5-implementation-issues-github-issue-bodies) | Builder phase, autonomous loop |
 
 ---
 
-## 1. Phase Result (`slice-result.json`)
+---
+
+## 1a. Session Logs (`.jsonl`) — Primary Verdict Source
+
+**Location:** `.pi/maestro/sessions/<issue_num>/<flow>-<phase>-<ISO8601>.jsonl`  
+**Producer:** Pi agent runtime during skill execution  
+**Consumer:** `verdict_extractor.extract_phase_verdict()`, `session_reader.parse_session_log()`
+
+### Session Directory Layout (Phase 1+)
+```
+.pi/maestro/sessions/
+└── <issue_num>/
+    ├── builder-reviewer-builder-2026-05-26T10:30:00.jsonl   # Builder phase
+    └── builder-reviewer-reviewer-2026-05-26T10:35:00.jsonl  # Reviewer phase
+```
+
+### Expected Events
+| Event Type | Role | Key Fields |
+|------------|------|----------|
+| `model_change` | system | `provider`, `modelId` |
+| `toolCall` | assistant | `id`, `name`, `arguments` |
+| `text` | assistant/toolResult | `content` (array or string) |
+| `error` / `exception` | any | `message`, `stackTrace` |
+
+### Verdict Extraction Contract
+`verdict_extractor.extract_phase_verdict()` returns:
+```json
+{
+  "status": "approved" | "rejected" | "no_gaps" | null,
+  "issues": [],
+  "raw_text": "..."
+}
+```
+
+**Patterns matched (in priority order):**
+1. ✅/❌ emoji + verdict text (`✅ APPROVED`, `❌ REJECTED`)
+2. JSON-like status field (`"status":"approved"`, `STATUS: rejected`)
+3. Standalone approved/rejected keywords
+4. No gaps / no significant gaps found
+
+**Fallback chain:** If `extract_phase_verdict()` returns `null` → read `.pi/maestro/state/slice-result.json`. If both fail → error state.
+
+### Rules
+- Each session log is a single JSONL file with one event per line.
+- Malformed or truncated logs are silently skipped (never crash).
+- The most recent `.jsonl` file in an issue directory is the active session.
+- Old subdirectory layout (`<issue>-<flow>-<phase>-<ts>/`) is deprecated but still supported by `resolve_session_log()` for backward compatibility.
+
+---
+
+## 1b. Phase Result (`slice-result.json`) — Fallback Source
 
 **Location:** `.pi/maestro/state/slice-result.json` (relative to project root)  
 **Writer:** Any LLM-driven phase agent invoked via RPC  
-**Reader:** `flow_engine.run_phase()` → `rpc_client.read_result_file()`
+**Reader:** `rpc_client.read_result_file()` — **only used when session log parsing returns no verdict**
 
 ### Canonical Schema
 ```json
@@ -140,7 +190,7 @@ Agent Model: {provider/model used}
 
 ### Rules
 - Title must start with `[PRD] `.
-- Must use `parent-prd` label (never `ready-for-agent`).
+- Must use `parent-prd` label (never `needs-triage`).
 - User stories must be extensive and cover all feature aspects.
 - Implementation Decisions must stay architectural; never commit to file paths or code structure that will rot quickly.
 
@@ -150,7 +200,7 @@ Agent Model: {provider/model used}
 
 **Producer:** `to-issues` skill  
 **Consumer:** Builder phase, autonomous loop (`app_shell.py`)  
-**Labels:** `ready-for-agent`
+**Labels:** `needs-triage`
 
 ### Required Sections
 ```markdown
@@ -179,7 +229,7 @@ Or: "None - can start immediately" if no blockers.
 - Each issue must represent a **tracer bullet** (thin vertical slice cutting through all layers).
 - Acceptance criteria must use markdown checkboxes (`- [ ]`).
 - Parent reference format: `## Parent\n\n#NNN` (parsed by `_extract_parent_issue()` in `flow_engine.py`)
-- Labels must include `ready-for-agent`. No other triage labels at creation time.
+- Labels must include `needs-triage`. No other triage labels at creation time.
 - Issues are published in dependency order (blockers first).
 
 ---
@@ -208,7 +258,7 @@ Or: "None - can start immediately" if no blockers.
 ## 🔄 Data Flow Mapping
 
 ```
-GitHub Issue (ready-for-agent)
+GitHub Issue (needs-triage)
        │
        ▼
 app_shell.run() ──► flow_engine.load_flow() ──► build_prompt(phase.tmpl + context vars)
@@ -219,15 +269,24 @@ app_shell.run() ──► flow_engine.load_flow() ──► build_prompt(phase.t
        │                                                    ▼
        │                                             Agent executes skill
        │                                                    │
-       │                                                    ▼
-       │                                             Writes slice-result.json
-       │                                                    │
-       └───────────── flow_engine.run_phase() reads result ◄┘
-                             │
-              success → next phase / finish
-              rejected  → post PHASE_OUTPUT comment → context["previous_output"] → retry/review
-              no_gaps   → finish (gap-check only)
-              error     → diagnostic pass → context["diagnostic_insights"] → retry
+       │                         ┌──────────────────────────┤
+       │                         │ Session log (.jsonl)     │
+       │                         │ Primary verdict source   │
+       │                         ▼                          │
+       │               extract_phase_verdict()              │
+       │                         │                          │
+       │           null ─────────┘ (fallback)
+       │           │                            │
+       │           ▼                            ▼
+       │  slice-result.json            verdict found
+       │  Fallback source              │
+       │           │                    ▼
+       │           └────► flow_engine.run_phase() maps status
+       │                             │
+       │              success → next phase / finish
+       │              rejected  → post PHASE_OUTPUT comment → context["previous_output"] → retry/review
+       │              no_gaps   → finish (gap-check only)
+       │              error     → diagnostic pass → context["diagnostic_insights"] → retry
 ```
 
 **Gap-Check Pipeline:**
@@ -241,7 +300,7 @@ analyze phase ──► writes drift-report.md + slice-result.json (no_gaps or a
 to-prd skill ──► creates/updates GitHub PRD issue with [PRD] label
        │
        ▼
-to-issues skill ──► publishes vertical slice issues with ready-for-agent label
+to-issues skill ──► publishes vertical slice issues with needs-triage label
        │
        ▼
 Gap-check closes parent PRD issue

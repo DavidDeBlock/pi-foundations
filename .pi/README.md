@@ -1,64 +1,27 @@
 # Pi Agent Configuration
 
-This directory contains configuration, skills, and orchestration tools for the Pi agent system.
+This directory contains configuration and documentation for the Pi agent system.
 
 ## Structure
 
-- **`skills/`** — Skill definitions (one per specialized role). Each skill is a `SKILL.md` with instructions that LLM agents follow.
-- **`maestro/`** — Autonomous loop orchestrator. Runs builder↔reviewer flows against GitHub issues automatically.
-- **`SYSTEM.md`** — Core runtime behavior and path conventions for all agents.
-- **`FLOW.md`** — Standard workflow: grill-with-docs → to-prd → to-issues → maestro autonomous loop.
-- **`INDEX.md`** — Quick reference for available skills and project conventions.
+- `skills/` - Skill definitions (one per specialized role)
+- `plans/` - Generated task plans and briefs
+- `docs/` - Architecture documents and design decisions
 
 ## How to Use
 
-### As a Project Skeleton
+The project follows a controlled, step-by-step engineering process:
 
-Copy this entire `.pi/` directory into any new project:
+1. **Planner** breaks down broad requests into actionable slices
+2. **Architect** validates structural decisions
+3. **Builder** implements planned features
+4. **Reviewer** validates quality and consistency
 
-```bash
-cp -r /path/to/pi-skeleton/.pi ./my-project/.pi
-```
+See `.pi/prompts/start.md` for the full project vision and process.
 
-Then customize:
-1. **`.pi/SYSTEM.md`** — Update path examples for your environment
-2. **`.pi/WORLD.md.EXAMPLE` → `WORLD.md`** — Fill in your project's domain map
-3. **`.pi/AGENTS.md.EXAMPLE` → `~/.pi/agent/AGENTS.md`** — Register agents for your skill set
+## Current Status
 
-### Autonomous Loop
-
-Run the autonomous builder↔reviewer loop against GitHub issues:
-
-```bash
-# Process all pending issues (needs-triage label)
-python3 .pi/maestro/orchestrate.py --flow builder-reviewer
-
-# Process a single issue directly
-python3 .pi/maestro/orchestrate.py --flow builder-reviewer --issue 42
-
-# Dry-run: simulate without side effects
-python3 .pi/maestro/orchestrate.py --flow builder-reviewer --dry-run
-```
-
-### Manual Agent Use
-
-Outside the autonomous loop, agents work sequentially via skill invocation:
-
-```
-planner → architect/db-engineer (if needed) → typescript-implementer → reviewer
-```
-
-Each agent stays in its lane. Context passes between them via documented outputs.
-
-## Global vs Local Config
-
-| Level | Location | Purpose |
-|-------|----------|---------|
-| **Global** (`~/.pi/`) | LLM model definitions, global agents | One per user, shared across projects |
-| **Local** (`.pi/`) | Skills, system rules, domain map | One per project, customized per repo |
-
-## Reference
-
-- Agent routing & handoffs: `~/.pi/agent/AGENTS.md`
-- Skill details: Each skill's `SKILL.md` in `.pi/skills/<name>/`
-- Archived implementations: `.pi/archive/` (obsolete code kept for reference)
+- ✅ Architecture v0.0.1 complete (`.pi/docs/architecture-v001.md`)
+- ✅ Folder structure created
+- ✅ App ↔ Feature communication infrastructure (event emitter, notification service, global store)
+- ⏭️ Next: Auth feature implementation

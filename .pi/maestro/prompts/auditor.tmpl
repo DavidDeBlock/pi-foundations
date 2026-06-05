@@ -18,18 +18,14 @@
 3. Run `pnpm build && pnpm lint && pnpm test` to verify CI passes
 4. Flag vague/ambiguous ACs as `needs_clarification` rather than failing
 
-**RESULT FORMAT:** Write TWO files:
-
-**1. Result file** → `.pi/maestro/state/slice-result.json`
-
-If APPROVED (all ACs verified + CI passes):
-```json
-{"status":"approved","slice":{issue_number}}
+**RESULT FORMAT:** Output your verdict as a JSON code block with language tag `verdict`:
+```verdict
+{"status":"approved","verdict":"approved","details":"","issues":[],"labels":{"add":["awaiting-manual-check"],"remove":[]},"findings":[]}
 ```
 
 If REJECTED (missing code/tests or CI fails):
-```json
-{"status":"rejected","slice":{issue_number},"issues":["specific issue 1", "specific issue 2"]}
+```verdict
+{"status":"rejected","verdict":"rejected","details":"","issues":["specific issue 1", "specific issue 2"],"labels":{"add":["status:blocked"],"remove":["ready-for-agent","awaiting-manual-check"]},"findings":[]}
 ```
 
 **SKILL TO USE:** `/skill:prd-auditor`

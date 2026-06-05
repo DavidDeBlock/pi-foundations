@@ -5,15 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Resolve workspace root: use current directory if we're inside a project, otherwise parent
-if [ -d "$PWD/.pi" ]; then
-    WORKSPACE_ROOT="$PWD"
-elif [ -d "../.pi" ]; then
-    WORKSPACE_ROOT="$(dirname "$PWD")"
-else
-    echo "❌ No .pi/ directory found in current or parent directory." >&2
-    exit 1
-fi
+WORKSPACE_ROOT="/home/david/projects/pos-dev"
 PLAYWRIGHT_SCRIPT="${SCRIPT_DIR}/playwright-debug.cjs"
 OUTPUT_DIR="${WORKSPACE_ROOT}/.pi/debug-output"
 
@@ -150,8 +142,8 @@ run_playwright_debug() {
     args_json="${args_json%, }"
     args_json+='}'
     
-    # Run Playwright script from workspace root where playwright is installed
-    cd "$WORKSPACE_ROOT" && node "$PLAYWRIGHT_SCRIPT" "$args_json"
+    # Run Playwright script from project root where playwright is installed
+    cd /home/david/projects/pi-hub && node "$PLAYWRIGHT_SCRIPT" "$args_json"
 }
 
 # Main command handler

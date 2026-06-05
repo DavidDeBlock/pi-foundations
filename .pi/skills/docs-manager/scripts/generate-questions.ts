@@ -1,21 +1,3 @@
-#!/usr/bin/env tsx
-/**
- * scripts/generate-questions.ts — Phase 3: Generate reviewer questions for uncertain classifications.
- *
- * Reads DOCS_INVENTORY.md and produces a list of review questions for entries with low-confidence
- * or missing classifications. Supports overview mode (all questions), batch mode (grouped by folder),
- * and answered-mode tracking via a questions file.
- *
- * Usage:
- *   npx tsx scripts/generate-questions.ts docs                              # All questions
- *   npx tsx scripts/generate-questions.ts docs --batch                      # Grouped by folder
- *   npx tsx scripts/generate-questions.ts docs --batch --size=3             # 3 groups per batch
- *   npx tsx scripts/generate-questions.ts docs --answered                   # Show answered questions
- *
- * @category maintenance
- * @usage npx tsx scripts/generate-questions.ts [docs-root] [--overview|--batch|--answered]
- */
-
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { resolve, join, basename, dirname } from 'path'
 

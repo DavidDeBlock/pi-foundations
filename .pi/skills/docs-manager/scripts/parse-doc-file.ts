@@ -1,19 +1,3 @@
-#!/usr/bin/env tsx
-/**
- * scripts/parse-doc-file.ts — Parse a single markdown doc file.
- *
- * Extracts headings (with levels), section summaries, cross-references,
- * file flags (large file, draft/temp), and structural metadata. Outputs JSON
- * suitable for agent consumption or pipeline processing.
- *
- * Usage:
- *   npx tsx scripts/parse-doc-file.ts <path>                           # Parse single file to stdout
- *   npx tsx scripts/parse-doc-file.ts docs/10-domain/glossary.md       # Specific file
- *
- * @category analysis
- * @usage npx tsx scripts/parse-doc-file.ts <path>
- */
-
 import { readFileSync, statSync, openSync, readSync, closeSync, existsSync } from 'fs'
 import { resolve } from 'path'
 
@@ -169,40 +153,12 @@ export function parseDocFile(filePath: string): DocAnalysis {
   }
 }
 
-// ── Output Generator ───────────────────────────────────────────
+// ── CLI Entry Point ────────────────────────────────────────────
 
-/**
- * Generate output for parse-doc-file.
- * Outputs JSON analysis of a single file to stdout.
- */
-export function generateOutput(
-  targetPath: string,
-  json = false,
-  help = false
-): string {
-  if (help) {
-    return `Usage: npx tsx scripts/parse-doc-file.ts <path>
+export async function main(args: string[] = process.argv.slice(2)): Promise<void> {
+  const filePath = args[0]
 
-Parse a single markdown doc file.
-
-Extracts headings (with levels), section summaries, cross-references,
-file flags (large file, draft/temp), and structural metadata. Outputs JSON
-suitable for agent consumption or pipeline processing.
-
-Arguments:
-  path          Path to the .md file to parse (required)
-
-Options:
-  --json        Output as JSON (default — always outputs JSON)
-  --help        Show this help message
-
-Output:
-  Structured JSON with sections, cross-references, and metadata.`
-  }
-
-  const filePath = targetPath
-
-  if (!filePath || filePath === '.') {
+  if (!filePath) {
     throw new Error('Usage: npx tsx scripts/parse-doc-file.ts <path>')
   }
 
@@ -215,33 +171,13 @@ Output:
   const analysis = parseDocFile(resolvedPath)
 
   // Output structured JSON suitable for agent consumption
-  return JSON.stringify(analysis, null, 2) + '\n'
+  console.log(JSON.stringify(analysis, null, 2))
 }
 
-// ── CLI Entry Point ────────────────────────────────────────────
-import { runScriptIfDirect, parseArgs, writeOutput } from '../../../../scripts/lib/script-runner.js'
-
-/** Main entry point for CLI execution (used by tests and direct execution) */
-export async function main(args: string[] = process.argv.slice(2)): Promise<void> {
-  const parsed = parseArgs(args, { exitCodeOnError: 1 })
-
-  if (parsed.help) {
-    writeOutput(generateOutput(parsed.targetPath, false, true))
-    return
-  }
-
-  try {
-    const output = generateOutput(parsed.targetPath, parsed.json)
-    writeOutput(output)
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error(`Error: ${message}`)
+// Run if executed directly via tsx
+if (import.meta.url.includes('parse-doc-file') && process.argv[1]?.endsWith('parse-doc-file.ts')) {
+  main().catch(err => {
+    console.error(err.message)
     process.exit(1)
-  }
+  })
 }
-
-runScriptIfDirect(
-  generateOutput,
-  'parse-doc-file.ts',
-  { exitCodeOnError: 1 }
-)

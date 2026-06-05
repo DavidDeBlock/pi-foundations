@@ -55,6 +55,75 @@ class MaestroApp:
             self.term.failure(f"Failed to initialize GitHub client: {e}")
             sys.exit(1)
     
+    def _run_pipeline_with_issues(self, flow_name: str, issue_nums: list[int]):
+        """Run a pipeline on one or more issues with deterministic label management.
+
+        Uses the PipelineRunner to execute the specified flow through the full-lifecycle
+        pipeline (or any pipeline that supports phase callbacks).
+        """
+        from pipelines.runner import PipelineRunner
+        from pipelines.context import PipelineContext
+
+        runner = PipelineRunner(
+            term=self.term,
+            gh_client=self.gh_client,
+            continue_on_error=True,
+            max_retries=3,
+        )
+
+        # Determine which pipeline to use
+        if flow_name == "full-lifecycle":
+            pipeline_file = "full-lifecycle.py"
+        else:
+            # For other flows, fall back to running each issue individually
+            success_count = 0
+            fail_count = 0
+            for num in issue_nums:
+                self.term._print_verbose(f"[START] Processing issue #{num} with flow '{flow_name}'")
+                try:
+                    success = run_flow_on_issue(
+                        self.term, self.gh_client, flow_name, num
+                    )
+                    if success:
+                        success_count += 1
+                    else:
+                        fail_count += 1
+                except KeyboardInterrupt:
+                    print(
+                        f"\n{self.term.DIM}⚠️  Interrupted by user.{self.term.RESET}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(130)
+            self.term.summary(issues_completed=success_count, issues_failed=fail_count)
+            return
+
+        try:
+            # Set issue numbers in context for the pipeline to pick up
+            ctx = PipelineContext(term=self.term, gh_client=self.gh_client)
+            ctx.set_variable("issue_numbers", issue_nums)
+
+            pipeline_func = runner.load_pipeline(pipeline_file)
+            result = runner.execute_pipeline(
+                pipeline_func,
+                pipeline_name=flow_name,
+                continue_on_error=True,
+            )
+
+            if not result["success"]:
+                self.term.warning(
+                    f"Pipeline completed with errors: {result.get('error', 'Unknown')}"
+                )
+
+        except (FileNotFoundError, ValueError) as e:
+            self.term.failure(f"Failed to load pipeline '{pipeline_file}': {e}")
+            sys.exit(1)
+        except KeyboardInterrupt:
+            print(
+                f"\n{self.term.DIM}⚠️  Pipeline interrupted by user.{self.term.RESET}",
+                file=sys.stderr,
+            )
+            sys.exit(130)
+
     def run(self):
         """Main entry point for the application shell."""
         import json
@@ -78,11 +147,32 @@ class MaestroApp:
         # --- Single Issue Mode ---
         if self.args.issue:
             self.term._print_verbose(f"[START] Processing issue #{self.args.issue} with flow '{flow_name}'")
-            success = run_flow_on_issue(self.term, self.gh_client, flow_name, self.args.issue)
-            if success:
-                self.term.summary(issues_completed=1, issues_failed=0)
-            else:
-                self.term.summary(issues_completed=0, issues_failed=1)
+            try:
+                success = run_flow_on_issue(self.term, self.gh_client, flow_name, self.args.issue)
+                if success:
+                    self.term.summary(issues_completed=1, issues_failed=0)
+                else:
+                    self.term.summary(issues_completed=0, issues_failed=1)
+            except KeyboardInterrupt:
+                print(f"\n{self.term.DIM}⚠️  Interrupted by user.{self.term.RESET}", file=sys.stderr)
+                sys.exit(130)
+
+        # --- Batch Issue Mode (--issues) ---
+        elif self.args.issues:
+            issue_nums = [int(n.strip()) for n in self.args.issues.split(",")]
+            self._run_pipeline_with_issues(flow_name, issue_nums)
+
+        # --- Auto Mode (--auto) ---
+        elif getattr(self.args, "auto", False):
+            self.term.info("Auto mode — fetching needs-triage backlog...")
+            issues = self.gh_client.fetch_issues_by_label("needs-triage")
+            if not issues:
+                self.term.info("No 'needs-triage' issues found. Nothing to do.")
+                return
+            issue_nums = [issue.number for issue in issues]
+            self._run_pipeline_with_issues(flow_name, issue_nums)
+
+        # --- Autonomous Loop Mode (via Pipeline Engine) ---
         
         # --- Autonomous Loop Mode (via Pipeline Engine) ---
         else:

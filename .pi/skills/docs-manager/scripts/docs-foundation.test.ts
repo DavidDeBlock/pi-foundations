@@ -24,7 +24,7 @@ describe('Docs Foundation — Issue docs-reorg-01', () => {
       '00-current',
       '10-domain',
       '20-architecture',
-      '30-vertical-flows',
+      '30-flows',
       '40-decisions',
       '50-agent-workflows',
       '90-archive',
@@ -178,7 +178,7 @@ describe('Docs Foundation — Issue docs-reorg-01', () => {
       expect(content).toMatch(/00-current/)
       expect(content).toMatch(/10-domain/)
       expect(content).toMatch(/20-architecture/)
-      expect(content).toMatch(/30-vertical-flows/)
+      expect(content).toMatch(/30-flows/)
       expect(content).toMatch(/40-decisions/)
       expect(content).toMatch(/50-agent-workflows/)
       expect(content).toMatch(/90-archive/)

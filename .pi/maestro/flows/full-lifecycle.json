@@ -1,0 +1,91 @@
+{
+  "name": "full-lifecycle",
+  "description": "End-to-end: PRD review → build → test → review. Test failures escalate to diagnostic after 2 retries.",
+
+  "default_provider": "minimax",
+
+  "phases": {
+    "issue-readiness": {
+      "skill": "/skill:issue-readiness",
+      "model": "MiniMax-M3",
+      "provider": "minimax",
+      "timeout_seconds": 1800,
+      "retries": 3
+    },
+    "archivist": {
+      "skill": "/skill:archivist",
+      "model": "MiniMax-M3",
+      "provider": "minimax",
+      "timeout_seconds": 900,
+      "retries": 2
+    },
+    "builder": {
+      "skill": "/skill:tdd",
+      "model": "MiniMax-M3",
+      "provider": "minimax",
+      "timeout_seconds": 1800,
+      "retries": 5
+    },
+    "reviewer": {
+      "skill": "/skill:reviewer",
+      "model": "MiniMax-M3",
+      "provider": "minimax",
+      "timeout_seconds": 900,
+      "retries": 2
+    },
+    "retrospective": {
+      "skill": "/skill:retrospective",
+      "timeout_seconds": 300,
+      "retries": 0,
+      "is_optional": true,
+      "description": "Self-improvement phase — runs after reviewer. Non-blocking."
+    },
+    "diagnostic": {
+      "skill": "/skill:diagnose",
+      "model": "MiniMax-M3",
+      "provider": "minimax",
+      "timeout_seconds": 600,
+      "retries": 1
+    }
+  },
+
+  "transitions": [
+    {
+      "from": "issue-readiness",
+      "on_success": "builder",
+      "on_reject": "archivist",
+      "on_error": "diagnostic"
+    },
+    {
+      "from": "archivist",
+      "on_success": "issue-readiness",
+      "on_reject": "issue-readiness",
+      "on_error": "diagnostic"
+    },
+    {
+      "from": "builder",
+      "on_success": "reviewer",
+      "on_reject": "builder",
+      "on_error": "diagnostic"
+    },
+    {
+      "from": "reviewer",
+      "on_success": "retrospective",
+      "on_reject": "builder",
+      "on_error": "diagnostic"
+    },
+    {
+      "from": "retrospective",
+      "on_success": "finish",
+      "on_reject": "finish",
+      "on_error": "finish",
+      "description": "Retrospective is non-blocking: ALL outcomes route to finish."
+    },
+    {
+      "from": "diagnostic",
+      "on_success": "builder",
+      "on_reject": "finish",
+      "on_error": "finish"
+    }
+  ]
+}

@@ -3,20 +3,28 @@
  * List session files sorted newest-first with metadata.
  *
  * Usage:
- *   npx tsx .pi/skills/session-parser/scripts/list-sessions.ts [options] [session-dir]
+ *   npx tsx .pi/skills/session-parser/scripts/list-sessions.ts [options]
  *
  * Options:
  *   --last N       Show only the last N sessions (default: all)
  *   --today        Show only today's sessions
  *   --path         Print file paths only (machine-readable)
+ *   --source agent|maestro|both  Which session store to scan (default: both)
  *
- * Defaults to project session directory if no path is given.
+ * Session stores:
+ *   agent    — ~/.pi/agent/sessions/--home-david-projects-pi-pos-v1--/
+ *             Flat .jsonl files from direct agent runs.
+ *   maestro  — .pi/maestro/sessions/<number>/<flow>/session.jsonl
+ *             Nested dirs from multi-agent pipeline runs.
  */
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
-import { parseSessionLines, extractSessionMetadata } from '../../../../shared/index.js';
+
+// ── Constants ──────────────────────────────────────────────────
+
+const AGENT_SESSION_DIR = '/home/david/.pi/agent/sessions/--home-david-projects-pi-pos-v1--';
+const MAESTRO_SESSION_DIR = path.resolve('.pi/maestro/sessions');
 
 // ── CLI parsing ────────────────────────────────────────────────
 
@@ -24,9 +32,7 @@ const args = process.argv.slice(2);
 let lastN: number | undefined;
 let todayOnly = false;
 let pathsOnly = false;
-let sessionDir: string;
-
-const positionalArgs: string[] = [];
+let sourceFilter: 'agent' | 'maestro' | 'both' = 'both';
 
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
@@ -36,53 +42,44 @@ for (let i = 0; i < args.length; i++) {
     todayOnly = true;
   } else if (arg === '--path') {
     pathsOnly = true;
-  } else if (!arg.startsWith('-')) {
-    positionalArgs.push(arg);
-  }
-}
-
-// Resolve session directory:
-// 1. Explicit argument
-// 2. Current project's sessions (from cwd)
-// 3. All projects' sessions (lists them)
-if (positionalArgs.length > 0) {
-  sessionDir = path.resolve(positionalArgs[0]);
-} else {
-  // Try to find the current project's session directory from cwd
-  const home = process.env.HOME || os.homedir();
-  const sessionsRoot = path.join(home, '.pi', 'agent', 'sessions');
-  const cwdProjectSlug = '--' + process.cwd().replace(/\/+/g, '-') + '--';
-  const candidatePath = path.join(sessionsRoot, cwdProjectSlug);
-
-  if (fs.existsSync(candidatePath)) {
-    sessionDir = candidatePath;
-  } else {
-    // Fall back: list all available projects and pick the first with sessions
-    console.error('⚠️ No session directory found for current project.');
-    console.error('   Specify a path, or use one of these:');
-    if (fs.existsSync(sessionsRoot)) {
-      const dirs = fs.readdirSync(sessionsRoot)
-        .filter(d => !d.startsWith('.'))
-        .sort()
-        .slice(0, 10);
-      if (dirs.length > 0) {
-        for (const d of dirs) console.error(`     ${path.join(sessionsRoot, d)}`);
-      }
+  } else if (arg === '--source' && i + 1 < args.length) {
+    const val = args[++i];
+    if (!['agent', 'maestro', 'both'].includes(val)) {
+      console.error(`❌ Invalid --source value: ${val}. Must be agent, maestro, or both.`);
+      process.exit(1);
     }
-    process.exit(1);
+    sourceFilter = val as 'agent' | 'maestro' | 'both';
+  } else if (!arg.startsWith('-')) {
+    // Positional arg (legacy: session-dir override — still supported)
+    console.warn(`⚠️  Positional path argument is deprecated. Use --source agent|maestro|both.`);
   }
 }
 
-// ── Read directory ─────────────────────────────────────────────
+// ── Discover .jsonl files ──────────────────────────────────────
 
-if (!fs.existsSync(sessionDir)) {
-  console.error(`❌ Session directory not found: ${sessionDir}`);
-  process.exit(1);
+const jsonlFiles: string[] = [];
+
+if (sourceFilter === 'agent' || sourceFilter === 'both') {
+  if (fs.existsSync(AGENT_SESSION_DIR)) {
+    const agentFiles = fs.readdirSync(AGENT_SESSION_DIR)
+      .filter(f => f.endsWith('.jsonl'))
+      .map(f => path.join(AGENT_SESSION_DIR, f));
+    jsonlFiles.push(...agentFiles);
+  } else {
+    console.warn(`⚠️  Agent session dir not found: ${AGENT_SESSION_DIR}`);
+  }
 }
 
-const files = fs.readdirSync(sessionDir).filter(f => f.endsWith('.jsonl'));
+if (sourceFilter === 'maestro' || sourceFilter === 'both') {
+  if (fs.existsSync(MAESTRO_SESSION_DIR)) {
+    const maestroFiles = findJsonlRecursive(MAESTRO_SESSION_DIR);
+    jsonlFiles.push(...maestroFiles);
+  } else {
+    console.warn(`⚠️  Maestro session dir not found: ${MAESTRO_SESSION_DIR}`);
+  }
+}
 
-if (files.length === 0) {
+if (jsonlFiles.length === 0) {
   console.log('📭 No session files found.');
   process.exit(0);
 }
@@ -92,6 +89,7 @@ if (files.length === 0) {
 interface SessionMeta {
   filePath: string;
   fileName: string;
+  source: 'agent' | 'maestro';
   id: string;
   timestamp: Date;
   sizeBytes: number;
@@ -101,25 +99,34 @@ interface SessionMeta {
 
 const sessions: SessionMeta[] = [];
 
-for (const file of files) {
-  const filePath = path.join(sessionDir, file);
+for (const filePath of jsonlFiles) {
   const stat = fs.statSync(filePath);
 
-  // Extract metadata using shared parser (reads only first line)
-  const meta = extractSessionMetadata(filePath);
-  if (!meta.id) continue;
+  // Read first line for session metadata
+  const firstLine = readFirstLine(filePath);
+  if (!firstLine) continue;
 
-  // Count total events using shared parser
-  const eventCount = parseSessionLines(filePath).length;
+  let parsed: any;
+  try {
+    parsed = JSON.parse(firstLine);
+  } catch {
+    continue;
+  }
 
-  // Extract title from parsed events
-  const title = extractTitleFromEvents(parseSessionLines(filePath));
+  if (parsed.type !== 'session') continue;
+
+  // Count total events
+  const eventCount = countLines(filePath);
+
+  // Extract title from first user message
+  const title = extractTitle(filePath);
 
   sessions.push({
     filePath,
-    fileName: file,
-    id: meta.id.substring(0, 8),
-    timestamp: new Date(meta.timestamp || ''),
+    fileName: path.basename(filePath),
+    source: filePath.startsWith(MAESTRO_SESSION_DIR) ? 'maestro' : 'agent',
+    id: parsed.id?.substring(0, 8) || 'unknown',
+    timestamp: new Date(parsed.timestamp),
     sizeBytes: stat.size,
     eventCount,
     title,
@@ -161,24 +168,27 @@ if (sessions.length === 0) {
 }
 
 // Table header
-console.log(`\n📋 Sessions in: ${sessionDir}`);
+const sourceLabel = sourceFilter === 'both' ? '(agent + maestro)' : `(${sourceFilter})`;
+console.log(`\n📋 Sessions ${sourceLabel}`);
 console.log(`   Total: ${sessions.length} session(s)\n`);
 
 const pad = (s: string, len: number) => s.padEnd(len);
 const trunc = (s: string, max: number) => s.length > max ? s.substring(0, max) + '…' : s;
 
 // Header row
-console.log(pad('#', 3) + '  ' + pad('Time', 22) + '  ' + pad('Size', 8) + '  ' + pad('Events', 7) + '  ' + pad('ID', 10) + '  Title');
-console.log('-'.repeat(64));
+console.log(pad('#', 3) + '  ' + pad('Time', 22) + '  ' + pad('Src', 8) + '  ' + pad('Size', 8) + '  ' + pad('Events', 7) + '  ' + pad('ID', 10) + '  Title');
+console.log('-'.repeat(72));
 
 sessions.forEach((s, i) => {
   const timeStr = formatTimestamp(s.timestamp);
+  const srcIcon = s.source === 'maestro' ? '🎼' : '🤖';
   const sizeStr = formatSize(s.sizeBytes);
   const titleTrunc = trunc(s.title || '(no title)', 28);
 
   console.log(
     pad(String(i + 1), 3) + '  ' +
     pad(timeStr, 22) + '  ' +
+    pad(srcIcon, 8) + '  ' +
     pad(sizeStr, 8) + '  ' +
     pad(String(s.eventCount), 7) + '  ' +
     pad(s.id, 10) + '  ' +
@@ -189,39 +199,95 @@ sessions.forEach((s, i) => {
 console.log(`\n💡 Use the path to pipe into parse-session.ts:`);
 console.log(`   tsx .pi/skills/session-parser/scripts/parse-session.ts <path>`);
 
+// ── Recursive file discovery ───────────────────────────────────
+
+/** Recursively find all .jsonl files in a directory tree. */
+function findJsonlRecursive(dir: string): string[] {
+  const results: string[] = [];
+  try {
+    for (const entry of fs.readdirSync(dir)) {
+      const fullPath = path.join(dir, entry);
+      const stat = fs.statSync(fullPath);
+      if (stat.isDirectory()) {
+        results.push(...findJsonlRecursive(fullPath));
+      } else if (entry.endsWith('.jsonl')) {
+        results.push(fullPath);
+      }
+    }
+  } catch {
+    // Ignore permission errors on unreadable dirs
+  }
+  return results;
+}
+
 // ── Helpers ────────────────────────────────────────────────────
 
-/** Extract a title from the first user message in parsed events. */
-function extractTitleFromEvents(events: import('../../../../shared/index.js').ParsedEvent[]): string {
+function readFirstLine(filePath: string): string | null {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    let buf = Buffer.alloc(65536);
+    const bytesRead = fs.readSync(fd, buf);
+    const chunk = buf.toString('utf8', 0, bytesRead);
+    const newlineIdx = chunk.indexOf('\n');
+    if (newlineIdx === -1) return chunk.trim();
+    return chunk.substring(0, newlineIdx).trim();
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function countLines(filePath: string): number {
+  const content = fs.readFileSync(filePath, 'utf8');
+  return content.split('\n').filter(l => l.trim()).length;
+}
+
+function extractTitle(filePath: string): string {
+  // Read lines until we find the first user message, then grab a short snippet.
+  // Skip messages that are mostly skill/system content (contain <skill> tags).
   const maxLines = 50;
-  let count = 0;
+  let lineCount = 0;
 
-  for (const event of events) {
-    if (++count > maxLines) break;
+  const fileContent = fs.readFileSync(filePath, 'utf8');
+  for (const rawLine of fileContent.split('\n')) {
+    if (!rawLine.trim()) continue;
+    lineCount++;
+    if (lineCount > maxLines) break;
 
-    if (event.type === 'message' && event.message?.role === 'user') {
-      const textContent = extractTextContent(event.message.content);
-      // Skip messages that are mostly skill content or system prompts
-      if (textContent.includes('<skill ') || textContent.includes('You are the **')) continue;
+    try {
+      const event = JSON.parse(rawLine);
+      if (event.type === 'message' && event.message?.role === 'user') {
+        const textContent = extractTextContent(event.message.content);
+        // Skip messages that are mostly skill content or system prompts
+        if (textContent.includes('<skill ') || textContent.includes('You are the **')) continue;
 
-      // Strip XML tags, collapse whitespace
-      const cleaned = textContent.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-      if (cleaned) return cleaned;
+        // Strip XML tags, collapse whitespace
+        const cleaned = textContent.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+        if (cleaned) return cleaned;
+      }
+    } catch {
+      continue;
     }
   }
 
   // Fallback: use first user message even if it's skill content
-  count = 0;
-  for (const event of events) {
-    if (++count > maxLines) break;
+  lineCount = 0;
+  for (const rawLine of fileContent.split('\n')) {
+    if (!rawLine.trim()) continue;
+    lineCount++;
+    if (lineCount > maxLines) break;
 
-    if (event.type === 'message' && event.message?.role === 'user') {
-      const textContent = extractTextContent(event.message.content);
-      // Skip system prompt fragments entirely in fallback too
-      if (textContent.includes('You are the **')) continue;
-      // Extract the user's actual question from after skill tags
-      let cleaned = textContent.replace(/<skill[^>]*>[\s\S]*?<\/skill>/g, '').replace(/\s+/g, ' ').trim();
-      if (cleaned) return cleaned;
+    try {
+      const event = JSON.parse(rawLine);
+      if (event.type === 'message' && event.message?.role === 'user') {
+        const textContent = extractTextContent(event.message.content);
+        // Skip system prompt fragments entirely in fallback too
+        if (textContent.includes('You are the **')) continue;
+        // Extract the user's actual question from after skill tags
+        let cleaned = textContent.replace(/<skill[^>]*>[\s\S]*?<\/skill>/g, '').replace(/\s+/g, ' ').trim();
+        if (cleaned) return cleaned;
+      }
+    } catch {
+      continue;
     }
   }
 

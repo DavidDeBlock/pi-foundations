@@ -84,13 +84,13 @@ Rules:
 
 ## Rule: Use native Linux paths
 
-This project runs on **native Linux**.
+This project runs on **native Linux** under `/home/david/...`.
 
 | Context | Path Format |
 |---------|-------------|
-| Project root | `<PROJECT_ROOT>` (e.g., `~/projects/my-app`) |
+| Project root | `/home/david/projects/pi-pos-v1` |
 | Local config | `.pi/` (relative to cwd) |
-| Global config | `~/.pi/` (auto-resolved to user's home directory) |
+| Global config | `~/.pi/` (auto-resolved to `/home/david/.pi/`) |
 
 ## Validation
 
@@ -152,9 +152,9 @@ At startup, load these files in order:
 
 | Prefix | Meaning | Example |
 |--------|---------|----------|
-| `~` | Global Pi config (auto-resolved) | `~/.pi/agent/AGENTS.md` → `<HOME>/.pi/agent/AGENTS.md` |
-| `.pi/` | Project-local config (relative to cwd) | `.pi/SYSTEM.md` → `<PROJECT_ROOT>/.pi/SYSTEM.md` |
-| `/` | Absolute filesystem path | `<PROJECT_ROOT>` |
+| `~` | Global Pi config (auto-resolved) | `~/.pi/agent/AGENTS.md` → `/home/david/.pi/agent/AGENTS.md` |
+| `.pi/` | Project-local config (relative to cwd) | `.pi/SYSTEM.md` → `/home/david/projects/pi-hub/.pi/SYSTEM.md` |
+| `/` | Absolute filesystem path | `/home/david/projects/pi-pos-v1` |
 
 **Rule:** Use `~` for global files, relative paths (`.pi/`) for project-local files.
 

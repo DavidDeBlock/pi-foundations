@@ -38,6 +38,7 @@ This directory contains records of significant architectural decisions made for 
 | **Data** | Database & data patterns | ADR-006 |
 | **APIs** | Interface contracts | ADR-007 |
 | **Security** | Security decisions | ADR-008 |
+| **Testing** | Test strategy, tooling, conventions | ADR-010 |
 
 ---
 
@@ -137,6 +138,27 @@ This directory contains records of significant architectural decisions made for 
 
 **References**:
 - See [Clean Structure Decision](../31-planning-notes/clean-structure-decision.md) for migration plan
+
+---
+
+### ADR-010: E2E Test Strategy — Playwright + Page Object Model
+
+**Status**: ✅ Accepted  
+**Date**: 2026-06-02  
+**Authors**: David De Block  
+
+**Summary**: Adopt Playwright Test as the E2E runner, with the Page Object Model pattern, in a new `e2e/` workspace at the repo root. POS checkout is the v1 scope; visual regression is deferred to a future iteration.
+
+**Key Points**:
+- Playwright unifies the new `e2e-testing` skill with the existing `browser-automation` and `debugger` skills (all use Playwright under the hood)
+- Per-worker `:memory:` SQLite for test isolation — already supported by `server/src/db/index.ts` via `NODE_ENV=test`
+- `data-testid` becomes a project-wide convention on all interactive components in `client/src/features/**` (enforced in PR review)
+- Page Object Model matches the project's "one canonical place per concern" instinct established by ADR-008
+- v1 scope: POS checkout happy path + working fixture/reset infrastructure; CI integration deferred
+
+**References**:
+- [CONTEXT.md § Testing Strategy](../../CONTEXT.md#testing-strategy)
+- [`.pi/skills/e2e-testing/SKILL.md`](../../.pi/skills/e2e-testing/SKILL.md) — the skill that operationalises this ADR
 
 ---
 

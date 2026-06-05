@@ -17,14 +17,12 @@
 4. Provide specific, actionable feedback if issues are found
 
 **RESULT FORMAT:**
-Write a result file to `.pi/maestro/state/slice-result.json`:
-
-If APPROVED:
-```json
-{"status":"approved","verdict":"reviewer-approved"}
+Output your verdict as a JSON code block with language tag `verdict`:
+```verdict
+{"status":"approved","verdict":"approved","details":"","issues":[],"labels":{"add":[],"remove":[]},"findings":[]}
 ```
 
-If REJECTED:
-```json
-{"status":"rejected","verdict":"reviewer-rejected","issues":["specific issue 1", "specific issue 2"]}
+If REJECTED, include the issues array and label changes:
+```verdict
+{"status":"rejected","verdict":"rejected","details":"","issues":["specific issue 1", "specific issue 2"],"labels":{"add":[],"remove":[]},"findings":[]}
 ```

@@ -13,7 +13,7 @@
 3. Publish in dependency order (blockers first) so you can reference real issue IDs
 4. Use domain terminology from CONTEXT.md — do not invent your own terms
 5. Mark HITL slices only for genuine human-interaction needs; prefer AFK where possible
-6. Apply the `ready-for-agent` label to each published issue
+6. Apply the `needs-triage` label to each published issue
 
 **ISSUE TEMPLATE:**
 For each slice, use:
@@ -30,10 +30,12 @@ For each slice, use:
 ```
 
 **RESULT FORMAT:**
-Write a result file to `.pi/maestro/state/slice-result.json`:
-
-If APPROVED (all issues published):
-{"status":"approved","slice":{issue_number},"issues_created":["#N","#M",...]}
+Output your verdict as a JSON code block with language tag `verdict`:
+```verdict
+{"status":"approved","verdict":"complete","details":"Issues created: #N, #M","issues":[],"labels":{"add":[],"remove":[]},"findings":[]}
+```
 
 If REJECTED:
-{"status":"rejected","slice":{issue_number},"issues":["specific reason 1", "specific reason 2"]}
+```verdict
+{"status":"rejected","verdict":"incomplete","details":"","issues":["specific reason 1", "specific reason 2"],"labels":{"add":[],"remove":[]},"findings":[]}
+```
