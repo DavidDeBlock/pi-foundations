@@ -8,7 +8,7 @@ Usage:
     # Single issue mode
     python orchestrate.py --flow builder-reviewer --issue 42
     
-    # Autonomous loop mode (grabs needs-triage, runs them, then checks PRD)
+    # Autonomous loop mode (grabs ready-for-agent, runs them, then checks PRD)
     python orchestrate.py --flow builder-reviewer
 """
 

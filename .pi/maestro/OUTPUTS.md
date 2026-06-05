@@ -12,7 +12,7 @@ This document defines every data artifact produced, consumed, or exchanged by th
 | GitHub Phase Comment | Engine (`github_client`) | Issue comments on GitHub | [§2](#2-github-phase-comments) | Resume logic, human review, comment parser |
 | Drift Report (`.md`) | `analyze` phase agent | `.pi/maestro/state/drift-report.md` | [§3](#3-drift-report-drift-reportmd) | Human reviewer, future PRD generator |
 | PRD (GitHub Issue) | `to-prd` skill | GitHub Issue body + `[PRD]` label | [§4](#4-prd-github-issue-body) | `to-issues`, gap-check pipeline |
-| Implementation Issues | `to-issues` skill | GitHub Issue bodies + `needs-triage` label | [§5](#5-implementation-issues-github-issue-bodies) | Builder phase, autonomous loop |
+| Implementation Issues | `to-issues` skill | GitHub Issue bodies + `ready-for-agent` label | [§5](#5-implementation-issues-github-issue-bodies) | Builder phase, autonomous loop |
 | Session Logs (`.jsonl`) | Pi RPC Client | `/tmp/maestro-sessions/<uuid>.jsonl` | [§6](#6-session-logs-jsonl) | `session_reader.py`, terminal metadata |
 
 ---
@@ -140,7 +140,7 @@ Agent Model: {provider/model used}
 
 ### Rules
 - Title must start with `[PRD] `.
-- Must use `parent-prd` label (never `needs-triage`).
+- Must use `parent-prd` label (never `ready-for-agent`).
 - User stories must be extensive and cover all feature aspects.
 - Implementation Decisions must stay architectural; never commit to file paths or code structure that will rot quickly.
 
@@ -150,7 +150,7 @@ Agent Model: {provider/model used}
 
 **Producer:** `to-issues` skill  
 **Consumer:** Builder phase, autonomous loop (`app_shell.py`)  
-**Labels:** `needs-triage`
+**Labels:** `ready-for-agent`
 
 ### Required Sections
 ```markdown
@@ -179,7 +179,7 @@ Or: "None - can start immediately" if no blockers.
 - Each issue must represent a **tracer bullet** (thin vertical slice cutting through all layers).
 - Acceptance criteria must use markdown checkboxes (`- [ ]`).
 - Parent reference format: `## Parent\n\n#NNN` (parsed by `_extract_parent_issue()` in `flow_engine.py`)
-- Labels must include `needs-triage`. No other triage labels at creation time.
+- Labels must include `ready-for-agent`. No other triage labels at creation time.
 - Issues are published in dependency order (blockers first).
 
 ---
@@ -208,7 +208,7 @@ Or: "None - can start immediately" if no blockers.
 ## 🔄 Data Flow Mapping
 
 ```
-GitHub Issue (needs-triage)
+GitHub Issue (ready-for-agent)
        │
        ▼
 app_shell.run() ──► flow_engine.load_flow() ──► build_prompt(phase.tmpl + context vars)
@@ -241,7 +241,7 @@ analyze phase ──► writes drift-report.md + slice-result.json (no_gaps or a
 to-prd skill ──► creates/updates GitHub PRD issue with [PRD] label
        │
        ▼
-to-issues skill ──► publishes vertical slice issues with needs-triage label
+to-issues skill ──► publishes vertical slice issues with ready-for-agent label
        │
        ▼
 Gap-check closes parent PRD issue

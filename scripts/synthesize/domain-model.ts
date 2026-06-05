@@ -17,6 +17,7 @@
 
 import {
   mkdirSync,
+  statSync,
   existsSync,
   readFileSync,
   writeFileSync,

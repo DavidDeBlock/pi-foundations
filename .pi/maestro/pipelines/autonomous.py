@@ -7,7 +7,7 @@ fully functional pipeline script powered by the new engine, context API,
 and live dashboard.
 
 Workflow:
-  1. Fetch open issues labeled "needs-triage"
+  1. Fetch open issues labeled "ready-for-agent"
   2. Run builder-reviewer flow on each issue (close when done)
   3. After backlog processing, run prd-audit on all open parent-prd issues
   4. Display live progress dashboard with final scorecard summary
@@ -44,7 +44,7 @@ def setup(ctx):
 def run(ctx):
     """Execute the autonomous workflow.
     
-    Phase 1: Process needs-triage backlog (builder-reviewer flow)
+    Phase 1: Process ready-for-agent backlog (builder-reviewer flow)
     Phase 2: Run prd-audit on all open parent-prd issues
     Phase 3: Display final scorecard
     
@@ -65,16 +65,16 @@ def run(ctx):
     # ── Phase 1: Process Needs-Triage Backlog ───────────────────────
     
     if term:
-        term._print_verbose("[PHASE 1] Fetching needs-triage backlog...")
+        term._print_verbose("[PHASE 1] Fetching ready-for-agent backlog...")
     
-    # Fetch all open issues with "needs-triage" label
-    backlog = gh.fetch_issues_by_label("needs-triage")
+    # Fetch all open issues with "ready-for-agent" label
+    backlog = gh.fetch_issues_by_label("ready-for-agent")
     
     if not backlog:
         if term:
-            term.info("No issues in 'needs-triage' queue. Skipping backlog processing.")
+            term.info("No issues in 'ready-for-agent' queue. Skipping backlog processing.")
         if dashboard:
-            dashboard.log_event("No needs-triage issues found", "info")
+            dashboard.log_event("No ready-for-agent issues found", "info")
     else:
         total_backlog = len(backlog)
         
@@ -104,7 +104,7 @@ def run(ctx):
             success = ctx.run_flow("builder-reviewer", issue.number)
             
             if success:
-                # Close the issue (removes all labels including needs-triage)
+                # Close the issue (removes all labels including ready-for-agent)
                 gh.close_issue(issue.number)
                 
                 if dashboard:

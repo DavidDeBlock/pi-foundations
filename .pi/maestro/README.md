@@ -88,7 +88,7 @@ Processes one issue end-to-end through its flow topology. Stops when it hits `fi
 
 ### 2. Autonomous Loop Mode
 Runs continuously against the project backlog:
-1. **Backlog Sweep**: Fetches all issues labeled `needs-triage`
+1. **Backlog Sweep**: Fetches all issues labeled `ready-for-agent`
 2. **Slice Processing**: Runs the default flow on each issue, closing them upon successful completion
 3. **Gap Check Pipeline**: After the backlog is empty, processes all open `parent-prd` issues through an `analyze → to-prd → to-issues` pipeline (defined in `gap-check.json`)
 4. **Loop**: Returns to step 1 for newly created issues

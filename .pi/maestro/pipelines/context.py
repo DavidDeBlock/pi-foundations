@@ -10,7 +10,7 @@ Provides a clean, object-oriented interface for:
 
 Usage in pipeline scripts:
     def setup(ctx):
-        issues = ctx.github.fetch_issues_by_label("needs-triage")
+        issues = ctx.github.fetch_issues_by_label("ready-for-agent")
         for issue in issues:
             ctx.run_flow("builder-reviewer", issue.number)
 """

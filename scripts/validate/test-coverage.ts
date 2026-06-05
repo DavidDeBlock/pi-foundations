@@ -16,6 +16,7 @@
  */
 
 import {
+  readdirSync,
   statSync,
   existsSync,
   readFileSync
@@ -63,6 +64,9 @@ const TEST_COVERAGE_SCAN_OPTIONS = {
   ],
   skipHidden: true,
 };
+
+/** Test file name patterns to check for (appended after the base filename) */
+const TEST_PATTERNS = [".test.ts", ".test.tsx"];
 
 // ── Core Functions ────────────────────────────────────────────────────
 

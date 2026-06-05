@@ -9,7 +9,7 @@ Usage:
     from lib.github_client import GithubClient
     
     client = GithubClient()
-    issues = await client.fetch_issues_by_label("needs-triage")
+    issues = await client.fetch_issues_by_label("ready-for-agent")
     await client.post_phase_comment(issue_num=42, phase="builder", status="success", details="Implemented feature X")
 """
 
@@ -150,7 +150,7 @@ class GithubClient:
         consider using fetch_issue() individually to avoid payload limits.
         
         Args:
-            label: GitHub label to filter by (e.g., 'needs-triage').
+            label: GitHub label to filter by (e.g., 'ready-for-agent').
             
         Returns:
             List of Issue objects sorted by number ascending.
@@ -291,7 +291,7 @@ class GithubClient:
             success1, _ = self._run_gh([
                 "issue", "edit", str(issue_num),
                 "--repo", self.repo,
-                "--remove-label", "needs-triage"  # Adjust based on your config
+                "--remove-label", "ready-for-agent"  # Adjust based on your config
             ])
             
             success2, _ = self._run_gh([
@@ -313,7 +313,7 @@ class GithubClient:
             success2, _ = self._run_gh([
                 "issue", "edit", str(issue_num),
                 "--repo", self.repo,
-                "--remove-label", "needs-triage"
+                "--remove-label", "ready-for-agent"
             ])
             
             return success1 and success2

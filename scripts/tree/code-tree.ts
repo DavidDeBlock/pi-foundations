@@ -15,7 +15,7 @@
  * @usage tsx scripts/tree/code-tree.ts [path] [--json]
  */
 
-import { statSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
 import { resolve, join, extname, basename } from 'node:path'
 import { scanDirectory as _scanFiles } from '../lib/scanner.js'
 import { fileURLToPath } from 'node:url'
