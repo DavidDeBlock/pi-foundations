@@ -1589,3 +1589,144 @@ def run_flow_on_issue(
             )
 
     return completed_successfully
+
+
+# ─── New value-object types ─────────────────────────────────────────────
+#
+# These types are added in a no-behavior-change commit so that subsequent
+# issues (logger migration, dispatcher extraction, runner narrowing) can
+# build on typed values instead of loose ``flow_config: dict`` and
+# ``context: dict`` parameters. The existing ``run_flow_on_issue`` and its
+# callers are intentionally unchanged in this slice.
+#
+# Per the deepening PRD:
+#   - ``Flow``, ``FlowContext``, ``PhaseRun``, ``FlowOutcome`` and the
+#     helpers ``PhaseConfig`` / ``Transition`` are frozen — they describe
+#     static or completed values that should not mutate.
+#   - ``PhaseState`` is the ONE mutable type. It is the loop's local
+#     state and mutates every iteration. "Frozen" would be a lie.
+#
+# Forward references to ``WorkingMemory``, ``PrefetchedContext``,
+# ``ScoutFindings`` and ``FlowEvent`` are kept as strings so this file
+# does not gain a new import dependency in the no-behavior-change slice.
+
+from dataclasses import dataclass, field  # noqa: E402  (kept grouped with types)
+
+
+@dataclass(frozen=True)
+class PhaseConfig:
+    """One phase's config, post-validation, post-defaults.
+
+    A flattened, immutable view of a single phase entry from a flow JSON.
+    ``tools`` is a tuple (loaded from prompt frontmatter at construction
+    time) so the dataclass remains hashable.
+    """
+    name: str
+    skill: str
+    timeout_seconds: int
+    retries: int
+    is_local: bool
+    is_optional: bool
+    model: str | None
+    provider: str | None
+    command: str | None
+    tools: tuple = ()
+
+
+@dataclass(frozen=True)
+class Transition:
+    """One transition rule from a flow config.
+
+    ``on_no_gaps`` is the target when a phase returns the ``no_gaps``
+    status (a verdict outcome that isn't approval and isn't rejection).
+    The other three fields are the standard transition targets.
+    """
+    from_phase: str
+    on_success: str | None
+    on_reject: str | None
+    on_error: str | None
+    on_no_gaps: str | None
+
+
+@dataclass(frozen=True)
+class Flow:
+    """A flow config, validated and defaults applied. Immutable."""
+    name: str
+    description: str
+    scout_enabled: bool
+    evidence_policy: dict
+    phases: dict
+    transitions: tuple
+
+
+@dataclass(frozen=True)
+class FlowContext:
+    """Everything a flow needs to know about an issue at the START of
+    execution. Static — loaded once per flow run.
+
+    ``working_memory``, ``prefetched`` and ``scout_findings`` are typed
+    as forward references to keep this file free of new import
+    dependencies in the no-behavior-change slice.
+    """
+    flow: "Flow"
+    issue_num: int
+    issue_body: str
+    issue_title: str
+    parent_prd: str | None
+    working_memory: "WorkingMemory"
+    prefetched: "PrefetchedContext"
+    repo_context: dict | None
+    scout_findings: "ScoutFindings | None"
+
+
+@dataclass
+class PhaseState:
+    """The per-iteration state, mutated by the runner.
+
+    NOT in ``FlowContext`` — this is the dynamic, per-iteration state.
+    The runner mutates ``current_phase`` and ``phase_attempt`` every
+    iteration, and updates ``previous_output`` / ``diagnostic_insights``
+    / ``phase_outputs`` as phases complete.
+    """
+    current_phase: str
+    phase_attempt: int = 1
+    previous_output: str = ""
+    diagnostic_insights: str = ""
+    phase_outputs: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PhaseRun:
+    """A single phase attempt, returned in ``FlowOutcome.phases``.
+
+    A single phase can run multiple times (retries). Per-attempt is the
+    source of truth; rolled-up views are derived by callers.
+    """
+    name: str
+    attempt: int
+    status: str  # "approved" | "rejected" | "no_gaps" | "error" | "skipped"
+    duration_s: float | None
+    tokens_in: int | None
+    tokens_out: int | None
+    cache_read: int | None
+    session_log: "Path | None"
+    details: str
+
+
+@dataclass(frozen=True)
+class FlowOutcome:
+    """The runner's return value. Captures the whole run.
+
+    ``events`` is the ordered tuple of every ``FlowEvent`` emitted by the
+    ``FlowLogger`` port during the run — useful for the dashboard and for
+    after-the-fact debugging.
+    """
+    flow_name: str
+    issue_num: int
+    status: str  # "success" | "failed" | "exhausted_iterations" | "no_gaps"
+    iterations: int
+    phases: tuple
+    events: tuple
+    total_duration_s: float
+    evidence_summary: str | None
+    retro_learning: str | None
