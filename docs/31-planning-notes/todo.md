@@ -31,3 +31,23 @@ Q9: Option A
 
 
 If I can have a rich, visually looking interactive CLI tool that acts like a small program with options to choose from, and then it doesn't have to be in the same program, but maybe another CLI to just monitor everything, that would be nice. It doesn't have to be textual We don't have to use textual with panels and stuff. If we maybe the library rich, or I don't know how it's called, this is enough for our goal.
+
+
+
+What I want to be able to do: I want to start issues with a certain flow. I want an overview of the open issues from GitHub together with the title and the labels. I want to be able to start issues. Basically, it will be an issue manager that can run issues separately or in batch, like one PRD and five issues, for example, or run autonomously based on the labels of the issues. That's what I wanted to do
+
+
+What I want to see is the current progress. I just want to see what is happening and where we are at.
+- What phase?
+- What flow?
+- Who is reading?
+- Who is reading what?
+- What issue?
+Stuff like that.
+
+1.B
+2.We are currently implementing PRD issue #25 
+3.Polling is fine 
+4.Empty state with info 
+
+Or lets create a prd for it

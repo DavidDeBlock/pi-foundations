@@ -1,0 +1,26 @@
+{
+  "issue": 42,
+  "created_at": "2026-06-15T22:16:27.771871+00:00",
+  "updated_at": "2026-06-15T22:16:40.745849+00:00",
+  "repo_path": "/home/david/projects/pi-foundations/.pi/maestro",
+  "git_sha": "ae554fdab7bca85b8c9356c4787460f6ef1f3cf1",
+  "scout": {
+    "status": "reject",
+    "details": "scout rejected\n• no findings produced",
+    "raw_output": "Output for builder",
+    "findings": {
+      "raw": "Output for builder",
+      "parse_error": "no PHASE_OUTPUT block found"
+    },
+    "session_log": "/tmp/scout.jsonl"
+  },
+  "builder": {},
+  "reviewer": {},
+  "test_runner": {},
+  "diagnostic": {},
+  "retrospective": {},
+  "files_touched": [],
+  "test_results": [],
+  "errors": [],
+  "notes": []
+}

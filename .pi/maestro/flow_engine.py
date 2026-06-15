@@ -1248,6 +1248,36 @@ def load_flow(name: str) -> dict:
     return config
 
 
+def _flow_from_config(flow_config: dict) -> "Flow":
+    """Build a :class:`Flow` value object from the dict returned by
+    :func:`load_flow`.
+
+    Used by the :func:`~flow_dispatcher.build_flow_context` shim to
+    convert the raw config into the typed value object. ``phases`` and
+    ``transitions`` are kept in their dict / list form here (the
+    dispatcher only reads ``flow.scout_enabled`` and ``flow.name``;
+    deeper extraction of ``PhaseConfig`` / ``Transition`` happens in a
+    later slice when the runner narrows to typed inputs).
+
+    Args:
+        flow_config: The dict returned by :func:`load_flow` (post-
+            validation, post-defaults).
+
+    Returns:
+        A :class:`Flow` instance. The ``phases`` and ``transitions``
+        fields mirror the dict's structure; ``evidence_policy`` is
+        passed through.
+    """
+    return Flow(
+        name=flow_config.get("name", ""),
+        description=flow_config.get("description", ""),
+        scout_enabled=bool(flow_config.get("scout_enabled", False)),
+        evidence_policy=dict(flow_config.get("evidence_policy") or {}),
+        phases=dict(flow_config.get("phases") or {}),
+        transitions=tuple(flow_config.get("transitions") or ()),
+    )
+
+
 def _extract_parent_issue(body: str) -> Optional[int]:
     """Extract parent issue number from body if formatted as '## Parent\n\n#NNN'."""
     import re
@@ -1266,139 +1296,76 @@ def run_flow_on_issue(
     """
     Run a specific flow on a single GitHub issue.
     Returns True if completed successfully, False otherwise.
+
+    This is a thin shim. The setup work (issue metadata, parent PRD,
+    working memory, prefetch, repo context, scout) lives in
+    :func:`flow_dispatcher.build_flow_context`; the still-unrefactored
+    phase loop below consumes the dict context the shim rebuilds from
+    the :class:`~flow_engine.FlowContext` value object.
+
+    Behaviour is identical to the pre-extraction code path; the slice
+    is a pure refactor.
     """
+    from flow_dispatcher import build_flow_context
+
     flow_config = load_flow(flow_name)
+    flow = _flow_from_config(flow_config)
+    flow_context = build_flow_context(flow, issue_num, gh_client)
 
-    # Fetch and display issue metadata
-    try:
-        issue_info = gh_client.fetch_issue(issue_num)
-        if issue_info:
-            title = issue_info.title or "No title"
-            body = issue_info.body or ""
-            comments_count = len(issue_info.comments) if issue_info.comments else 0
-            created_at = issue_info.created_at[:10] if issue_info.created_at else None
-            term.issue_header(issue_num, title=title, comments_count=comments_count, created_at=created_at)
-        else:
-            body = ""
-            term._print_verbose(f"[WARNING] Could not fetch issue #{issue_num} metadata")
-            term.issue_header(issue_num)
-    except Exception as e:
-        body = ""
-        term._print_verbose(f"[WARNING] Could not fetch issue metadata: {e}")
-        term.issue_header(issue_num)
+    # Display the issue header (preserves the pre-extraction terminal
+    # output). On a fully-successful issue fetch, all three kwargs are
+    # populated; on partial / failed fetches the dispatcher leaves
+    # ``comments_count`` at 0 and ``created_at`` at None, which mirrors
+    # the original fallback path (``term.issue_header(issue_num)`` with
+    # no kwargs).
+    term.issue_header(
+        issue_num,
+        title=flow_context.issue_title,
+        comments_count=flow_context.comments_count,
+        created_at=flow_context.created_at,
+    )
 
-    # Build context with issue body and parent PRD if available
+    # ── Rebuild the dict context the still-unrefactored phase loop
+    #    expects. The keys here must match the pre-extraction code path
+    #    exactly so the phase loop, prompt builder, and scout refresh
+    #    continue to work. The :class:`FlowContext` value object is the
+    #    new typed contract; this dict is the legacy shim.
+    body = flow_context.issue_body
     context = {"prompt": f"## Issue #{issue_num}\n\n{body}"}
-
-    # Check for parent PRD reference (e.g., '## Parent\n\n#49')
-    parent_num = _extract_parent_issue(body)
-    if parent_num:
-        term._print_verbose(f"[PARENT] Issue #{issue_num} references parent PRD #{parent_num}")
-        try:
-            prd_info = gh_client.fetch_issue(parent_num)
-            if prd_info and prd_info.body:
-                context["prd_body"] = f"## Parent PRD (#{parent_num})\n\n{prd_info.body}"
-                term._print_verbose(f"[PARENT] Loaded parent PRD #{parent_num} ({len(prd_info.body)} chars)")
-            else:
-                term._print_verbose(f"[WARNING] Could not fetch parent PRD body for #{parent_num}")
-        except Exception as e:
-            term._print_verbose(f"[WARNING] Failed to load parent PRD: {e}")
-
+    if flow_context.parent_prd:
+        context["prd_body"] = flow_context.parent_prd
     if initial_context:
         context.update(initial_context)
 
-    # ── Working memory + context prefetch (once per flow) ──
-    # Load or initialise the per-issue memory. Persist the current git SHA
-    # and repo path so the prefetched context is traceable from the memory
-    # file alone.
-    try:
-        memory_store = MemoryStore(issue_num)
-        memory = memory_store.load()
-    except Exception as e:
-        # If memory is broken, log and proceed with an in-memory fallback
-        print(f"[memory] Failed to load working memory for #{issue_num}: {e}", file=sys.stderr)
-        sys.stderr.flush()
-        memory = WorkingMemory(issue=issue_num, created_at=now_iso())
+    context["working_memory"] = flow_context.working_memory.to_dict()
+    context["prefetched_context_md"] = format_prefetched_context(flow_context.prefetched)
+    context["prefetched_context"] = flow_context.prefetched
+    if flow_context.repo_context:
+        context["repo_context"] = flow_context.repo_context
+    # Match the pre-extraction behaviour: set ``scout_findings_md`` IFF
+    # scout was attempted for this flow (i.e. ``_scout_enabled`` is
+    # True). When scout is disabled the key is left unset, and the
+    # prompt builder falls back to ``"(Scout disabled for this flow.)"``.
+    # When scout ran and failed, ``flow_context.scout_findings`` is
+    # ``None`` but the key IS set, so the prompt gets the
+    # ``"## Scout Findings" + no-findings`` message — that is the
+    # signal the integration tests rely on.
+    if _scout_enabled(flow_config):
+        context["scout_findings_md"] = format_scout_findings_markdown(flow_context.scout_findings)
 
-    # Compute prefetched context once per flow. Cache is keyed on git SHA
-    # so re-runs of the same SHA short-circuit this work.
-    try:
-        prefetched = prefetch_context(Path.cwd())
-    except Exception as e:
-        print(f"[prefetch] Failed to prefetch context: {e}", file=sys.stderr)
-        sys.stderr.flush()
-        prefetched = PrefetchedContext(git_sha="unknown")
-
-    memory.git_sha = prefetched.git_sha
-    memory.repo_path = str(Path.cwd().resolve())
-    try:
-        memory_store.save(memory)
-    except Exception as e:
-        print(f"[memory] Failed to persist git_sha/repo_path: {e}", file=sys.stderr)
-        sys.stderr.flush()
-
-    # Inject the working memory and prefetched context into the prompt
-    # context dict. Subsequent phases see the live in-memory copy, which
-    # is updated after each phase completes (see end of loop body below).
-    context["working_memory"] = memory.to_dict()
-    context["prefetched_context_md"] = format_prefetched_context(prefetched)
-    context["prefetched_context"] = prefetched  # raw object for callers
-
-    # ── Auto-load repo context (Wave 2 — Repo Onboarding) ──
-    # If the target repo has been onboarded via ``maestro onboard``,
-    # inject its registry entry as ``context["repo_context"]`` so
-    # phase prompts (builder, etc.) can render the
-    # ``{repo_context}`` variable with the captured conventions,
-    # gotchas, evidence strategy, and commands. The lookup is
-    # best-effort: a missing or corrupt registry is a no-op (the
-    # flow proceeds without context, matching pre-Wave-2 behaviour).
-    # See docs/35-prds/maestro-repo-onboarding.md for the rationale
-    # (explicit onboarding only, never auto-triggered).
-    try:
-        projects_registry = ProjectsRegistry(Path(PROJECTS_REGISTRY_FILENAME))
-        repo_entry = projects_registry.get_by_path(str(Path.cwd().resolve()))
-        if repo_entry:
-            context["repo_context"] = _format_repo_context(repo_entry)
-            print(
-                f"[onboard] Loaded context for alias={repo_entry.get('alias', '?')!r} "
-                f"(hash={repo_entry.get('hash', '?')})",
-                file=sys.stderr,
-            )
-        else:
-            print(
-                f"[onboard] No context for {Path.cwd().resolve()}; "
-                f"run ``maestro onboard`` to register",
-                file=sys.stderr,
-            )
-    except Exception as e:  # noqa: BLE001
-        # Auto-load is best-effort — never break the flow on registry issues.
-        print(
-            f"[onboard] Failed to load repo context: {type(e).__name__}: {e}",
-            file=sys.stderr,
-        )
-        sys.stderr.flush()
+    # The dispatcher persisted git_sha/repo_path on the WorkingMemory
+    # reference it returned; the dict snapshot above was taken before
+    # the post-scout refresh in :func:`build_flow_context`. Reload
+    # here so the phase loop sees the post-scout memory if scout ran.
+    if _scout_enabled(flow_config):
+        try:
+            context["working_memory"] = MemoryStore(issue_num).load().to_dict()
+        except Exception:
+            pass
 
     # Main execution loop for this specific issue
     max_iterations = 50
     iteration_count = 0
-
-    # ── Scout phase (opt-in, runs once before the main loop) ──
-    # If the flow has ``scout_enabled: true`` and a ``scout`` phase, run it
-    # synchronously here so its findings are available to the builder (and
-    # any downstream phase that reads ``{scout_findings}``). Scout failures
-    # are non-fatal — we always fall through to the main loop, just without
-    # findings.
-    scout_was_attempted = _scout_enabled(flow_config)
-    if scout_was_attempted:
-        scout_findings = _run_scout_phase(flow_config, issue_num, context, memory_store)
-        context["scout_findings_md"] = format_scout_findings_markdown(scout_findings)
-        # Refresh the in-memory working memory so the builder sees the scout section
-        try:
-            memory = memory_store.load()
-            context["working_memory"] = memory.to_dict()
-        except Exception:
-            pass
-
     current_phase = _initial_phase(flow_config, skip_scout=True)
     if current_phase is None:
         # Edge case: scout was the only phase in the flow
@@ -1667,16 +1634,26 @@ class FlowContext:
     ``working_memory``, ``prefetched`` and ``scout_findings`` are typed
     as forward references to keep this file free of new import
     dependencies in the no-behavior-change slice.
+
+    ``comments_count`` and ``created_at`` are the header-display
+    fields populated by :func:`flow_dispatcher.build_flow_context`
+    step 1. The shim uses them to reproduce the pre-refactor
+    ``term.issue_header(issue_num, title=..., comments_count=...,
+    created_at=...)`` call — the dispatcher does not have access to
+    the ``Terminal``, so the values are carried on the ``FlowContext``
+    instead.
     """
     flow: "Flow"
     issue_num: int
     issue_body: str
     issue_title: str
-    parent_prd: str | None
-    working_memory: "WorkingMemory"
-    prefetched: "PrefetchedContext"
-    repo_context: dict | None
-    scout_findings: "ScoutFindings | None"
+    comments_count: int = 0
+    created_at: str | None = None
+    parent_prd: str | None = None
+    working_memory: "WorkingMemory" = None  # type: ignore[assignment]
+    prefetched: "PrefetchedContext" = None  # type: ignore[assignment]
+    repo_context: dict | None = None
+    scout_findings: "ScoutFindings | None" = None
 
 
 @dataclass
