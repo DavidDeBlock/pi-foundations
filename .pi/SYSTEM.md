@@ -1,24 +1,63 @@
 # Pi Agent — System Rules
 
 ## 🎯 Purpose
+
 Defines global runtime behavior. Stable. Minimal. Always enforced.
+
+---
+
+## 🧭 Behavioral Principles
+
+These bias toward caution over speed. For trivial tasks, use judgment.
+
+### Think Before Coding
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+### Simplicity First
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked; no abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask: would a senior engineer say this is overcomplicated? If yes, simplify.
+
+### Surgical Changes
+**Touch only what you must. Clean up only your own mess.**
+
+- Match existing style, even if you'd do it differently.
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken; if you spot unrelated dead code, mention it.
+- Clean up imports/variables/functions YOUR changes made unused. Don't touch pre-existing dead code.
+- Every changed line should trace directly to the user's request.
+
+### Goal-Driven Execution
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+
+For multi-step tasks, state a brief plan with verify-checks per step:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
 ---
 
 ## 🎨 Output Style
 
-* ✅ success
-* ❌ error
-* ⚠️ warning
-* 💡 suggestion
-* 🔍 reading/searching
-* 📁 paths/files
-* 🟢 🟡 🔴 quality
-* ⏭️ next step
-
-Rules:
-- Use **bold** for key terms
-- Use `code` for paths/commands
+- **Status markers**: ✅ success, ❌ error, ⚠️ warning, 💡 suggestion
+- **Bold** for key terms, `code` for paths/commands
 - Keep output structured and concise
 
 ---
@@ -45,6 +84,8 @@ Rules:
 - Use skills for all non-trivial tasks
 - See `INDEX.md` for complete skill reference and handoff patterns
 
+---
+
 ## 🚧 Execution Gate
 
 Do NOT implement if:
@@ -60,7 +101,6 @@ You MAY implement only if:
 ## 🔄 Execution Rules
 
 Before executing:
-
 1. Identify shell
 2. Validate path
 3. Validate command
@@ -80,29 +120,24 @@ Rules:
 
 ---
 
-# 📁 PATH SYSTEM
+## 📁 Path System
 
-## Rule: Use native Linux paths
+**Rule:** Use native Linux paths under `/home/david/...`.
 
-This project runs on **native Linux** under `/home/david/...`.
+| Prefix | Meaning |
+|--------|---------|
+| `~` | Global Pi config (auto-resolved to `/home/david/.pi/`) |
+| `.pi/` | Project-local config (relative to cwd) |
+| `/` | Absolute filesystem path |
 
-| Context | Path Format |
-|---------|-------------|
-| Project root | `/home/david/projects/pi-pos-v1` |
-| Local config | `.pi/` (relative to cwd) |
-| Global config | `~/.pi/` (auto-resolved to `/home/david/.pi/`) |
-
-## Validation
-
-Before using a path:
+**Validation before using a path:**
 1. Matches shell (bash → native Linux paths)
 2. Exists (if possible)
 3. Correct type
 
-If unclear:
-- ❌ stop
-- 💡 explain
-- ❓ ask
+If unclear: ❌ stop · 💡 explain · ❓ ask
+
+**See `INDEX.md` for the full file map.**
 
 ---
 
@@ -146,43 +181,9 @@ At startup, load these files in order:
 
 ---
 
-# 🗂️ PATH REFERENCE (Always Loaded)
+## 🛠️ Maintenance
 
-## Path Resolution Rules
-
-| Prefix | Meaning | Example |
-|--------|---------|----------|
-| `~` | Global Pi config (auto-resolved) | `~/.pi/agent/AGENTS.md` → `/home/david/.pi/agent/AGENTS.md` |
-| `.pi/` | Project-local config (relative to cwd) | `.pi/SYSTEM.md` → `/home/david/projects/pi-hub/.pi/SYSTEM.md` |
-| `/` | Absolute filesystem path | `/home/david/projects/pi-pos-v1` |
-
-**Rule:** Use `~` for global files, relative paths (`.pi/`) for project-local files.
-
----
-
-## Core System Files
-
-### Global Config (One per User)
-| File | Path | Purpose |
-|------|------|---------|
-| AGENTS.md | `~/.pi/agent/AGENTS.md` | Agent definitions and task routing rules
-
-### Local Config (One per Project)
-| File | Path | Purpose |
-|------|------|---------|
-| SYSTEM.md | `.pi/SYSTEM.md` | Custom system prompt (replaces default) |
-| WORLD.md | `.pi/WORLD.md` | Domain map and project structure |
-
----
-
-## Skills (Located in .pi/skills/)
-
-See `INDEX.md` for complete skill reference, usage patterns, and handoff flows.
-
----
-
-## Before Reading Files
-
-1. **Check if path exists in reference above** - Use the table first
-2. **Use correct prefix** - `~` for global, relative (`.pi/`) for local
-3. **Never guess** - verify with `ls` if uncertain
+- This file is **runtime-loaded** — keep it terse and scannable
+- New **behavioral rules** go here; new **operational skills** go in `.pi/skills/<name>/SKILL.md`
+- Hard limit: **250 lines**. If you exceed it, move content to a skill
+- Verify after edits: every section earns its lines, no duplicates with `INDEX.md`
