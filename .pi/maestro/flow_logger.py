@@ -34,8 +34,23 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Protocol
+
+
+def now_iso() -> str:
+    """Return the current time as an ISO-8601 string (UTC, microsecond).
+
+    The :class:`FlowEvent.timestamp` field expects an ISO string. This
+    helper is the canonical way to populate it from inside the engine
+    — pulled out into :mod:`flow_logger` so callers don't need to
+    import :mod:`working_memory` just to get a timestamp. The
+    microsecond suffix is intentional: it lets us distinguish events
+    emitted in the same millisecond, which matters when a single
+    phase emits both ``phase_start`` and ``phase_end`` rapidly.
+    """
+    return datetime.now(timezone.utc).isoformat()
 
 
 # The closed set of FlowEvent kinds. Adding a new event type is a

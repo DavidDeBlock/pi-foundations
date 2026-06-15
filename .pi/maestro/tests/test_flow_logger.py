@@ -242,6 +242,96 @@ def test_all_three_adapters_satisfy_flow_logger_protocol():
         )
 
 
+# ─── Snapshot test (added in issue #30) ───────────────────────────────
+#
+# Drives the StderrLogger with the same sequence of events the engine
+# would emit on a representative run, captures stderr, and asserts the
+# output matches the snapshot. The snapshot is deliberately the NEW
+# output (which includes the structured ``kind:`` in each line); the
+# pre-#30 print format didn't carry a kind. Operators see one extra
+# word per line ("phase_start:", "phase_end:", etc.) and that's the
+# visible cost of the migration — the trade is observability for
+# token-level fidelity.
+
+
+def test_stderr_snapshot_for_representative_run():
+    """StderrLogger output is stable for a representative event sequence.
+
+    Drives the StderrLogger with a synthetic sequence mimicking what
+    :func:`flow_engine.run_phase` emits on a successful LLM-driven
+    phase (prompt-build diagnostics + start + end + tokens), then
+    asserts the captured stderr matches the expected snapshot string.
+
+    If this snapshot breaks, the StderrLogger rendering format has
+    changed — operators will see a different terminal layout. Bump
+    intentionally; do not ``assert output == old_snapshot``.
+    """
+    import io
+
+    log = StderrLogger()
+    events = [
+        # _print_prompt_debug-style header lines (issue #30 mapping: each
+        # line is a phase_start event with phase=phase_name)
+        _make_event(kind="phase_start", message="", phase="builder"),
+        _make_event(kind="phase_start", message="=" * 60, phase="builder"),
+        _make_event(
+            kind="phase_start",
+            message="[DEBUG] Phase: builder | Issue: #42",
+            phase="builder",
+        ),
+        # Phase-start announcement (replaces "[PHASE] Running 'builder' on issue #42")
+        _make_event(
+            kind="phase_start",
+            message="Running 'builder' on issue #42",
+            phase="builder",
+        ),
+        # Phase-end (binary verdict) — the structured event the engine
+        # emits at the bottom of run_phase_inner
+        _make_event(
+            kind="phase_end",
+            message="builder success",
+            phase="builder",
+            attempt=1,
+        ),
+        # tokens_recorded — special-cased rendering ("[phase] tokens: in=N
+        # out=M cache=K", not the standard "[phase] kind: message" format)
+        _make_event(
+            kind="tokens_recorded",
+            message="",
+            phase="builder",
+            attempt=1,
+            tokens={"in": 1234, "out": 56, "cache": 7890},
+        ),
+    ]
+
+    buf = io.StringIO()
+    old_stderr = sys.stderr
+    sys.stderr = buf
+    try:
+        for ev in events:
+            log.emit(ev)
+    finally:
+        sys.stderr = old_stderr
+
+    output = buf.getvalue()
+    # Exact snapshot: the StderrLogger's format is a load-bearing
+    # contract for the terminal-visible flow engine log. Changing it
+    # is a deliberate UX change.
+    expected = (
+        "[builder] phase_start: \n"
+        "[builder] phase_start: ============================================================\n"
+        "[builder] phase_start: [DEBUG] Phase: builder | Issue: #42\n"
+        "[builder] phase_start: Running 'builder' on issue #42\n"
+        "[builder] phase_end: builder success\n"
+        "[builder] tokens: in=1234 out=56 cache=7890\n"
+    )
+    assert output == expected, (
+        f"StderrLogger snapshot changed.\n"
+        f"--- expected ---\n{expected!r}\n"
+        f"--- got ---\n{output!r}\n"
+    )
+
+
 # ─── Custom test runner (matches the project convention) ────────────────
 
 
@@ -256,6 +346,7 @@ tests = [
     test_tokens_recorded_kind_is_in_enum,
     test_flow_event_is_frozen,
     test_all_three_adapters_satisfy_flow_logger_protocol,
+    test_stderr_snapshot_for_representative_run,
 ]
 
 

@@ -65,7 +65,7 @@ def _make_fake_run_phase(scout_status: str = "success", scout_output: str = ""):
     Note: PHASE_OUTPUT lives in the raw ``output`` field, not in the summarized
     ``details`` field. So the canned output is returned in the ``output`` key.
     """
-    def _fake(phase_name, flow_config, issue_num, context):
+    def _fake(phase_name, flow_config, issue_num, context, log=None):
         if phase_name == "scout":
             # ``details`` is the summarized verdict; ``output`` is the raw text
             # the LLM produced. For failure mocks, the original message goes

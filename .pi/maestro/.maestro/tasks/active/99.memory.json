@@ -1,0 +1,26 @@
+{
+  "issue": 99,
+  "created_at": "2026-06-15T23:46:37.083222+00:00",
+  "updated_at": "2026-06-15T23:57:09.855796+00:00",
+  "repo_path": "",
+  "git_sha": "",
+  "scout": {
+    "status": "success",
+    "details": "scout ran",
+    "raw_output": "no markers here, just text",
+    "findings": {
+      "raw": "no markers here, just text",
+      "parse_error": "no PHASE_OUTPUT block found"
+    },
+    "session_log": "/tmp/scout.jsonl"
+  },
+  "builder": {},
+  "reviewer": {},
+  "test_runner": {},
+  "diagnostic": {},
+  "retrospective": {},
+  "files_touched": [],
+  "test_results": [],
+  "errors": [],
+  "notes": []
+}

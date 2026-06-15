@@ -27,7 +27,7 @@ from github_client import GithubClient
 from session_reader import parse_session_log, extract_phase_usage
 import flow_logger as _flow_logger  # noqa: E402  (StderrLogger for token events)
 from prompt_loader import load_prompt, PERMISSIVE_FALLBACK
-from working_memory import MemoryStore, WorkingMemory, now_iso
+from working_memory import MemoryStore, WorkingMemory
 from context_prefetch import (
     prefetch_context,
     format_prefetched_context,
@@ -51,6 +51,36 @@ from projects_registry import (  # noqa: E402
     REGISTRY_FILENAME as PROJECTS_REGISTRY_FILENAME,
     ProjectsRegistry,
 )
+
+
+# ─── Logging port (per deepening PRD issue #30) ─────────────────────────
+#
+# The runner emits structured :class:`flow_logger.FlowEvent` objects through
+# a :class:`flow_logger.FlowLogger` port. The default adapter is
+# :class:`StderrLogger` — it renders each event as
+# ``[<phase>] <kind>: <message>`` on ``sys.stderr`` so terminal users see
+# the same per-line layout they got from the pre-refactor
+# ``print(..., file=sys.stderr)`` calls.
+#
+# Functions in this module that need to emit a :class:`FlowEvent` take
+# an optional ``log: Optional[FlowLogger]`` keyword. When omitted, the
+# default :class:`StderrLogger` is used (so existing tests and call
+# sites that don't care about logging still get a working terminal
+# line). The entry point :func:`run_flow_on_issue` constructs an
+# explicit logger and passes it through the call chain, so a future
+# CLI flag can swap in a :class:`FileLogger` for operator-mode
+# debugging without touching the helpers below.
+
+
+def _resolve_log(log: Optional["FlowLogger"]) -> "FlowLogger":
+    """Return the provided logger, or a fresh :class:`StderrLogger`.
+
+    The default is constructed lazily on first call to avoid a
+    ``sys.stderr`` reference at import time (matches the
+    ``StderrLogger`` adapter's own design — it dereferences
+    ``sys.stderr`` at emit time, not at construction).
+    """
+    return log if log is not None else _flow_logger.StderrLogger()
 
 
 # ─── Evidence policy defaults ─────────────────────────────────────────────
@@ -90,6 +120,7 @@ def _close_phase_result(
     flow_config: dict,
     issue_num: int,
     evidence_dir=None,
+    log: Optional["FlowLogger"] = None,
 ) -> dict:
     """Compute the close-phase result based on the flow's evidence policy.
 
@@ -138,16 +169,21 @@ def _close_phase_result(
             ),
         }
     if on_missing == "warn_but_proceed":
-        # Use the same logging style as the rest of the flow engine.
-        print(
-            f"[WARN] Missing evidence for issue #{issue_num}: {missing_values}",
-            file=sys.stderr,
-        )
-        print(
-            "[WARN] Proceeding without required evidence (warn_but_proceed policy)",
-            file=sys.stderr,
-        )
-        sys.stderr.flush()
+        # Use the structured FlowLogger port (issue #30). Each line
+        # is an ``evidence_warn`` event; the StderrLogger renders
+        # ``evidence_warn: <message>`` (no ``[phase]`` prefix — these
+        # warnings are not phase-scoped).
+        _log = _resolve_log(log)
+        _log.emit(_flow_logger.FlowEvent(
+            kind="evidence_warn",
+            message=f"Missing evidence for issue #{issue_num}: {missing_values}",
+            timestamp=_flow_logger.now_iso(),
+        ))
+        _log.emit(_flow_logger.FlowEvent(
+            kind="evidence_warn",
+            message="Proceeding without required evidence (warn_but_proceed policy)",
+            timestamp=_flow_logger.now_iso(),
+        ))
         return {
             "status": "success",
             "details": (
@@ -166,6 +202,7 @@ def run_close_phase(
     flow_config: dict,
     issue_num: int,
     evidence_dir=None,
+    log: Optional["FlowLogger"] = None,
 ) -> dict:
     """Run the close phase: mechanically check evidence gates.
 
@@ -182,7 +219,9 @@ def run_close_phase(
     ``"rejected"``) to match the existing flow engine status vocabulary
     — see :func:`run_phase`'s ``on_reject`` / ``on_error`` transitions.
     """
-    return _close_phase_result(flow_config, issue_num, evidence_dir=evidence_dir)
+    return _close_phase_result(
+        flow_config, issue_num, evidence_dir=evidence_dir, log=log
+    )
 
 
 def _maybe_get_working_memory(issue_num: int, context: dict) -> dict:
@@ -292,6 +331,7 @@ def _run_scout_phase(
     issue_num: int,
     context: dict,
     memory_store: MemoryStore,
+    log: Optional["FlowLogger"] = None,
 ) -> Optional[dict]:
     """Run the scout phase synchronously and return parsed findings (or ``None``).
 
@@ -309,10 +349,15 @@ def _run_scout_phase(
     """
     scout_timeout = flow_config.get("scout_timeout_seconds", 240)
 
-    print(f"[scout] Running scout phase on issue #{issue_num} (timeout={scout_timeout}s)", file=sys.stderr)
-    sys.stderr.flush()
+    _log = _resolve_log(log)
+    _log.emit(_flow_logger.FlowEvent(
+        kind="scout_complete",
+        message=f"Running scout phase on issue #{issue_num} (timeout={scout_timeout}s)",
+        timestamp=_flow_logger.now_iso(),
+        phase="scout",
+    ))
 
-    result, session_log_path = run_phase("scout", flow_config, issue_num, context)
+    result, session_log_path = run_phase("scout", flow_config, issue_num, context, log=_log)
 
     status = result.get("status", "error")
     details = result.get("details", "") or ""
@@ -324,9 +369,23 @@ def _run_scout_phase(
     if status != "success":
         # Non-fatal: log and proceed without findings
         short = details[:300].replace("\n", " ")
-        print(f"[scout] {status}: {short}", file=sys.stderr)
-        print("[scout] Builder will proceed without scout findings", file=sys.stderr)
-        sys.stderr.flush()
+        # ``scout_complete`` covers every post-run scout outcome that
+        # isn't a clean skip. ``scout_skipped`` is reserved for the
+        # case where the flow disabled scout up front (handled in the
+        # dispatcher) — by the time we reach this code path, scout
+        # actually ran and produced a non-success verdict.
+        _log.emit(_flow_logger.FlowEvent(
+            kind="scout_complete",
+            message=f"{status}: {short}",
+            timestamp=_flow_logger.now_iso(),
+            phase="scout",
+        ))
+        _log.emit(_flow_logger.FlowEvent(
+            kind="scout_complete",
+            message="Builder will proceed without scout findings",
+            timestamp=_flow_logger.now_iso(),
+            phase="scout",
+        ))
         try:
             memory_store.update_phase("scout", {
                 "status": status,
@@ -334,8 +393,16 @@ def _run_scout_phase(
                 "session_log": str(session_log_path) if session_log_path else "",
             })
         except Exception as mem_err:
-            print(f"[scout] Failed to persist failure to working memory: {mem_err}", file=sys.stderr)
-            sys.stderr.flush()
+            # Memory persistence is best-effort — never crash the
+            # flow. Emits a ``memory_warn`` event with the ``[scout]``
+            # phase prefix preserved so the existing operator log
+            # format stays scannable.
+            _log.emit(_flow_logger.FlowEvent(
+                kind="memory_warn",
+                message=f"Failed to persist failure to working memory: {mem_err}",
+                timestamp=_flow_logger.now_iso(),
+                phase="scout",
+            ))
         return None
 
     # Success — parse the PHASE_OUTPUT block from the raw LLM output
@@ -344,9 +411,18 @@ def _run_scout_phase(
     if "parse_error" in findings:
         # The scout succeeded but its output wasn't structured — still log it
         err = findings.get("parse_error", "unknown")
-        print(f"[scout] Output was unparseable ({err[:200]})", file=sys.stderr)
-        print("[scout] Builder will proceed with raw findings", file=sys.stderr)
-        sys.stderr.flush()
+        _log.emit(_flow_logger.FlowEvent(
+            kind="scout_complete",
+            message=f"Output was unparseable ({err[:200]})",
+            timestamp=_flow_logger.now_iso(),
+            phase="scout",
+        ))
+        _log.emit(_flow_logger.FlowEvent(
+            kind="scout_complete",
+            message="Builder will proceed with raw findings",
+            timestamp=_flow_logger.now_iso(),
+            phase="scout",
+        ))
 
     # Persist (raw findings dict, possibly with parse_error envelope) to memory
     try:
@@ -358,8 +434,12 @@ def _run_scout_phase(
             "session_log": str(session_log_path) if session_log_path else "",
         })
     except Exception as mem_err:
-        print(f"[scout] Failed to persist findings to working memory: {mem_err}", file=sys.stderr)
-        sys.stderr.flush()
+        _log.emit(_flow_logger.FlowEvent(
+            kind="memory_warn",
+            message=f"Failed to persist findings to working memory: {mem_err}",
+            timestamp=_flow_logger.now_iso(),
+            phase="scout",
+        ))
 
     return findings
 
@@ -374,31 +454,59 @@ def get_next_step(transitions: list, current_phase: str, status: str) -> Optiona
     return None
 
 
-def _print_prompt_debug(phase_name: str, issue_num: int, template_exists: bool, variables: dict, prompt: str, extra_context: str):
-    """Print debug info about the built prompt to stderr."""
-    print("\n" + "="*60, file=sys.stderr)
-    print(f"[DEBUG] Phase: {phase_name} | Issue: #{issue_num}", file=sys.stderr)
-    print(f"[DEBUG] Template loaded: {'YES' if template_exists else 'NO (fallback)'}", file=sys.stderr)
+def _print_prompt_debug(
+    phase_name: str,
+    issue_num: int,
+    template_exists: bool,
+    variables: dict,
+    prompt: str,
+    extra_context: str,
+    log: Optional["FlowLogger"] = None,
+):
+    """Print debug info about the built prompt via the FlowLogger port.
+
+    Each [DEBUG] line from the pre-refactor implementation maps to a
+    single ``phase_start`` event with ``phase=phase_name``. The
+    StderrLogger renders the same first-line prefix and emits the
+    full message verbatim, so terminal output stays stable. The
+    separator lines (``=========``) get their own events so the
+    framing is preserved line-for-line.
+    """
+    _log = _resolve_log(log)
+    _ts = _flow_logger.now_iso()
+
+    def _emit(line: str) -> None:
+        _log.emit(_flow_logger.FlowEvent(
+            kind="phase_start",
+            message=line,
+            timestamp=_ts,
+            phase=phase_name,
+        ))
+
+    _emit("")
+    _emit("=" * 60)
+    _emit(f"[DEBUG] Phase: {phase_name} | Issue: #{issue_num}")
+    _emit(f"[DEBUG] Template loaded: {'YES' if template_exists else 'NO (fallback)'}")
 
     # Show variable values (truncated for readability)
     for key, value in variables.items():
         display = value[:200] + "..." if len(value) > 200 else value
-        print(f"[DEBUG]   {key} = '{display}'", file=sys.stderr)
+        _emit(f"[DEBUG]   {key} = '{display}'")
 
     # Show extra context (diagnostic or previous_output)
     if extra_context:
         display = extra_context[:300] + "..." if len(extra_context) > 300 else extra_context
-        print(f"[DEBUG]   Context preview: '{display}'", file=sys.stderr)
+        _emit(f"[DEBUG]   Context preview: '{display}'")
 
     # Prompt stats
     lines = prompt.split('\n')
-    print(f"[DEBUG] Prompt: {len(prompt)} chars, {lines.__len__()} lines", file=sys.stderr)
+    _emit(f"[DEBUG] Prompt: {len(prompt)} chars, {lines.__len__()} lines")
     if len(lines) > 0:
-        print(f"[DEBUG] First line: '{lines[0].strip()[:100]}'", file=sys.stderr)
-    print("="*60 + "\n", file=sys.stderr)
+        _emit(f"[DEBUG] First line: '{lines[0].strip()[:100]}'")
+    _emit("=" * 60)
 
 
-def build_prompt(phase_name: str, phase_config: dict, flow_config: dict, issue_num: int, context: dict) -> Tuple[str, list[str]]:
+def build_prompt(phase_name: str, phase_config: dict, flow_config: dict, issue_num: int, context: dict, log: Optional["FlowLogger"] = None) -> Tuple[str, list[str]]:
     """Build a prompt for the given phase and return its tool allowlist.
 
     Loads the prompt from ``prompts/<phase_name>.md`` (preferred) or
@@ -413,10 +521,20 @@ def build_prompt(phase_name: str, phase_config: dict, flow_config: dict, issue_n
     """
     skill = phase_config.get("skill", "")
 
+    _log = _resolve_log(log)
+    _ts = _flow_logger.now_iso()
+
     # Determine prompt source
     if not skill:
-        print(f"[WARN] Phase '{phase_name}' has no 'skill' configured in flow config.", file=sys.stderr)
-        sys.stderr.flush()
+        # No phase prefix — this is a config-time warning, not a
+        # per-attempt phase event. ``phase_start`` is still the
+        # closest matching kind in the closed enum.
+        _log.emit(_flow_logger.FlowEvent(
+            kind="phase_start",
+            message=f"[WARN] Phase '{phase_name}' has no 'skill' configured in flow config.",
+            timestamp=_ts,
+            phase=phase_name,
+        ))
 
     prompt_dir = Path(__file__).parent / "prompts"
     explicit_tools = phase_config.get("tools")
@@ -426,14 +544,22 @@ def build_prompt(phase_name: str, phase_config: dict, flow_config: dict, issue_n
     except ValueError as exc:
         # Malformed frontmatter — surface the error but keep the flow alive
         # by falling back to a minimal default prompt + permissive tools.
-        print(f"[ERROR] {exc}", file=sys.stderr)
-        sys.stderr.flush()
+        _log.emit(_flow_logger.FlowEvent(
+            kind="phase_start",
+            message=f"[ERROR] {exc}",
+            timestamp=_ts,
+            phase=phase_name,
+        ))
         prompt = f"## Phase: {phase_name}\n## Issue: #{issue_num}\n\n[prompt loader error — see stderr]\n"
         return prompt, list(PERMISSIVE_FALLBACK)
 
     if loaded.deprecation_warning:
-        print(f"[DEPRECATION] {loaded.deprecation_warning}", file=sys.stderr)
-        sys.stderr.flush()
+        _log.emit(_flow_logger.FlowEvent(
+            kind="phase_start",
+            message=f"[DEPRECATION] {loaded.deprecation_warning}",
+            timestamp=_ts,
+            phase=phase_name,
+        ))
 
     prompt = loaded.body
 
@@ -477,18 +603,27 @@ def build_prompt(phase_name: str, phase_config: dict, flow_config: dict, issue_n
     if phase_config.get("is_local"):
         cmd = phase_config.get("command", "")
         prompt += f"\n\n**LOCAL COMMAND TO RUN:** `{cmd}`"
-        print(f"[PHASE] Running local command: {cmd}", file=sys.stderr)
+        _log.emit(_flow_logger.FlowEvent(
+            kind="phase_start",
+            message=f"Running local command: {cmd}",
+            timestamp=_flow_logger.now_iso(),
+            phase=phase_name,
+        ))
     elif skill:
         prompt += f"\n\n**SKILL TO USE:** `{skill}`"
-        print(f"[PHASE] Invoking skill: {skill}", file=sys.stderr)
-        sys.stderr.flush()
+        _log.emit(_flow_logger.FlowEvent(
+            kind="phase_start",
+            message=f"Invoking skill: {skill}",
+            timestamp=_flow_logger.now_iso(),
+            phase=phase_name,
+        ))
 
     # DEBUG: Show what was built
     extra = context.get("diagnostic_insights", "") or context.get("previous_output", "")
     if context.get("prd_body"):
         extra = f"PRD ({len(context['prd_body'])} chars) | {extra[:200]}"
     _print_prompt_debug(
-        phase_name, issue_num, loaded.source_format != "default", variables, prompt, extra
+        phase_name, issue_num, loaded.source_format != "default", variables, prompt, extra, log=_log
     )
 
     return prompt, loaded.tools
@@ -592,7 +727,7 @@ def _extract_phase_tokens(session_log_path: Optional[object]) -> dict:
     return {"tokens_in": tokens_in, "tokens_out": tokens_out, "cache_read": cache_read}
 
 
-def run_phase(phase_name: str, flow_config: dict, issue_num: int, context: dict) -> Tuple[dict, Optional[str]]:
+def run_phase(phase_name: str, flow_config: dict, issue_num: int, context: dict, log: Optional["FlowLogger"] = None) -> Tuple[dict, Optional[str]]:
     """Execute a single phase and return its result.
 
     Phases declared with ``is_optional: true`` (currently used by the
@@ -614,19 +749,21 @@ def run_phase(phase_name: str, flow_config: dict, issue_num: int, context: dict)
     """
     phase_config = flow_config["phases"][phase_name]
     is_optional = bool(phase_config.get("is_optional"))
+    _log = _resolve_log(log)
 
     if is_optional:
         try:
-            result, session_log = _run_phase_inner(phase_name, flow_config, issue_num, context)
+            result, session_log = _run_phase_inner(phase_name, flow_config, issue_num, context, log=_log)
         except Exception as e:  # noqa: BLE001
             # Non-fatal: log and convert to a synthetic success result.
             # We never raise out of an optional phase.
             err_msg = f"{type(e).__name__}: {e}"
-            print(
-                f"[{phase_name}] Failed (non-fatal): {err_msg}",
-                file=sys.stderr,
-            )
-            sys.stderr.flush()
+            _log.emit(_flow_logger.FlowEvent(
+                kind="phase_end",
+                message=f"Failed (non-fatal): {err_msg}",
+                timestamp=_flow_logger.now_iso(),
+                phase=phase_name,
+            ))
             result = {
                 "status": "success",
                 "details": f"{phase_name} failed (non-blocking, logged): {err_msg}",
@@ -642,11 +779,12 @@ def run_phase(phase_name: str, flow_config: dict, issue_num: int, context: dict)
         # non-fatal too — log it loudly, but never break the flow.
         if isinstance(result, dict) and result.get("status") == "error":
             err_details = result.get("details", "unknown error")
-            print(
-                f"[{phase_name}] Returned error (non-fatal, downgraded): {err_details}",
-                file=sys.stderr,
-            )
-            sys.stderr.flush()
+            _log.emit(_flow_logger.FlowEvent(
+                kind="phase_end",
+                message=f"Returned error (non-fatal, downgraded): {err_details}",
+                timestamp=_flow_logger.now_iso(),
+                phase=phase_name,
+            ))
             result = {
                 "status": "success",
                 "details": (
@@ -662,13 +800,13 @@ def run_phase(phase_name: str, flow_config: dict, issue_num: int, context: dict)
             result.update(_extract_phase_tokens(session_log))
         return result, session_log
 
-    result, session_log = _run_phase_inner(phase_name, flow_config, issue_num, context)
+    result, session_log = _run_phase_inner(phase_name, flow_config, issue_num, context, log=_log)
     if isinstance(result, dict):
         result.update(_extract_phase_tokens(session_log))
     return result, session_log
 
 
-def _run_phase_inner(phase_name: str, flow_config: dict, issue_num: int, context: dict) -> Tuple[dict, Optional[str]]:
+def _run_phase_inner(phase_name: str, flow_config: dict, issue_num: int, context: dict, log: Optional["FlowLogger"] = None) -> Tuple[dict, Optional[str]]:
     """Inner phase runner — the original ``run_phase`` body.
 
     Split out so :func:`run_phase` can wrap it in a non-blocking
@@ -676,6 +814,7 @@ def _run_phase_inner(phase_name: str, flow_config: dict, issue_num: int, context
     should use :func:`run_phase`, not this private helper.
     """
     phase_config = flow_config["phases"][phase_name]
+    _log = _resolve_log(log)
 
     # Local command phases run directly via subprocess (no LLM)
     if phase_config.get("is_local"):
@@ -693,8 +832,12 @@ def _run_phase_inner(phase_name: str, flow_config: dict, issue_num: int, context
             return result, None
 
         cmd = phase_config.get("command", "").replace("{issue_number}", str(issue_num))
-        print(f"[PHASE] Running local command: {cmd}", file=sys.stderr)
-        sys.stderr.flush()
+        _log.emit(_flow_logger.FlowEvent(
+            kind="phase_start",
+            message=f"Running local command: {cmd}",
+            timestamp=_flow_logger.now_iso(),
+            phase=phase_name,
+        ))
 
         import subprocess
         try:
@@ -721,17 +864,24 @@ def _run_phase_inner(phase_name: str, flow_config: dict, issue_num: int, context
             _populate_retrospective_context(context, flow_config, issue_num)
         except Exception as e:  # noqa: BLE001
             # Best-effort — defaults in build_prompt are safe.
-            print(
-                f"[retrospective] Failed to populate context: "
-                f"{type(e).__name__}: {e}",
-                file=sys.stderr,
-            )
-            sys.stderr.flush()
+            _log.emit(_flow_logger.FlowEvent(
+                kind="phase_end",
+                message=(
+                    f"Failed to populate context: "
+                    f"{type(e).__name__}: {e}"
+                ),
+                timestamp=_flow_logger.now_iso(),
+                phase="retrospective",
+            ))
 
-    prompt, tools = build_prompt(phase_name, phase_config, flow_config, issue_num, context)
+    prompt, tools = build_prompt(phase_name, phase_config, flow_config, issue_num, context, log=_log)
 
-    print(f"[PHASE] Running '{phase_name}' on issue #{issue_num}", file=sys.stderr)
-    sys.stderr.flush()
+    _log.emit(_flow_logger.FlowEvent(
+        kind="phase_start",
+        message=f"Running '{phase_name}' on issue #{issue_num}",
+        timestamp=_flow_logger.now_iso(),
+        phase=phase_name,
+    ))
 
     timeout = phase_config.get("timeout_seconds", 1800)
     model = phase_config.get("model")
@@ -741,8 +891,12 @@ def _run_phase_inner(phase_name: str, flow_config: dict, issue_num: int, context
     flow_name = flow_config.get("name", "unknown")
     session_dir = _build_session_dir(flow_name, issue_num, phase_name)
     if session_dir:
-        print(f"[rpc] Session dir: {session_dir}", file=sys.stderr)
-        sys.stderr.flush()
+        _log.emit(_flow_logger.FlowEvent(
+            kind="phase_start",
+            message=f"Session dir: {session_dir}",
+            timestamp=_flow_logger.now_iso(),
+            phase=phase_name,
+        ))
 
     rpc_result = run_rpc_with_session_log(
         prompt, phase_name, timeout,
@@ -798,12 +952,15 @@ def _run_phase_inner(phase_name: str, flow_config: dict, issue_num: int, context
                     session_log_path=session_log_path,
                 )
             except Exception as persist_err:  # noqa: BLE001
-                print(
-                    f"[retrospective] Persistence on verdict-error path failed: "
-                    f"{type(persist_err).__name__}: {persist_err}",
-                    file=sys.stderr,
-                )
-                sys.stderr.flush()
+                _log.emit(_flow_logger.FlowEvent(
+                    kind="phase_end",
+                    message=(
+                        f"Persistence on verdict-error path failed: "
+                        f"{type(persist_err).__name__}: {persist_err}"
+                    ),
+                    timestamp=_flow_logger.now_iso(),
+                    phase="retrospective",
+                ))
             return (
                 {
                     "status": "success",
@@ -871,14 +1028,18 @@ def _run_phase_inner(phase_name: str, flow_config: dict, issue_num: int, context
                 flow_status=flow_status_value,
                 repo_path=repo_path_for_retro,
                 session_log_path=session_log_path,
+                log=_log,
             )
         except Exception as e:  # noqa: BLE001
-            print(
-                f"[retrospective] Persistence step failed: "
-                f"{type(e).__name__}: {e}",
-                file=sys.stderr,
-            )
-            sys.stderr.flush()
+            _log.emit(_flow_logger.FlowEvent(
+                kind="phase_end",
+                message=(
+                    f"Persistence step failed: "
+                    f"{type(e).__name__}: {e}"
+                ),
+                timestamp=_flow_logger.now_iso(),
+                phase="retrospective",
+            ))
 
     return {
         "status": final_status,
@@ -1050,6 +1211,7 @@ def _persist_retrospective_result(
     flow_status: str,
     repo_path: "Path",
     session_log_path: "Optional[str]" = None,
+    log: Optional["FlowLogger"] = None,
 ) -> None:
     """Parse the retrospective PHASE_OUTPUT and persist to .maestro/learnings.md.
 
@@ -1081,6 +1243,8 @@ def _persist_retrospective_result(
     # (it's the truncated event stream, not the agent's prose). When
     # we have a session log path, read it and concatenate the agent
     # text parts. Otherwise fall back to ``rpc_output``.
+    _log = _resolve_log(log)
+    _ts = _flow_logger.now_iso()
     source_text = rpc_output or ""
     if session_log_path:
         try:
@@ -1091,24 +1255,28 @@ def _persist_retrospective_result(
                 # prose. If the session log is empty, keep rpc_output.
                 source_text = session_text
         except Exception as e:  # noqa: BLE001
-            print(
-                f"[retrospective] Could not read session log "
-                f"({session_log_path}): {type(e).__name__}: {e}; "
-                f"falling back to rpc_output",
-                file=sys.stderr,
-            )
-            sys.stderr.flush()
+            _log.emit(_flow_logger.FlowEvent(
+                kind="phase_end",
+                message=(
+                    f"Could not read session log "
+                    f"({session_log_path}): {type(e).__name__}: {e}; "
+                    f"falling back to rpc_output"
+                ),
+                timestamp=_ts,
+                phase="retrospective",
+            ))
     parsed = parse_retrospective_output(source_text)
     if "parse_error" in parsed:
         # No PHASE_OUTPUT — emit a minimal entry so the file still gets
         # the metadata (issue + outcome). The retrospective LLM is
         # supposed to always emit a block; if it didn't, that's
         # worth recording.
-        print(
-            f"[retrospective] No PHASE_OUTPUT block found: {parsed['parse_error']}",
-            file=sys.stderr,
-        )
-        sys.stderr.flush()
+        _log.emit(_flow_logger.FlowEvent(
+            kind="phase_end",
+            message=f"No PHASE_OUTPUT block found: {parsed['parse_error']}",
+            timestamp=_ts,
+            phase="retrospective",
+        ))
         # Use an empty-but-valid payload so the entry still gets written
         parsed = {
             "outcome": flow_status,
@@ -1122,18 +1290,25 @@ def _persist_retrospective_result(
     try:
         entry = format_learning_entry(issue_num, flow_status, parsed)
         append_to_learnings(repo_path, entry)
-        print(
-            f"[retrospective] Wrote learning entry for issue #{issue_num} "
-            f"to {repo_path / LEARNINGS_FILENAME}",
-            file=sys.stderr,
-        )
-        sys.stderr.flush()
+        _log.emit(_flow_logger.FlowEvent(
+            kind="phase_end",
+            message=(
+                f"Wrote learning entry for issue #{issue_num} "
+                f"to {repo_path / LEARNINGS_FILENAME}"
+            ),
+            timestamp=_ts,
+            phase="retrospective",
+        ))
     except Exception as e:  # noqa: BLE001
-        print(
-            f"[retrospective] Failed to write learnings file: {type(e).__name__}: {e}",
-            file=sys.stderr,
-        )
-        sys.stderr.flush()
+        _log.emit(_flow_logger.FlowEvent(
+            kind="phase_end",
+            message=(
+                f"Failed to write learnings file: "
+                f"{type(e).__name__}: {e}"
+            ),
+            timestamp=_ts,
+            phase="retrospective",
+        ))
         return
 
     # Check for recurring patterns and emit an amendment if ≥3 match.
@@ -1160,24 +1335,30 @@ def _persist_retrospective_result(
                 try:
                     amend_entry = format_amendment_entry(amend, occurrences)
                     append_to_amendments(repo_path, amend_entry)
-                    print(
-                        f"[retrospective] Proposed amendment: "
-                        f"{amend.get('title', '?')!r} "
-                        f"({repo_path / '.maestro' / 'proposed-amendments.md'})",
-                        file=sys.stderr,
-                    )
-                    sys.stderr.flush()
+                    _log.emit(_flow_logger.FlowEvent(
+                        kind="phase_end",
+                        message=(
+                            f"Proposed amendment: "
+                            f"{amend.get('title', '?')!r} "
+                            f"({repo_path / '.maestro' / 'proposed-amendments.md'})"
+                        ),
+                        timestamp=_ts,
+                        phase="retrospective",
+                    ))
                 except Exception as e:  # noqa: BLE001
-                    print(
-                        f"[retrospective] Failed to write amendment: "
-                        f"{type(e).__name__}: {e}",
-                        file=sys.stderr,
-                    )
-                    sys.stderr.flush()
+                    _log.emit(_flow_logger.FlowEvent(
+                        kind="phase_end",
+                        message=(
+                            f"Failed to write amendment: "
+                            f"{type(e).__name__}: {e}"
+                        ),
+                        timestamp=_ts,
+                        phase="retrospective",
+                    ))
 
 
 
-def run_diagnostic(term: Terminal, flow_config: dict, issue_num: int, failure_context: dict) -> dict:
+def run_diagnostic(term: Terminal, flow_config: dict, issue_num: int, failure_context: dict, log: Optional["FlowLogger"] = None) -> dict:
     """Run a diagnostic pass to analyze what went wrong."""
     term._print_verbose(f"[DIAGNOSTIC] Analyzing failure on issue #{issue_num}")
 
@@ -1196,9 +1377,14 @@ Provide specific actionable insights for the next retry attempt."""
     # Build session directory for diagnostic runs too
     flow_name = flow_config.get("name", "unknown")
     session_dir = _build_session_dir(flow_name, issue_num, "diagnostic")
+    _log = _resolve_log(log)
     if session_dir:
-        print(f"[rpc] Diagnostic session dir: {session_dir}", file=sys.stderr)
-        sys.stderr.flush()
+        _log.emit(_flow_logger.FlowEvent(
+            kind="diagnostic",
+            message=f"Diagnostic session dir: {session_dir}",
+            timestamp=_flow_logger.now_iso(),
+            phase="diagnostic",
+        ))
 
     rpc_result = run_rpc_with_session_log(
         diag_prompt, "diagnostic", timeout,
@@ -1425,20 +1611,37 @@ def run_flow_on_issue(
     # operators see ``[builder] tokens: in=N out=M cache=K`` in the
     # terminal. The outcome is not returned yet — that change is part
     # of a later interface-narrowing slice.
+    #
+    # Per the deepening PRD issue #30, this same ``StderrLogger`` is
+    # the default ``FlowLogger`` for the entire run. Every helper
+    # below (``run_phase``, ``run_diagnostic``, ``_persist_retrospective_result``)
+    # receives it via the ``log=`` keyword. The variable name kept
+    # here for the per-phase ``tokens_recorded`` event matches the
+    # pre-#30 code, but it's now the run-wide FlowLogger.
     phase_runs: list = []
     total_tokens_in: int = 0
     total_tokens_out: int = 0
     run_start = time.monotonic()
-    _token_log = _flow_logger.StderrLogger()
+    _log = _flow_logger.StderrLogger()
 
     while iteration_count < max_iterations:
         iteration_count += 1
         next_step = None  # reset each iteration; escalation may set it before transition lookup
 
-        result, session_log_path = run_phase(current_phase, flow_config, issue_num, context)
-        sys.stderr.flush()
+        result, session_log_path = run_phase(current_phase, flow_config, issue_num, context, log=_log)
 
         term._print_verbose(f"[PHASE] {current_phase} -> {result['status']}")
+        # Mirror the verbose line as a structured ``phase_end`` event
+        # (issue #30). The kind is ``phase_end`` per the issue's
+        # mapping table; the message carries the same "{phase} ->
+        # {status}" text the terminal verbose print uses, so the
+        # ``FlowLogger`` JSONL has the same information.
+        _log.emit(_flow_logger.FlowEvent(
+            kind="phase_end",
+            message=f"{current_phase} -> {result['status']}",
+            timestamp=_flow_logger.now_iso(),
+            phase=current_phase,
+        ))
 
         max_retries = flow_config["phases"][current_phase].get("retries", 3)
         is_retry = phase_attempt_count > 1
@@ -1526,7 +1729,7 @@ def run_flow_on_issue(
         #     cache=K`` (per the PRD). Only emitted when we have a usage
         #     block — phases without a session log (close, local cmds)
         #     have no tokens to report.
-        _event_ts = now_iso()
+        _event_ts = _flow_logger.now_iso()
         _phase_run = PhaseRun(
             name=current_phase,
             attempt=phase_attempt_count,
@@ -1550,7 +1753,7 @@ def run_flow_on_issue(
             "cache": _phase_run.cache_read,
         }
         # phase_end — always emitted (for the structured JSONL log)
-        _token_log.emit(_flow_logger.FlowEvent(
+        _log.emit(_flow_logger.FlowEvent(
             kind="phase_end",
             message=f"{current_phase} {result['status']}",
             timestamp=_event_ts,
@@ -1564,7 +1767,7 @@ def run_flow_on_issue(
         # phase_end event). This is the operator's terminal-visible
         # per-phase totals line.
         if _phase_run.tokens_in is not None:
-            _token_log.emit(_flow_logger.FlowEvent(
+            _log.emit(_flow_logger.FlowEvent(
                 kind="tokens_recorded",
                 message="",
                 timestamp=_event_ts,
@@ -1615,6 +1818,14 @@ def run_flow_on_issue(
 
         if not next_step:
             term._print_verbose(f"[ERROR] No transition defined for {current_phase} -> {result['status']}")
+            # Structured log mirror (issue #30) — ``phase_end`` with
+            # the failing phase and the unresolved status.
+            _log.emit(_flow_logger.FlowEvent(
+                kind="phase_end",
+                message=f"No transition defined for {current_phase} -> {result['status']}",
+                timestamp=_flow_logger.now_iso(),
+                phase=current_phase,
+            ))
             break
 
         if next_step == "finish":
@@ -1625,7 +1836,7 @@ def run_flow_on_issue(
             diag_result = run_diagnostic(term, flow_config, issue_num, {
                 "failed_phase": current_phase,
                 "output_summary": result.get("details", "")[:500]
-            })
+            }, log=_log)
 
             # Store diagnostic insights regardless of outcome
             if diag_result["status"] == "success":
@@ -1641,6 +1852,14 @@ def run_flow_on_issue(
             post_diag_step = get_next_step(flow_config["transitions"], "diagnostic", diag_verdict)
             if not post_diag_step:
                 term._print_verbose(f"[ERROR] No transition defined for diagnostic -> {diag_verdict}")
+                # Structured log mirror (issue #30) — ``phase_end`` with
+                # ``phase=diagnostic`` and the error in the message.
+                _log.emit(_flow_logger.FlowEvent(
+                    kind="phase_end",
+                    message=f"No transition defined for diagnostic -> {diag_verdict}",
+                    timestamp=_flow_logger.now_iso(),
+                    phase="diagnostic",
+                ))
                 break
             elif post_diag_step == "finish":
                 completed_successfully = True
