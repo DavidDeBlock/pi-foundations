@@ -46,7 +46,8 @@ def _assistant_msg(text: str) -> dict:
 
 def test_rpc_verdict_pipeline_approved():
     """End-to-end: session log with approved verdict → rpc_client returns approved result."""
-    # Simulate what run_rpc_with_session_log does internally via _extract_verdict_from_session
+    # Simulate what run_rpc_with_session_log does internally: call
+    # verdict_extractor.extract_phase_verdict() on the session log.
     text = "Implementation complete.\n\n```verdict\n{\"status\": \"approved\", \"details\": \"All criteria met.\", \"issues\": []}\n```"
     path = _write_jsonl([json.dumps(_assistant_msg(text))])
 

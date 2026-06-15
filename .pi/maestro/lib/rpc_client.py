@@ -394,8 +394,29 @@ def run_rpc_with_session_log(prompt_text: str, phase_name: str = "builder",
             }
         }
 
-    # Step 2: Extract verdict from session log (single source of truth)
-    verdict = _extract_verdict_from_session(session_log_path)
+    # Step 2: Extract verdict from session log (single source of truth).
+    # The verdict_extractor module is imported lazily so a missing/optional
+    # dependency never blocks RPC startup — mirrors the prior wrapper's
+    # failure mode (log a warning, fall through to the "no verdict" branch).
+    verdict: Optional[dict] = None
+    if session_log_path:
+        try:
+            from verdict_extractor import extract_phase_verdict
+
+            extracted = extract_phase_verdict(session_log_path)
+            if extracted.get("status") is not None:
+                print(f"[rpc] Verdict extracted from session log ({session_log_path}): "
+                      f"{extracted['status']}", file=sys.stderr)
+                sys.stderr.flush()
+                verdict = extracted
+        except ImportError:
+            print("[rpc] [WARN] verdict_extractor module not available, skipping "
+                  "session log parsing", file=sys.stderr)
+            sys.stderr.flush()
+        except Exception as e:
+            print(f"[rpc] [WARN] Failed to extract verdict from session log "
+                  f"({session_log_path}): {e}", file=sys.stderr)
+            sys.stderr.flush()
 
     if verdict is not None and verdict.get("status") in ("approved", "rejected", "no_gaps"):
         return {
@@ -426,39 +447,3 @@ def run_rpc_with_session_log(prompt_text: str, phase_name: str = "builder",
             ),
         }
     }
-
-
-def _extract_verdict_from_session(session_log_path: Optional[str]) -> Optional[dict]:
-    """Extract phase verdict from a session log using Phase 1's verdict extractor.
-
-    Args:
-        session_log_path: Path to the .jsonl session file, or None.
-
-    Returns:
-        Verdict dict (status, issues, raw_text) if successful, None otherwise.
-    """
-    if not session_log_path:
-        return None
-    
-    try:
-        from verdict_extractor import extract_phase_verdict
-        
-        verdict = extract_phase_verdict(session_log_path)
-        
-        # Return only meaningful verdicts (not the "no verdict found" empty dict)
-        if verdict.get("status") is not None:
-            print(f"[rpc] Verdict extracted from session log ({session_log_path}): "
-                  f"{verdict['status']}", file=sys.stderr)
-            sys.stderr.flush()
-            return verdict
-        
-    except ImportError:
-        print("[rpc] [WARN] verdict_extractor module not available, skipping "
-              "session log parsing", file=sys.stderr)
-        sys.stderr.flush()
-    except Exception as e:
-        print(f"[rpc] [WARN] Failed to extract verdict from session log "
-              f"({session_log_path}): {e}", file=sys.stderr)
-        sys.stderr.flush()
-    
-    return None

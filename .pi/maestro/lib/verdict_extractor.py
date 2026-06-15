@@ -18,6 +18,8 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from comment_parser import PHASE_OUTPUT_MARKER_PATTERN
+
 
 # ─── Verdict block extraction ────────────────────────────────────────────
 
@@ -69,7 +71,9 @@ def _extract_verdict_from_prose(text: str) -> Optional[dict]:
 #:   - failure  → rejected (the parent flow failed; retrospective still ran)
 #:   - rejected → rejected (alias; matches the orchestrator comment-parser regex)
 #:   - system_error → rejected (the retrospective hit a runtime error)
-#: Mirrors PHASE_OUTPUT_PATTERN in lib/comment_parser.py and lib/github_client.py.
+#: The matching alternation lives in ``comment_parser.PHASE_OUTPUT_MARKER_PATTERN``
+#: (the canonical home per the ADR-009 contract); this dict translates each
+#: outcome keyword to the binary verdict the flow engine consumes.
 _PHASE_OUTPUT_OUTCOMES = {
     "success": "approved",
     "failure": "rejected",
@@ -114,13 +118,11 @@ def _extract_phase_output_block(text: str) -> Optional[dict]:
         return None
 
     # The marker can be preceded by ``---\n`` (a horizontal rule) and
-    # followed by JSON then ``### END_PHASE_OUTPUT``. We use a non-greedy
-    # match on the outcome keyword and capture the full body.
-    m = re.search(
-        r"###\s*PHASE_OUTPUT:\s*(success|failure|rejected|system_error)\b",
-        text,
-        re.IGNORECASE,
-    )
+    # followed by JSON then ``### END_PHASE_OUTPUT``. The regex is
+    # defined in ``comment_parser`` (the canonical home for PHASE_OUTPUT
+    # patterns per the ADR-009 contract) and imported here so the
+    # outcome set stays in sync.
+    m = PHASE_OUTPUT_MARKER_PATTERN.search(text)
     if not m:
         return None
 

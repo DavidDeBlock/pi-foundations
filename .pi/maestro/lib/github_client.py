@@ -21,6 +21,8 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
 
+from comment_parser import PHASE_OUTPUT_PATTERN
+
 
 @dataclass
 class Issue:
@@ -30,11 +32,6 @@ class Issue:
     labels: list[str]
     comments: list[dict]  # List of comment dicts with 'body' and 'created_at'
     created_at: Optional[str] = None
-
-PHASE_OUTPUT_PATTERN = re.compile(
-    r"---\s*\n### PHASE_OUTPUT:\s*(success|rejected|system_error)\s*\n(.+?)\n### END_PHASE_OUTPUT\s*\n---",
-    re.DOTALL
-)
 
 
 class GithubClient:

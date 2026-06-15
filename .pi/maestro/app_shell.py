@@ -173,8 +173,6 @@ class MaestroApp:
             self._run_pipeline_with_issues(flow_name, issue_nums)
 
         # --- Autonomous Loop Mode (via Pipeline Engine) ---
-        
-        # --- Autonomous Loop Mode (via Pipeline Engine) ---
         else:
             print(f"\n{self.term.DIM}🔄 Entering Autonomous Loop Mode...{self.term.RESET}", file=sys.stderr)
             
@@ -205,45 +203,6 @@ class MaestroApp:
 def parse_prd_checkboxes(prd_body: str) -> list[tuple[str, str]]:
     """Parse markdown checkboxes from a PRD body. Returns (status, text)."""
     return re.findall(r'- \[([ x])\] (.+)', prd_body)
-
-
-def run_prd_audit_loop(term: Terminal, gh_client: GithubClient) -> int:
-    """
-    Run PRD Audit on ALL open parent-prd issues.
-    For each issue: runs the prd-audit flow (Auditor → Generate Issues/Close).
-    Returns count of processed PRDs.
-    
-    Lifecycle rules:
-    - Auditor checks code vs PRD. If approved, closes issue.
-    - If rejected, generates follow-up issues via /skill:to-prd and closes the parent.
-    """
-    term._print_verbose("[STEP D] Starting PRD Audit...")
-    
-    # 1. Find ALL open parent-prd issues
-    prd_issues = gh_client.fetch_issues_by_label("parent-prd")
-    if not prd_issues:
-        print(f"{term.DIM}⚠️ No 'parent-prd' issue found. Skipping PRD Audit.{term.RESET}", file=sys.stderr)
-        return 0
-    
-    processed_count = 0
-    
-    for prd_issue in prd_issues:
-        term._print_verbose(f"\n[AUDIT] Running prd-audit on #{prd_issue.number}: {prd_issue.title}")
-        
-        try:
-            # Run the audit flow. The flow itself handles closing/rejecting logic internally.
-            success = run_flow_on_issue(
-                term, gh_client, "prd-audit", prd_issue.number
-            )
-            
-            if not success:
-                print(f"{term.DIM}[AUDIT] Flow did not complete successfully for #{prd_issue.number}.{term.RESET}", file=sys.stderr)
-        except Exception as e:
-            term._print_verbose(f"[WARNING] PRD audit failed for #{prd_issue.number}: {e}")
-        
-        processed_count += 1
-    
-    return processed_count
 
 
 # Make Terminal colors accessible for app_shell formatting

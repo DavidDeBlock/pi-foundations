@@ -24,6 +24,12 @@ import pytest
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+# Add lib/ to path so transitive imports inside lib/ (e.g.
+# verdict_extractor → comment_parser) can resolve as top-level modules
+# when lib/verdict_extractor is itself loaded via ``from lib.X``.
+LIB_DIR = Path(__file__).resolve().parent.parent / "lib"
+sys.path.insert(0, str(LIB_DIR))
+
 
 def _load_script(name: str):
     """Load a top-level script from .pi/maestro/scripts/ by name."""
