@@ -5,6 +5,12 @@ node_modules/
 dist/
 build/
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
 # Environment files
 .env
 .env.local
