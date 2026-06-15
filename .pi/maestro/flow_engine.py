@@ -13,6 +13,7 @@ Handles:
 import json
 import os
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
@@ -23,7 +24,8 @@ sys.path.insert(0, str(Path(__file__).parent / "lib"))
 from terminal import Terminal
 from rpc_client import run_rpc_with_session_log
 from github_client import GithubClient
-from session_reader import parse_session_log
+from session_reader import parse_session_log, extract_phase_usage
+import flow_logger as _flow_logger  # noqa: E402  (StderrLogger for token events)
 from prompt_loader import load_prompt, PERMISSIVE_FALLBACK
 from working_memory import MemoryStore, WorkingMemory, now_iso
 from context_prefetch import (
@@ -560,6 +562,36 @@ def _build_session_dir(flow_name: str, issue_num: int, phase_name: str) -> Optio
     return _build_flat_path(base_session_dir)
 
 
+def _extract_phase_tokens(session_log_path: Optional[object]) -> dict:
+    """Return ``{tokens_in, tokens_out, cache_read}`` from a session log.
+
+    Wraps :func:`lib.session_reader.extract_phase_usage` with the
+    field-mapping the runner uses:
+
+        - ``tokens_in``  = ``usage["input"] + usage["cacheWrite"]``
+          (the "real" input cost, including cache writes)
+        - ``tokens_out`` = ``usage["output"]``
+        - ``cache_read`` = ``usage["cacheRead"]``
+
+    All three default to ``None`` when the log is missing or has no
+    usage data. The local-command and close phases have no session
+    log — they return ``(None, None, None)`` here. The ``is_optional``
+    exception path also returns ``None``s (no log on hard failure).
+    """
+    if not session_log_path:
+        return {"tokens_in": None, "tokens_out": None, "cache_read": None}
+    usage = extract_phase_usage(session_log_path)
+    if not isinstance(usage, dict):
+        return {"tokens_in": None, "tokens_out": None, "cache_read": None}
+    try:
+        tokens_in = int(usage.get("input", 0)) + int(usage.get("cacheWrite", 0))
+        tokens_out = int(usage.get("output", 0))
+        cache_read = int(usage.get("cacheRead", 0))
+    except (TypeError, ValueError):
+        return {"tokens_in": None, "tokens_out": None, "cache_read": None}
+    return {"tokens_in": tokens_in, "tokens_out": tokens_out, "cache_read": cache_read}
+
+
 def run_phase(phase_name: str, flow_config: dict, issue_num: int, context: dict) -> Tuple[dict, Optional[str]]:
     """Execute a single phase and return its result.
 
@@ -573,6 +605,12 @@ def run_phase(phase_name: str, flow_config: dict, issue_num: int, context: dict)
 
     See ``docs/35-prds/maestro-retrospective.md`` §"Why is retrospective
     non-blocking?".
+
+    Token plumbing (per the deepening PRD): every result dict returned
+    from this function carries ``tokens_in``, ``tokens_out`` and
+    ``cache_read`` fields, populated from the session log via
+    :func:`_extract_phase_tokens`. All three default to ``None`` when
+    the log is missing or has no usage data.
     """
     phase_config = flow_config["phases"][phase_name]
     is_optional = bool(phase_config.get("is_optional"))
@@ -589,13 +627,12 @@ def run_phase(phase_name: str, flow_config: dict, issue_num: int, context: dict)
                 file=sys.stderr,
             )
             sys.stderr.flush()
-            return (
-                {
-                    "status": "success",
-                    "details": f"{phase_name} failed (non-blocking, logged): {err_msg}",
-                },
-                None,
-            )
+            result = {
+                "status": "success",
+                "details": f"{phase_name} failed (non-blocking, logged): {err_msg}",
+            }
+            result.update(_extract_phase_tokens(None))
+            return result, None
 
         # Belt and braces: the inner runner now also downgrades
         # verdict-extraction errors for the retrospective phase to a
@@ -610,20 +647,25 @@ def run_phase(phase_name: str, flow_config: dict, issue_num: int, context: dict)
                 file=sys.stderr,
             )
             sys.stderr.flush()
-            return (
-                {
-                    "status": "success",
-                    "details": (
-                        f"{phase_name} error downgraded to non-blocking success: "
-                        f"{err_details}"
-                    ),
-                },
-                session_log,
-            )
+            result = {
+                "status": "success",
+                "details": (
+                    f"{phase_name} error downgraded to non-blocking success: "
+                    f"{err_details}"
+                ),
+            }
+            result.update(_extract_phase_tokens(session_log))
+            return result, session_log
 
+        # Happy-path: enrich the result with token fields
+        if isinstance(result, dict):
+            result.update(_extract_phase_tokens(session_log))
         return result, session_log
 
-    return _run_phase_inner(phase_name, flow_config, issue_num, context)
+    result, session_log = _run_phase_inner(phase_name, flow_config, issue_num, context)
+    if isinstance(result, dict):
+        result.update(_extract_phase_tokens(session_log))
+    return result, session_log
 
 
 def _run_phase_inner(phase_name: str, flow_config: dict, issue_num: int, context: dict) -> Tuple[dict, Optional[str]]:
@@ -1376,6 +1418,19 @@ def run_flow_on_issue(
     completed_successfully = False
     test_fail_count = 0  # tracks consecutive test_runner rejections for escalation
 
+    # ── Token observability (per deepening PRD issue #29) ──
+    # Track per-phase ``PhaseRun`` records and aggregate totals. The
+    # ``FlowOutcome`` is built at the end of the run. We use a
+    # ``StderrLogger`` for the per-phase ``tokens_recorded`` event so
+    # operators see ``[builder] tokens: in=N out=M cache=K`` in the
+    # terminal. The outcome is not returned yet — that change is part
+    # of a later interface-narrowing slice.
+    phase_runs: list = []
+    total_tokens_in: int = 0
+    total_tokens_out: int = 0
+    run_start = time.monotonic()
+    _token_log = _flow_logger.StderrLogger()
+
     while iteration_count < max_iterations:
         iteration_count += 1
         next_step = None  # reset each iteration; escalation may set it before transition lookup
@@ -1457,6 +1512,67 @@ def run_flow_on_issue(
         except Exception as mem_err:
             # Memory persistence is best-effort — never crash the flow.
             term._print_verbose(f"[memory] Failed to update working memory: {mem_err}")
+
+        # ── Token observability (per deepening PRD issue #29) ──
+        # Build a ``PhaseRun`` value object for this attempt, update the
+        # running totals, and emit two ``FlowEvent``s through the
+        # ``FlowLogger`` port:
+        #   - ``phase_end`` carries the raw token dict so the file-based
+        #     ``FileLogger`` JSONL (when wired in by a later slice) has
+        #     the data; ``StderrLogger`` shows the standard message and
+        #     ignores the dict.
+        #   - ``tokens_recorded`` is the operator-friendly summary that
+        #     ``StderrLogger`` renders as ``[phase] tokens: in=N out=M
+        #     cache=K`` (per the PRD). Only emitted when we have a usage
+        #     block — phases without a session log (close, local cmds)
+        #     have no tokens to report.
+        _event_ts = now_iso()
+        _phase_run = PhaseRun(
+            name=current_phase,
+            attempt=phase_attempt_count,
+            status=result["status"],
+            duration_s=None,
+            tokens_in=result.get("tokens_in"),
+            tokens_out=result.get("tokens_out"),
+            cache_read=result.get("cache_read"),
+            session_log=Path(session_log_path) if session_log_path else None,
+            details=(result.get("details", "") or "")[:300],
+        )
+        phase_runs.append(_phase_run)
+        if _phase_run.tokens_in is not None:
+            total_tokens_in += _phase_run.tokens_in
+        if _phase_run.tokens_out is not None:
+            total_tokens_out += _phase_run.tokens_out
+
+        _token_dict = {
+            "in": _phase_run.tokens_in,
+            "out": _phase_run.tokens_out,
+            "cache": _phase_run.cache_read,
+        }
+        # phase_end — always emitted (for the structured JSONL log)
+        _token_log.emit(_flow_logger.FlowEvent(
+            kind="phase_end",
+            message=f"{current_phase} {result['status']}",
+            timestamp=_event_ts,
+            phase=current_phase,
+            attempt=phase_attempt_count,
+            duration_s=None,
+            tokens=_token_dict if _phase_run.tokens_in is not None else None,
+        ))
+        # tokens_recorded — only when we have usage data, and only via
+        # the StderrLogger (file JSONL already carries the dict on the
+        # phase_end event). This is the operator's terminal-visible
+        # per-phase totals line.
+        if _phase_run.tokens_in is not None:
+            _token_log.emit(_flow_logger.FlowEvent(
+                kind="tokens_recorded",
+                message="",
+                timestamp=_event_ts,
+                phase=current_phase,
+                attempt=phase_attempt_count,
+                duration_s=None,
+                tokens=_token_dict,
+            ))
 
         # ── Fire phase callback (for deterministic label management) ──
         if phase_callback:
@@ -1554,6 +1670,31 @@ def run_flow_on_issue(
                 status="approved",
                 details=f"{current_phase} approved after {phase_attempt_count} attempt(s)"
             )
+
+    # ── Build the FlowOutcome (per deepening PRD issue #29) ──
+    # The outcome captures every per-attempt ``PhaseRun`` plus the
+    # aggregated totals. The return value of this function is still
+    # ``bool`` for backward compatibility (the pipeline layer reads
+    # the bool) — the ``FlowOutcome`` is constructed here for the
+    # future interface-narrowing slice that will surface it to callers.
+    # For now it lives only on the in-loop ``phase_runs`` list and
+    # the running ``total_tokens_in/out`` counters. Using ``_`` to
+    # silence the linter for the deliberately-unused value.
+    _ = FlowOutcome(
+        flow_name=flow_config.get("name", "unknown"),
+        issue_num=issue_num,
+        status=("success" if completed_successfully
+                else ("exhausted_iterations" if iteration_count >= max_iterations
+                      else "failed")),
+        iterations=iteration_count,
+        phases=tuple(phase_runs),
+        events=(),
+        total_duration_s=time.monotonic() - run_start,
+        evidence_summary=None,
+        retro_learning=None,
+        total_tokens_in=total_tokens_in,
+        total_tokens_out=total_tokens_out,
+    )
 
     return completed_successfully
 
@@ -1696,7 +1837,10 @@ class FlowOutcome:
 
     ``events`` is the ordered tuple of every ``FlowEvent`` emitted by the
     ``FlowLogger`` port during the run — useful for the dashboard and for
-    after-the-fact debugging.
+    after-the-fact debugging. ``total_tokens_in`` and
+    ``total_tokens_out`` are the sum of ``PhaseRun.tokens_in`` /
+    ``tokens_out`` across all attempts (None values ignored), populated
+    by the token-plumbing slice (issue #29).
     """
     flow_name: str
     issue_num: int
@@ -1707,3 +1851,5 @@ class FlowOutcome:
     total_duration_s: float
     evidence_summary: str | None
     retro_learning: str | None
+    total_tokens_in: int = 0
+    total_tokens_out: int = 0

@@ -177,6 +177,40 @@ def test_stderr_logger_handles_none_phase():
     assert not output.startswith("[")
 
 
+def test_stderr_logger_renders_tokens_recorded():
+    """``tokens_recorded`` events render as ``[phase] tokens: in=N out=M cache=K``."""
+    log = StderrLogger()
+    event = _make_event(
+        kind="tokens_recorded",
+        message="ignored — tokens field takes precedence",
+        phase="builder",
+        tokens={"in": 1234, "out": 56, "cache": 7890},
+    )
+
+    import io
+    buf = io.StringIO()
+    old_stderr = sys.stderr
+    sys.stderr = buf
+    try:
+        log.emit(event)
+    finally:
+        sys.stderr = old_stderr
+
+    output = buf.getvalue()
+    assert output == "[builder] tokens: in=1234 out=56 cache=7890\n"
+
+
+def test_tokens_recorded_kind_is_in_enum():
+    """The new ``tokens_recorded`` kind is part of FlowEventKind (closed enum)."""
+    event = _make_event(
+        kind="tokens_recorded",
+        message="",
+        phase="scout",
+        tokens={"in": 1, "out": 2, "cache": 3},
+    )
+    assert event.kind == "tokens_recorded"
+
+
 # ─── FlowEvent contract ─────────────────────────────────────────────────
 
 
@@ -218,6 +252,8 @@ tests = [
     test_file_logger_appends_across_emits,
     test_stderr_logger_renders_phase_kind_message_format,
     test_stderr_logger_handles_none_phase,
+    test_stderr_logger_renders_tokens_recorded,
+    test_tokens_recorded_kind_is_in_enum,
     test_flow_event_is_frozen,
     test_all_three_adapters_satisfy_flow_logger_protocol,
 ]

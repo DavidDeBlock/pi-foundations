@@ -14,7 +14,69 @@ Usage:
 
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
+
+
+def extract_phase_usage(log_path: Union[str, Path]) -> Optional[dict]:
+    """Extract the last token-usage block from a session-log JSONL file.
+
+    The session log already carries ``message.usage`` on each assistant
+    message (with fields ``input``, ``output``, ``cacheRead``,
+    ``cacheWrite``, ``totalTokens``, and a nested ``cost`` object).
+    Within a single phase run, assistant messages are cumulative — the
+    last one reflects the total tokens spent in the phase. The runner
+    surfaces these totals as ``PhaseRun.tokens_in`` (= ``input +
+    cacheWrite``), ``tokens_out`` (= ``output``), and ``cache_read``
+    (= ``cacheRead``).
+
+    Behaviour:
+        - ``None`` if the log file does not exist
+        - ``None`` if the log is empty or has no assistant message with
+          a ``message.usage`` field
+        - The ``usage`` dict of the **last** assistant message that
+          has a ``usage`` field (cumulative within a session)
+        - Malformed JSON lines are skipped, not raised
+        - Only ``role == "assistant"`` events are considered; ``user``,
+          ``toolResult``, ``system`` etc. are ignored
+
+    Args:
+        log_path: Path to the JSONL session log. Accepts both ``str``
+            and ``pathlib.Path``.
+
+    Returns:
+        The raw ``usage`` dict (caller computes ``tokens_in``,
+        ``tokens_out``, ``cache_read`` from its fields), or ``None`` if
+        no usable usage data is present.
+    """
+    path = Path(log_path)
+    if not path.exists():
+        return None
+
+    last_usage: Optional[dict] = None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                message = event.get("message") if isinstance(event, dict) else None
+                if not isinstance(message, dict):
+                    continue
+                if message.get("role") != "assistant":
+                    continue
+                usage = message.get("usage")
+                if isinstance(usage, dict):
+                    last_usage = usage
+    except (OSError, UnicodeDecodeError):
+        # Unreadable file (permission denied, binary blob, etc.) — the
+        # caller treats this the same as "no usage data".
+        return last_usage
+
+    return last_usage
 
 
 def _to_epoch_ms(ts) -> Optional[int]:

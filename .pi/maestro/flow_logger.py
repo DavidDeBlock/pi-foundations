@@ -56,6 +56,7 @@ FlowEventKind = Literal[
     "prefetch_warn",
     "onboard_warn",
     "evidence_warn",
+    "tokens_recorded",
 ]
 
 
@@ -90,10 +91,22 @@ class StderrLogger:
     to keep terminal output stable: existing call sites will be
     rewritten to construct a :class:`FlowEvent` whose ``kind`` and
     ``message`` reproduce the current ``print(...)`` text exactly.
+
+    Special case: ``tokens_recorded`` events are rendered as
+    ``"[<phase>] tokens: in=N out=M cache=K"`` (the word ``tokens``
+    is used in place of the longer kind, and the value comes from the
+    event's ``tokens`` dict rather than the ``message`` field). This
+    matches the operator-facing format documented in the token-
+    plumbing PRD.
     """
     def emit(self, event: FlowEvent) -> None:
         prefix = f"[{event.phase}] " if event.phase else ""
-        print(f"{prefix}{event.kind}: {event.message}", file=sys.stderr)
+        if event.kind == "tokens_recorded":
+            tokens = event.tokens or {}
+            rendered = " ".join(f"{k}={v}" for k, v in tokens.items())
+            print(f"{prefix}tokens: {rendered}", file=sys.stderr)
+        else:
+            print(f"{prefix}{event.kind}: {event.message}", file=sys.stderr)
         sys.stderr.flush()
 
 
