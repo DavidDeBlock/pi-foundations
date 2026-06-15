@@ -1,0 +1,20 @@
+---
+export interface Step {
+  title: string;
+  description: string;
+}
+
+export interface Props {
+  steps: Step[];
+}
+
+const { steps } = Astro.props;
+---
+<ol class="steps" role="list">
+  {steps.map((step) => (
+    <li class="steps__item">
+      <h3>{step.title}</h3>
+      <p>{step.description}</p>
+    </li>
+  ))}
+</ol>

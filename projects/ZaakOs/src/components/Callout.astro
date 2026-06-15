@@ -1,0 +1,17 @@
+---
+export interface Props {
+  label?: string;
+  tone?: 'orange' | 'blue' | 'green' | 'red';
+}
+
+const {
+  label,
+  tone = 'orange',
+} = Astro.props;
+
+const toneClass = tone === 'orange' ? '' : `callout--${tone}`;
+---
+<aside class={`callout ${toneClass}`} role="note">
+  {label && <span class="callout__label">{label}</span>}
+  <slot />
+</aside>

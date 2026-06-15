@@ -1,0 +1,152 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Hero from '../components/Hero.astro';
+import SectionHeader from '../components/SectionHeader.astro';
+import HandmadeBox from '../components/HandmadeBox.astro';
+import Callout from '../components/Callout.astro';
+import FlowCard from '../components/FlowCard.astro';
+import IdeaCard from '../components/IdeaCard.astro';
+
+const allFlows = await getCollection('flows');
+const flows = allFlows.slice(0, 3);
+
+const allIdeas = await getCollection('ideas');
+const ideas = allIdeas
+  .sort((a, b) => b.data.date.getTime() - a.data.date.getTime())
+  .slice(0, 3);
+
+const allCases = await getCollection('cases');
+const featuredCase = allCases.find((c) => c.data.featured) ?? allCases[0];
+---
+<BaseLayout
+  title="Flowmaker"
+  description="Flowmaker helpt kleine zelfstandigen hun zaak slimmer organiseren met praktische software, workflow-denken en AI."
+  pathname="/"
+>
+  <Hero
+    eyebrow="Flowmaker"
+    title={`Van dagelijkse chaos naar<br/><em>duidelijke werkstromen.</em>`}
+    subtitle="Flowmaker helpt kleine zelfstandigen hun zaak slimmer organiseren met praktische software, workflow-denken en AI."
+  >
+    <Fragment slot="actions">
+      <a class="btn btn--accent" href="/concept">Wat Flowmaker is</a>
+      <a class="btn btn--ghost" href="/cases/fietsenwinkel">De eerste case</a>
+    </Fragment>
+  </Hero>
+
+  <section class="page container">
+    <div class="grid grid-2 stack-lg">
+      <HandmadeBox tone="default">
+        <span class="eyebrow">Het probleem</span>
+        <h2 style="margin-top:0">Niet meer werken op geheugen alleen.</h2>
+        <p>
+          De meeste kleine zaken draaien op een mengeling van WhatsApp,
+          Excel, een oud kassasysteem, papier en geheugen. Dat is knap
+          hoe lang het goed gaat, maar het is ook de reden waarom de
+          eigenaar 's avonds nog ligt na te denken over dingen die overdag
+          al lang hadden moeten lopen.
+        </p>
+        <p>
+          <a href="/probleem">Lees wat we hier precies zien →</a>
+        </p>
+      </HandmadeBox>
+
+      <HandmadeBox tone="blue" tilt="right">
+        <span class="eyebrow eyebrow-blue">De houding</span>
+        <h2 style="margin-top:0">Eerst begrijpen, dan bouwen.</h2>
+        <p>
+          We beginnen niet met software. We beginnen met een rondje door
+          de zaak, een gesprek aan de toonbank, een middagje meelopen.
+          Pas als we snappen waar de wrijving zit, kijken we wat een
+          klein stukje gereedschap — een flow, een tool, een AI-assistent —
+          kan oplossen.
+        </p>
+        <p>
+          <a href="/aanpak">De aanpak in vier stappen →</a>
+        </p>
+      </HandmadeBox>
+
+      <HandmadeBox tone="green">
+        <span class="eyebrow eyebrow-green">De belofte</span>
+        <h2 style="margin-top:0">Kleine tools, grote rust.</h2>
+        <p>
+          Geen enterprise-platform. Geen abonnement op iets dat je niet
+          snapt. Wel een paar kleine dingen die je werk uit handen nemen
+          en die je kunt aanpassen aan hoe jouw zaak nu eenmaal werkt.
+        </p>
+        <p>
+          <a href="/flows">Voorbeelden van zulke flows →</a>
+        </p>
+      </HandmadeBox>
+
+      <HandmadeBox tone="red" tilt="left">
+        <span class="eyebrow eyebrow-red">De basis</span>
+        <h2 style="margin-top:0">Gebouwd vanuit een echte winkel.</h2>
+        <p>
+          Alles wat we bedenken wordt eerst uitgeprobeerd in een gewone
+          fietsenwinkel. Niet in een simulator, niet in een testomgeving,
+          maar tussen de fietsen. Wat daar niet werkt, komt niet in de
+          rest van onze cases.
+        </p>
+        {featuredCase && (
+          <p>
+            <a href={`/cases/${featuredCase.id}`}>
+              Lees over de fietsenwinkel →
+            </a>
+          </p>
+        )}
+      </HandmadeBox>
+    </div>
+  </section>
+
+  <section class="page container">
+    <SectionHeader
+      eyebrow="Een greep"
+      title="Voorbeelden van flows die we uitwerken"
+      tone="blue"
+    />
+    <div class="grid grid-flows">
+      {flows.map((flow, idx) => (
+        <FlowCard
+          flow={flow}
+          tilt={idx % 3 === 0 ? 'left' : idx % 3 === 1 ? 'right' : 'none'}
+        />
+      ))}
+    </div>
+    <p class="meta-row" style="margin-top: var(--space-5)">
+      <a href="/flows">Bekijk alle flows →</a>
+    </p>
+  </section>
+
+  <section class="page container">
+    <Callout
+      label="Eerlijk zijn"
+      tone="red"
+    >
+      We zijn geen consultants die komen vertellen hoe het moet. We zijn
+      iemand die een middag komt kijken, meedenkt, en samen met jou
+      uitzoekt welke paar dingen jouw week makkelijker maken. De rest
+      laten we met rust.
+    </Callout>
+  </section>
+
+  <section class="page container">
+    <SectionHeader
+      eyebrow="Uit het lab"
+      title="Wat we de laatste tijd aan het bedenken zijn"
+      tone="green"
+    />
+    <div class="grid grid-3">
+      {ideas.map((idea, idx) => (
+        <IdeaCard
+          idea={idea}
+          tilt={idx % 3 === 0 ? 'left' : idx % 3 === 1 ? 'right' : 'none'}
+        />
+      ))}
+    </div>
+    <p class="meta-row" style="margin-top: var(--space-5)">
+      <a href="/lab">Naar het hele lab →</a>
+    </p>
+  </section>
+</BaseLayout>

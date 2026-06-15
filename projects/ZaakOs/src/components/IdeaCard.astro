@@ -1,0 +1,40 @@
+---
+import type { CollectionEntry } from 'astro:content';
+
+export interface Props {
+  idea: CollectionEntry<'ideas'>;
+  tilt?: 'none' | 'left' | 'right';
+}
+
+const { idea, tilt = 'none' } = Astro.props;
+const { data, id } = idea;
+
+const tiltClass = tilt === 'left' ? 'card--tilt-l' : tilt === 'right' ? 'card--tilt-r' : '';
+
+const dateLabel = data.date.toLocaleDateString('nl-NL', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+});
+
+const statusLabel: Record<typeof data.status, string> = {
+  'kladversie': 'kladversie',
+  'in-uitvoering': 'in uitvoering',
+  'klaar': 'klaar',
+};
+
+const statusTone: Record<typeof data.status, string> = {
+  'kladversie': 'tag',
+  'in-uitvoering': 'tag tag--orange',
+  'klaar': 'tag tag--green',
+};
+---
+<a class={`card ${tiltClass}`} href={`/lab#${id}`}>
+  <div class="card__meta">
+    <span class={statusTone[data.status]}>{statusLabel[data.status]}</span>
+    <span class="tag tag--blue">{data.tag}</span>
+    <span class="text-small">{dateLabel}</span>
+  </div>
+  <h3>{data.title}</h3>
+  <p>{data.summary}</p>
+</a>

@@ -1,0 +1,86 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SectionHeader from '../components/SectionHeader.astro';
+import IdeaCard from '../components/IdeaCard.astro';
+import HandmadeBox from '../components/HandmadeBox.astro';
+import Callout from '../components/Callout.astro';
+
+const allIdeas = await getCollection('ideas');
+const ideas = allIdeas.sort(
+  (a, b) => b.data.date.getTime() - a.data.date.getTime(),
+);
+---
+<BaseLayout
+  title="Het lab"
+  description="Een open notitieboek: ideeën, experimenten, plannen en gedachten die nog niet af zijn."
+  pathname="/lab"
+>
+  <header class="page-header container">
+    <span class="eyebrow">Het lab</span>
+    <h1>Een open notitieboek.</h1>
+    <p class="lede">
+      Alles wat we bedenken, voordat het een project wordt. Kladversies,
+      experimenten, dingen die misschien niets worden — en dingen die we
+      volgende maand in de winkel uitproberen.
+    </p>
+  </header>
+
+  <section class="page container stack-lg">
+    <Callout label="Hoe je dit leest" tone="blue">
+      Elk idee heeft een status: <em>kladversie</em> (eerste
+      gedachte), <em>in uitvoering</em> (we werken eraan) of
+      <em>klaar</em> (in de praktijk getest en goed bevonden). De
+      datums zijn de dag dat we het idee opschreven, niet wanneer het
+      af was.
+    </Callout>
+
+    <SectionHeader
+      eyebrow="Alle notities"
+      title="Het lab op datum"
+      tone="orange"
+    />
+
+    <div class="grid grid-3">
+      {ideas.map((idea, idx) => (
+        <IdeaCard
+          idea={idea}
+          tilt={idx % 3 === 0 ? 'left' : idx % 3 === 1 ? 'right' : 'none'}
+        />
+      ))}
+    </div>
+
+    <SectionHeader
+      eyebrow="Achter de schermen"
+      title="Waar we aan denken"
+      tone="green"
+    />
+
+    <div class="grid grid-2">
+      <HandmadeBox>
+        <h3>Wat we nu onderzoeken</h3>
+        <p>
+          De workflow-sjablonen per branche zijn in uitvoering. De
+          kleine-zaak-checkup is af. De AI-campagne-generator en de
+          voorraadscan zijn kladversies — we weten nog niet of ze
+          werkelijk iets toevoegen.
+        </p>
+      </HandmadeBox>
+      <HandmadeBox tone="blue" tilt="right">
+        <h3>Wat we bewust nog niet doen</h3>
+        <p>
+          We schrijven nog niet aan een eigen platform. We bouwen nog
+          niet aan een app. Eerst willen we zeker weten dat de
+          onderliggende flows werken — dan pas kijken we of software
+          helpt.
+        </p>
+      </HandmadeBox>
+    </div>
+
+    <Callout label="Mis je iets?" tone="red">
+      Heb je een idee dat hier zou moeten staan? Een onderdeel van je
+      eigen zaak waarvan je denkt: "daar zou toch iets op te vinden
+      moeten zijn"? We horen het graag.
+    </Callout>
+  </section>
+</BaseLayout>

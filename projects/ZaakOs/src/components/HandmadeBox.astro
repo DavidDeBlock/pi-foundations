@@ -1,0 +1,19 @@
+---
+export interface Props {
+  tone?: 'default' | 'blue' | 'green' | 'red';
+  as?: 'div' | 'section' | 'article' | 'aside';
+  tilt?: 'none' | 'left' | 'right';
+}
+
+const {
+  tone = 'default',
+  as: Tag = 'div',
+  tilt = 'none',
+} = Astro.props;
+
+const toneClass = tone === 'default' ? '' : `handmade-box--${tone}`;
+const tiltClass = tilt === 'left' ? 'card--tilt-l' : tilt === 'right' ? 'card--tilt-r' : '';
+---
+<Tag class={`handmade-box ${toneClass} ${tiltClass}`}>
+  <slot />
+</Tag>

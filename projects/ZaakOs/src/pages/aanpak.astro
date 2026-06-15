@@ -1,0 +1,128 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ProcessSteps from '../components/ProcessSteps.astro';
+import SectionHeader from '../components/SectionHeader.astro';
+import HandmadeBox from '../components/HandmadeBox.astro';
+import Callout from '../components/Callout.astro';
+
+const steps = [
+  {
+    title: 'Workflow-scan',
+    description:
+      'Een dag meelopen, een gesprek aan de toonbank, een rondje door de werkplaats. We brengen de echte flow in kaart, inclusief de uitzonderingen en de plekken waar het schuurt.',
+  },
+  {
+    title: 'Quick wins',
+    description:
+      'Drie tot vijf kleine dingen die meteen al anders kunnen. Meestal zonder software: een checklist op de muur, een vast moment in de week, een andere volgorde in de ochtend.',
+  },
+  {
+    title: 'Mini-software',
+    description:
+      'Voor de dingen die je met discipline alleen niet oplost, bouwen we een klein stukje gereedschap. Een dashboard, een bonnen-template, een klant-herinnering. Geen maatwerk-ERP.',
+  },
+  {
+    title: 'AI-assistent bovenop de data',
+    description:
+      'Als de basis op orde is, kijken we waar AI je werk uit handen kan nemen. Eerste versies van mails, seizoensanalyses, voorstellen voor klant-contact. Jij beslist, AI stelt voor.',
+  },
+];
+---
+<BaseLayout
+  title="De aanpak"
+  description="Flowmaker werkt in vier stappen: workflow-scan, quick wins, mini-software en AI-ondersteuning. Geen enterprise-traject."
+  pathname="/aanpak"
+>
+  <header class="page-header container">
+    <span class="eyebrow eyebrow-blue">De aanpak</span>
+    <h1>In vier stappen van chaos naar overzicht.</h1>
+    <p class="lede">
+      We beginnen klein, we bewegen snel, en we stoppen op tijd. Niet
+      elke zaak heeft alle vier de stappen nodig — dat is juist het
+      punt.
+    </p>
+  </header>
+
+  <section class="page container stack-lg">
+    <ProcessSteps steps={steps} />
+
+    <SectionHeader
+      eyebrow="Wat het oplevert"
+      title="Na een rondje Flowmaker"
+      tone="blue"
+    />
+
+    <div class="grid grid-2">
+      <HandmadeBox>
+        <h3>Een flow op papier</h3>
+        <p>
+          Je weet voortaan welke stappen er zijn, in welke volgorde, en
+          wie wat doet. Op een A4. Voor de hele zaak zichtbaar.
+        </p>
+      </HandmadeBox>
+      <HandmadeBox tone="green">
+        <h3>Een lijst quick wins</h3>
+        <p>
+          Drie tot vijf dingen die je deze maand kunt doen, zonder
+          investering, zonder gedoe, zonder wachten op een leverancier.
+        </p>
+      </HandmadeBox>
+      <HandmadeBox tone="blue">
+        <h3>Een klein stukje software</h3>
+        <p>
+          Als het nodig is. Een tool die je in een half uur begrijpt en
+          die je zelf kunt aanpassen als de zaak verandert.
+        </p>
+      </HandmadeBox>
+      <HandmadeBox tone="red">
+        <h3>Een AI-assistent, klaar voor gebruik</h3>
+        <p>
+          Op het moment dat jij er klaar voor bent. Niet als gadget, maar
+          als verlengstuk van je eigen oordeel.
+        </p>
+      </HandmadeBox>
+    </div>
+
+    <Callout label="De afspraak" tone="orange">
+      We vertrekken pas als duidelijk is wat je eraan hebt. Als na de
+      workflow-scan blijkt dat je vooral een boekhouder nodig hebt,
+      zeggen we dat. Liever een eerlijk advies dan een opdracht.
+    </Callout>
+
+    <SectionHeader
+      eyebrow="Wat we niet doen"
+      title="Drie dingen die we bewust achterwege laten"
+      tone="red"
+    />
+
+    <ul class="stack-lg" style="list-style: none; padding: 0;">
+      <li>
+        <HandmadeBox>
+          <h3>Geen grote platform-verkoop</h3>
+          <p>
+            We verkopen geen licentie, geen abonnement, geen
+            implementatie-traject van zes maanden. We lossen dingen op.
+          </p>
+        </HandmadeBox>
+      </li>
+      <li>
+        <HandmadeBox tone="blue">
+          <h3>Geen AI om het AI-zijn</h3>
+          <p>
+            We hangen geen chatbot op je website als dat niet helpt. We
+            gebruiken AI waar het je werk echt uit handen neemt.
+          </p>
+        </HandmadeBox>
+      </li>
+      <li>
+        <HandmadeBox tone="green">
+          <h3>Geen eenheidsworst</h3>
+          <p>
+            Wat in een fietsenwinkel werkt, werkt niet automatisch in
+            een kapsalon. We kijken per keer wat past.
+          </p>
+        </HandmadeBox>
+      </li>
+    </ul>
+  </section>
+</BaseLayout>

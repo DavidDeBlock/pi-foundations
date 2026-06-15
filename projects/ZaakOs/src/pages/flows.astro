@@ -1,0 +1,97 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SectionHeader from '../components/SectionHeader.astro';
+import HandmadeBox from '../components/HandmadeBox.astro';
+import Callout from '../components/Callout.astro';
+
+const flows = await getCollection('flows');
+
+// Group flows by sector
+const bySector = flows.reduce<Record<string, typeof flows>>((acc, flow) => {
+  const sector = flow.data.sector;
+  if (!acc[sector]) acc[sector] = [];
+  acc[sector].push(flow);
+  return acc;
+}, {});
+
+const sectorOrder = Object.keys(bySector).sort();
+---
+<BaseLayout
+  title="Flows"
+  description="Voorbeelden van werkstromen die we in kaart brengen, uitwerken en in de praktijk testen."
+  pathname="/flows"
+>
+  <header class="page-header container">
+    <span class="eyebrow eyebrow-blue">Flows</span>
+    <h1>Een bibliotheek van werkstromen.</h1>
+    <p class="lede">
+      Geen theorie. Geen stappenplannen die niemand volgt. Wel flows die
+      we in het echt hebben zien werken — bij onszelf en bij anderen.
+    </p>
+  </header>
+
+  <section class="page container stack-lg">
+    <Callout label="Hoe je dit leest" tone="blue">
+      Elke flow heeft een doel, een output en een anti-patroon. Het
+      anti-patroon is wat er gebeurt als je de flow niet hebt — de
+      wrijving die je elke dag voelt.
+    </Callout>
+
+    {sectorOrder.map((sector) => (
+      <section id={`sector-${sector}`}>
+        <SectionHeader
+          eyebrow={sector}
+          title={`Flows voor ${sector}`}
+          tone="blue"
+        />
+        <div class="grid grid-flows">
+          {bySector[sector].map((flow) => (
+            <article id={flow.id} class="card">
+              <div class="card__meta">
+                <span class="tag tag--blue">{flow.data.sector}</span>
+                <span class="text-small">{flow.data.steps.length} stappen</span>
+              </div>
+              <h3>{flow.data.title}</h3>
+              <p>{flow.data.summary}</p>
+              <ul class="flow-steps" role="list" aria-label={`Stappen in ${flow.data.title}`}>
+                {flow.data.steps.map((step) => (
+                  <li>{step}</li>
+                ))}
+              </ul>
+              <p style="margin-top: var(--space-4)">
+                <a href={`/flows#${flow.id}`} aria-label={`Spring naar ${flow.data.title}`}>→ Op deze pagina</a>
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+    ))}
+
+    <SectionHeader
+      eyebrow="Onder de motorkap"
+      title="Wat maakt een goede flow?"
+      tone="green"
+    />
+
+    <div class="grid grid-2">
+      <HandmadeBox>
+        <h3>Drie eigenschappen</h3>
+        <p>
+          Een goede flow is <strong>tekenbaar</strong> (je kunt hem in
+          een minuut uitleggen), <strong>herhaalbaar</strong> (de volgende
+          medewerker kan het oppakken) en <strong>verstoringsbestendig</strong> —
+          hij blijft werken als het druk is.
+        </p>
+      </HandmadeBox>
+      <HandmadeBox tone="blue">
+        <h3>Wat een flow niet is</h3>
+        <p>
+          Een flow is geen handleiding en geen organogram. Het is een
+          korte beschrijving van wat er gebeurt — inclusief de
+          uitzonderingen en de rolverdeling.
+        </p>
+      </HandmadeBox>
+    </div>
+  </section>
+</BaseLayout>

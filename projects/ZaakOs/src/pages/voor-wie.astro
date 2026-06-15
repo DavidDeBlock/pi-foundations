@@ -1,0 +1,139 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SectionHeader from '../components/SectionHeader.astro';
+import HandmadeBox from '../components/HandmadeBox.astro';
+import Callout from '../components/Callout.astro';
+---
+<BaseLayout
+  title="Voor wie"
+  description="Voor wie Flowmaker werkt: een profiel van de ondernemer en de zaak waar we het meeste mee kunnen betekenen."
+  pathname="/voor-wie"
+>
+  <header class="page-header container">
+    <span class="eyebrow eyebrow-green">Voor wie</span>
+    <h1>Voor wie dit werkt.</h1>
+    <p class="lede">
+      Flowmaker is niet voor iedereen. Dat is oké. We werken het
+      beste met een bepaald type ondernemer en een bepaald type zaak.
+    </p>
+  </header>
+
+  <section class="page container stack-lg">
+    <SectionHeader
+      eyebrow="De ondernemer"
+      title="Drie dingen die we bij de meeste klanten herkennen"
+      tone="green"
+    />
+
+    <div class="grid grid-3">
+      <HandmadeBox>
+        <h3>Eerlijk over de chaos</h3>
+        <p>
+          Je weet dat het niet helemaal loopt zoals je zou willen, en je
+          bent bereid dat hardop te zeggen. Tegenover jezelf, en tegenover
+          ons.
+        </p>
+      </HandmadeBox>
+      <HandmadeBox tone="blue" tilt="right">
+        <h3>Niet bang voor papier</h3>
+        <p>
+          Je snapt dat de eerste oplossing vaak een A4 is en geen app.
+          En je hebt een pen binnen handbereik.
+        </p>
+      </HandmadeBox>
+      <HandmadeBox tone="green">
+        <h3>Investeert tijd, niet geld</h3>
+        <p>
+          Je hebt een paar uur per week over om dingen anders aan te
+          pakken. Niet per se een budget, wel de bereidheid om mee te
+          denken.
+        </p>
+      </HandmadeBox>
+    </div>
+
+    <SectionHeader
+      eyebrow="De zaken"
+      title="Waar we het meeste mee kunnen"
+      tone="blue"
+    />
+
+    <ul class="stack-lg" style="list-style: none; padding: 0;">
+      <li>
+        <HandmadeBox>
+          <h3>Fietsenwinkels en kleine reparatie-zaken</h3>
+          <p>
+            Veel losse handelingen, veel klantcontact, seizoensdrukte,
+            onderdelen die op tijd moeten komen. Onze eerste case is
+            hier — we weten waar de wrijving zit.
+          </p>
+        </HandmadeBox>
+      </li>
+      <li>
+        <HandmadeBox tone="blue" tilt="right">
+          <h3>Kappers, schoonheidssalons, kleine praktijken</h3>
+          <p>
+            Afspraken-planning, klant-herinnering, voorraad aan
+            producten, en de vraag hoe je iemand aanneemt zonder dat
+            alles in je hoofd blijft hangen.
+          </p>
+        </HandmadeBox>
+      </li>
+      <li>
+        <HandmadeBox tone="green">
+          <h3>Speciaalzaken en buurtwinkels</h3>
+          <p>
+            Een vast assortiment, trouwe klanten, en de wens om niet
+            afhankelijk te zijn van Bol of Amazon. Hier valt veel te
+            winnen met goede opvolging en kleine AI-tools.
+          </p>
+        </HandmadeBox>
+      </li>
+      <li>
+        <HandmadeBox tone="red" tilt="left">
+          <h3>Kleine ambachtelijke bedrijven</h3>
+          <p>
+            Meubelmakers, schoenmakers, kleermakers, edelsmeden — de
+            zaak draait op vakmanschap en de relatie met de klant. De
+            vraag is altijd: hoe maak je dat schaalbaar zonder dat je
+            er zelf aan onderdoor gaat.
+          </p>
+        </HandmadeBox>
+      </li>
+    </ul>
+
+    <SectionHeader
+      eyebrow="Niet voor"
+      title="Waar we eerlijk over zijn"
+      tone="red"
+    />
+
+    <div class="grid grid-2">
+      <HandmadeBox>
+        <h3>Zaken die schaal nodig hebben</h3>
+        <p>
+          Als je van plan bent om volgend jaar van 3 naar 30 medewerkers
+          te gaan, heb je iets anders nodig dan Flowmaker. We verwijzen
+          je graag door.
+        </p>
+      </HandmadeBox>
+      <HandmadeBox tone="red" tilt="right">
+        <h3>Ondernemers die geen tijd willen maken</h3>
+        <p>
+          Flowmaker is geen abonnement dat dingen voor je oplost. Het
+          is een paar uur per week meedenken en meebouwen. Wie dat niet
+          kan, heeft er weinig aan.
+        </p>
+      </HandmadeBox>
+    </div>
+
+    <Callout label="Twijfel je?" tone="orange">
+      Plan gerust een kort gesprek. Als we denken dat we niets voor je
+      kunnen betekenen, zeggen we dat. Liever een nee van tevoren dan
+      een middag die we allebei beter hadden kunnen besteden.
+    </Callout>
+
+    <p style="margin-top: var(--space-5)">
+      <a class="btn btn--accent" href="/contact">Plan een kort gesprek</a>
+    </p>
+  </section>
+</BaseLayout>

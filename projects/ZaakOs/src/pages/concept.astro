@@ -1,0 +1,113 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import HandmadeBox from '../components/HandmadeBox.astro';
+import Callout from '../components/Callout.astro';
+---
+<BaseLayout
+  title="Het concept"
+  description="Flowmaker combineert workflow-analyse, praktische diagnostiek, kleine maatwerktools, automatisering en AI-ondersteuning voor kleine zelfstandigen."
+  pathname="/concept"
+>
+  <header class="page-header container">
+    <span class="eyebrow">Het concept</span>
+    <h1>Flowmaker is geen product. Het is een manier van werken.</h1>
+    <p class="lede">
+      We combineren vijf dingen die in een kleine zaak écht verschil
+      maken — zonder dat het een enterprise-traject wordt.
+    </p>
+  </header>
+
+  <section class="page container stack-lg">
+    <div class="grid grid-2 stack-lg">
+      <HandmadeBox tone="default">
+        <span class="eyebrow">1 · Analyse</span>
+        <h2 style="margin-top:0">Workflow-analyse</h2>
+        <p>
+          We brengen in kaart wat er nu eigenlijk gebeurt in je zaak. Niet
+          in een organogram, maar in een concrete flow: wie doet wat,
+          wanneer, met welke informatie, en wat er misgaat als dat
+          verandert.
+        </p>
+        <p>
+          Een goede analyse levert iets op dat direct te gebruiken is:
+          een lijst van knelpunten, gesorteerd op hoeveel gedoe ze
+          opleveren.
+        </p>
+      </HandmadeBox>
+
+      <HandmadeBox tone="blue" tilt="right">
+        <span class="eyebrow eyebrow-blue">2 · Diagnose</span>
+        <h2 style="margin-top:0">Praktische bedrijfsdiagnose</h2>
+        <p>
+          Niet elk probleem is een software-probleem. Soms is de
+          oplossing dat iemand de telefoon opneemt tussen 9 en 10. Soms
+          is het dat de kassa op een andere plek moet. We kijken eerst
+          wat de zaak zelf kan oplossen.
+        </p>
+      </HandmadeBox>
+
+      <HandmadeBox tone="green">
+        <span class="eyebrow eyebrow-green">3 · Maatwerk</span>
+        <h2 style="margin-top:0">Kleine, eigen tools</h2>
+        <p>
+          Voor de dingen die je niet met discipline kunt oplossen, bouwen
+          we een klein stukje gereedschap. Geen SaaS-platform, geen
+          maatwerk-ERP, geen half-jaar project. Wel iets dat past bij
+          hoe jij werkt.
+        </p>
+        <p>
+          Een tool die je in een week begrijpt, in een maand vertrouwt,
+          en die niet verdwijnt als de leverancier failliet gaat.
+        </p>
+      </HandmadeBox>
+
+      <HandmadeBox tone="red" tilt="left">
+        <span class="eyebrow eyebrow-red">4 · Automatisering</span>
+        <h2 style="margin-top:0">De saaie dingen, automatisch</h2>
+        <p>
+          Herinneringen, samenvattingen, standaard-antwoorden, lijstjes
+          die elke week opnieuw moeten — dat zijn de dingen die je
+          energie vreten. Die pakken we aan.
+        </p>
+        <p>
+          Niet door het helemaal uit handen te nemen, maar door het zo
+          in te richten dat je er nog wel op kunt bijsturen.
+        </p>
+      </HandmadeBox>
+
+      <HandmadeBox>
+        <span class="eyebrow">5 · AI</span>
+        <h2 style="margin-top:0">AI als assistent, niet als curiositeit</h2>
+        <p>
+          AI is geen magische oplossing. Het is een nieuwe assistent die
+          goed is in: schrijven, samenvatten, voorstellen doen, en
+          verbanden zien in rommelige data.
+        </p>
+        <p>
+          We gebruiken het voor de dingen waar het echt helpt — een
+          eerste versie van een mailtje naar een klant, een
+          seizoens-overzicht van je verkoop, een lijst van
+          veelgestelde-vragen met bijbehorende antwoorden.
+        </p>
+      </HandmadeBox>
+
+      <HandmadeBox tone="blue" tilt="right">
+        <span class="eyebrow eyebrow-blue">Samen</span>
+        <h2 style="margin-top:0">Een manier van werken, niet een methode</h2>
+        <p>
+          Die vijf dingen — analyse, diagnose, maatwerk, automatisering,
+          AI — gebruiken we niet als stappenplan. We gebruiken ze als
+          gereedschapskist, afhankelijk van wat de zaak op dat moment
+          nodig heeft.
+        </p>
+      </HandmadeBox>
+    </div>
+
+    <Callout label="Het verschil met een consultant" tone="green">
+      Een consultant zegt wat je moet doen. Flowmaker werkt mee in je
+      zaak, doet dingen uit handen, en bouwt wat je zelf niet kunt
+      bouwen. Daarna ga je weer verder — zelfstandig, maar minder
+      alleen.
+    </Callout>
+  </section>
+</BaseLayout>

@@ -1,0 +1,129 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SectionHeader from '../components/SectionHeader.astro';
+import HandmadeBox from '../components/HandmadeBox.astro';
+import Callout from '../components/Callout.astro';
+---
+<BaseLayout
+  title="Het probleem"
+  description="Kleine zelfstandigen hebben geen enterprise-software nodig. Ze hebben overzicht, opvolging en herhaalbare processen nodig."
+  pathname="/probleem"
+>
+  <header class="page-header container">
+    <span class="eyebrow eyebrow-red">Het probleem</span>
+    <h1>Het probleem is niet "geen software".</h1>
+    <p class="lede">
+      Het probleem is dat de zaak op geheugen draait — en dat geheugen
+      's avonds moe is.
+    </p>
+  </header>
+
+  <section class="page container stack-lg">
+    <p>
+      Veel kleine zelfstandigen hebben al van alles geprobeerd. Een
+      kassasysteem dat ooit handig leek, een Excel-bestand dat ondertussen
+      niet meer te lezen is, een telefoon vol klant-WhatsApps waar niemand
+      meer doorheen kijkt. De verzameling groeit, het overzicht krimpt.
+    </p>
+
+    <p>
+      De verleiding is dan om te denken: "Ik heb gewoon het juiste
+      software-pakket nodig." Soms is dat zo. Vaker is het niet zo.
+    </p>
+
+    <SectionHeader
+      eyebrow="Wat we zien"
+      title="Vijf dingen die in vrijwel elke zaak terugkomen"
+      tone="red"
+    />
+
+    <ol class="steps" role="list">
+      <li class="steps__item">
+        <h3>Geen overzicht</h3>
+        <p>
+          Je weet op dinsdagmiddag niet meer precies welke klanten er
+          iets te horen moeten krijgen, welke bestelling onderweg is, en
+          welke afspraak eigenlijk gisteren was.
+        </p>
+      </li>
+      <li class="steps__item">
+        <h3>Geen opvolging</h3>
+        <p>
+          Een klant krijgt geen terugkoppeling, een offerte blijft een
+          week liggen, een onderdeel wordt besteld zonder dat iemand
+          afspreekt wanneer het binnen moet zijn.
+        </p>
+      </li>
+      <li class="steps__item">
+        <h3>Geen ritme</h3>
+        <p>
+          Voorraad, administratie, social media, schoonmaak — alles
+          gebeurt "als je eraan denkt". Dat is geen systeem, dat is
+          improvisatie met schuldgevoel.
+        </p>
+      </li>
+      <li class="steps__item">
+        <h3>Te veel in je hoofd</h3>
+        <p>
+          De eigenaar is de duurste geheugenkaart van de zaak. Alles
+          loopt via jou, en zodra jij een dag weg bent, stokt het.
+        </p>
+      </li>
+      <li class="steps__item">
+        <h3>Geen plek voor AI</h3>
+        <p>
+          Je hoort over AI en denkt: "leuk, maar dat is niet voor mij."
+          Toch zijn er een paar plekken waar het je werk echt uit handen
+          kan nemen — als de basis op orde is.
+        </p>
+      </li>
+    </ol>
+
+    <Callout label="Wat we hiermee bedoelen" tone="blue">
+      We bedoelen niet dat kleine zelfstandigen hun zaak niet goed
+      runnen. We bedoelen dat het systeem waarin ze werken —
+      ontworpen voor grote bedrijven — niet past bij hoe zij werken.
+    </Callout>
+
+    <SectionHeader
+      eyebrow="Wat je eraan kunt doen"
+      title="Klein beginnen is geen zwakte, het is een strategie"
+      tone="green"
+    />
+
+    <div class="grid grid-2">
+      <HandmadeBox>
+        <h3>1. Schrijf op wat je nu doet</h3>
+        <p>
+          Niet in een systeem, niet in Notion, op papier. Wat doe je op
+          een gemiddelde dag, in welke volgorde, met welke uitzonderingen?
+        </p>
+      </HandmadeBox>
+      <HandmadeBox tone="blue">
+        <h3>2. Kies er één die je pijn doet</h3>
+        <p>
+          Welke stap in je werk zorgt voor de meeste losse eindjes? Daar
+          begin je. Niet bij de leukste, niet bij de makkelijkste.
+        </p>
+      </HandmadeBox>
+      <HandmadeBox tone="green">
+        <h3>3. Maak het zichtbaar</h3>
+        <p>
+          Op een bord, op een muur, in een simpele lijst. Niet in je
+          hoofd, niet in de "ik zal het onthouden"-modus.
+        </p>
+      </HandmadeBox>
+      <HandmadeBox tone="red">
+        <h3>4. Herhaal drie weken</h3>
+        <p>
+          Wat niet drie weken volhoudt, is geen systeem. Wat het wel
+          volhoudt, is de basis waar je de rest op bouwt.
+        </p>
+      </HandmadeBox>
+    </div>
+
+    <p style="margin-top: var(--space-6)">
+      <a class="btn" href="/aanpak">Bekijk de volledige aanpak</a>
+    </p>
+  </section>
+</BaseLayout>

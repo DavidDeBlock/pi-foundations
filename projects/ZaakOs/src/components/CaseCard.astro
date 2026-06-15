@@ -1,0 +1,29 @@
+---
+import type { CollectionEntry } from 'astro:content';
+
+export interface Props {
+  caseItem: CollectionEntry<'cases'>;
+  tilt?: 'none' | 'left' | 'right';
+}
+
+const { caseItem, tilt = 'none' } = Astro.props;
+const { data, id } = caseItem;
+
+const tiltClass = tilt === 'left' ? 'card--tilt-l' : tilt === 'right' ? 'card--tilt-r' : '';
+const href = `/cases/${id}`;
+
+const dateLabel = data.date.toLocaleDateString('nl-NL', {
+  month: 'long',
+  year: 'numeric',
+});
+---
+<a class={`card ${tiltClass}`} href={href}>
+  <div class="card__meta">
+    <span class="tag tag--orange">{data.sector}</span>
+    {data.location && <span class="text-small">{data.location}</span>}
+    <span class="text-small">{dateLabel}</span>
+  </div>
+  <h3>{data.title}</h3>
+  <p>{data.summary}</p>
+  <p class="text-small">→ Lees de case</p>
+</a>

@@ -1,0 +1,97 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SectionHeader from '../components/SectionHeader.astro';
+import HandmadeBox from '../components/HandmadeBox.astro';
+import Callout from '../components/Callout.astro';
+---
+<BaseLayout
+  title="Contact"
+  description="Plan een kort gesprek of stuur een bericht. We kijken graag een middag mee in je zaak."
+  pathname="/contact"
+>
+  <header class="page-header container">
+    <span class="eyebrow eyebrow-orange">Contact</span>
+    <h1>Een keer meekijken, vrijblijvend.</h1>
+    <p class="lede">
+      Heb je een kleine zaak en voelt je dagelijkse werking soms als
+      losse eindjes? Dan wil ik graag eens meekijken.
+    </p>
+  </header>
+
+  <section class="page container stack-lg">
+    <div class="grid grid-2">
+      <div>
+        <SectionHeader
+          eyebrow="Wat je kunt verwachten"
+          title="Eerst een gesprek, dan pas iets"
+          tone="blue"
+        />
+        <p>
+          We beginnen met een kort gesprek — telefoon, videobellen of
+          live, afhankelijk van wat jou het beste uitkomt. We kijken
+          samen of Flowmaker past bij wat je zoekt. Zo ja, plannen we
+          een workflow-scan. Zo nee, zeggen we dat en geven we mee wat
+          wel zou kunnen helpen.
+        </p>
+        <p>
+          Geen verkooppraat, geen pitch, geen "ik stuur even een
+          voorstel". Een eerlijk gesprek van een half uur.
+        </p>
+
+        <SectionHeader
+          eyebrow="Wat handig is om mee te nemen"
+          title="Drie dingen"
+          tone="green"
+        />
+        <ul class="stack" style="padding-left: 1.25rem; list-style: disc;">
+          <li>Een korte omschrijving van wat je doet en hoe je zaak eruit ziet.</li>
+          <li>Wat je het liefst volgende week al zou willen oplossen.</li>
+          <li>Een paar uur in de week die je vrij kunt maken om mee te denken.</li>
+        </ul>
+      </div>
+
+      <div>
+        <HandmadeBox tone="default" tilt="left">
+          <span class="eyebrow">Direct contact</span>
+          <h3 style="margin-top:0">Mail of bel</h3>
+          <p>
+            <strong>E-mail</strong><br />
+            <a href="mailto:hallo@flowmaker.example">hallo@flowmaker.example</a>
+          </p>
+          <p>
+            <strong>Telefoon</strong><br />
+            <a href="tel:+31600000000">+31 6 00 00 00 00</a>
+          </p>
+          <p>
+            <strong>Reactietijd</strong><br />
+            Meestal binnen één werkdag, soms iets langer als we in de
+            winkel staan.
+          </p>
+        </HandmadeBox>
+
+        <div style="height: var(--space-5)"></div>
+
+        <HandmadeBox tone="blue" tilt="right">
+          <span class="eyebrow eyebrow-blue">Adres</span>
+          <h3 style="margin-top:0">Waar we werken</h3>
+          <p>
+            Op dit moment nergens vast. We werken bij de klant, in een
+            café, of bij ons thuis aan de keukentafel.
+          </p>
+          <p>
+            Post gaat via:<br />
+            Flowmaker<br />
+            p/a Postbus 1234<br />
+            1000 AA Amsterdam
+          </p>
+        </HandmadeBox>
+      </div>
+    </div>
+
+    <Callout label="Liever eerst lezen?" tone="orange">
+      Neem een kijkje bij <a href="/cases/fietsenwinkel">de fietsenwinkel</a>,
+      <a href="/flows">de voorbeeld-flows</a> of <a href="/voor-wie">de
+      profielen</a> van de ondernemers waar we het beste mee werken.
+    </Callout>
+  </section>
+</BaseLayout>

@@ -1,0 +1,54 @@
+---
+import '../styles/global.css';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+
+export interface Props {
+  title: string;
+  description: string;
+  pathname?: string;
+}
+
+const {
+  title,
+  description,
+  pathname = Astro.url.pathname,
+} = Astro.props;
+
+const fullTitle = title === 'Flowmaker' ? 'Flowmaker' : `${title} · Flowmaker`;
+const canonical = new URL(pathname, Astro.site ?? Astro.url).toString();
+---
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href={canonical} />
+
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content="Flowmaker" />
+    <meta property="og:locale" content="nl_NL" />
+
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+
+    <meta name="theme-color" content="#f6efe1" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Naar de inhoud</a>
+    <SiteHeader pathname={pathname} />
+    <main id="main">
+      <slot />
+    </main>
+    <SiteFooter />
+  </body>
+</html>

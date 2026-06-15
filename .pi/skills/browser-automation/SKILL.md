@@ -81,18 +81,35 @@ All commands use the project-local wrapper script:
 
 ### Screenshots:
 ```bash
-# Viewport screenshot
+# Viewport screenshot (waits for window.load + 1.5s grace by default)
 .pi/scripts/browser-automation.sh screenshot "https://example.com" /tmp/page.png
 
 # Full-page screenshot
 .pi/scripts/browser-automation.sh screenshot "https://example.com" /tmp/page.png --full-page
 
-# Wait for a selector before capturing
+# Wait for a specific selector before capturing
 .pi/scripts/browser-automation.sh screenshot "https://example.com" /tmp/page.png --wait-selector ".main-content"
 
-# Wait a fixed time (ms) before capturing
+# Wait for all <img> elements to finish loading (handles lazy-loaded carousels)
+.pi/scripts/browser-automation.sh screenshot "https://example.com" /tmp/page.png --wait-images
+
+# Wait for network to be fully idle (strictest — use for heavy SPAs)
+.pi/scripts/browser-automation.sh screenshot "https://example.com" /tmp/page.png --wait-network-idle
+
+# Wait a fixed time (ms) before capturing (overrides default grace)
 .pi/scripts/browser-automation.sh screenshot "https://example.com" /tmp/page.png --wait-timeout 2000
+
+# Skip the default grace period (fast path, content may not be settled)
+.pi/scripts/browser-automation.sh screenshot "https://example.com" /tmp/page.png --no-grace
 ```
+
+**Wait strategy precedence** (in order):
+1. `--wait-selector` — wait for a CSS element
+2. `--wait-images` — wait for all `<img>` to be `complete` with non-zero `naturalHeight`
+3. `--wait-timeout <ms>` — fixed delay (overrides the 1500ms default grace)
+4. Default — 1500ms grace after `window.load` event
+
+**Load strategy**: `waitUntil: 'load'` is the default (waits for `window.onload`). Use `--wait-network-idle` for sites with late-running XHR/fetch activity.
 
 ### Parallel Sessions:
 > Note: For parallel/multi-tab workflows, run multiple instances sequentially or use the web-searcher skill for rapid multi-source lookups.
@@ -138,7 +155,7 @@ When presenting research findings:
 - **Module Resolution:** Imports `chromium` from `@playwright/test` (the only Playwright package in this project; `playwright` is not installed separately)
 - **Config:** Reads chromium path and viewport from `.pi/playwright-cli.json`. Falls back to Playwright auto-detect if the path is empty.
 - **Env Loading:** Node 22's `--env-file=.env` flag auto-loads the project `.env` (provides `SERPER_API_KEY` to the `search` subcommand)
-- **Subcommands:** `open`/`navigate` (page info + console errors), `screenshot` (`--full-page`, `--wait-selector`, `--wait-timeout`), `extract` (selector → cleaned text), `search` (Serper API)
+- **Subcommands:** `open`/`navigate` (page info + console errors), `screenshot` (`--full-page`, `--wait-selector`, `--wait-images`, `--wait-network-idle`, `--wait-timeout`, `--no-grace` — default waits for `window.load` + 1500ms grace), `extract` (selector → cleaned text), `search` (Serper API)
 - **Capabilities:** Headless browsing, screenshots, text extraction, Serper web search integration
 
 ---

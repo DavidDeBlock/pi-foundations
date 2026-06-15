@@ -1,0 +1,46 @@
+---
+export interface Props {
+  eyebrow?: string;
+  title: string;
+  intro?: string;
+  align?: 'start' | 'center';
+  tone?: 'orange' | 'blue' | 'green' | 'red' | 'mustard';
+}
+
+const {
+  eyebrow,
+  title,
+  intro,
+  align = 'start',
+  tone = 'orange',
+} = Astro.props;
+
+const eyebrowClass = tone === 'blue'
+  ? 'eyebrow-blue'
+  : tone === 'green'
+    ? 'eyebrow-green'
+    : tone === 'red'
+      ? 'eyebrow-red'
+      : '';
+---
+<header class={`section-header section-header--${align}`}>
+  {eyebrow && <span class={`eyebrow ${eyebrowClass}`}>{eyebrow}</span>}
+  <h2>{title}</h2>
+  {intro && <p class="lede">{intro}</p>}
+</header>
+
+<style>
+  .section-header {
+    margin-bottom: var(--space-5);
+  }
+  .section-header--center {
+    text-align: center;
+    margin-inline: auto;
+  }
+  .section-header--center :global(.lede) {
+    margin-inline: auto;
+  }
+  .section-header h2 {
+    margin-top: 0;
+  }
+</style>

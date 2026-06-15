@@ -1,0 +1,141 @@
+---
+import { getCollection, render } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import SectionHeader from '../../components/SectionHeader.astro';
+import HandmadeBox from '../../components/HandmadeBox.astro';
+import Callout from '../../components/Callout.astro';
+
+const allCases = await getCollection('cases');
+const caseItem = allCases.find((c) => c.id === 'fietsenwinkel');
+
+if (!caseItem) {
+  throw new Error('Case "fietsenwinkel" niet gevonden in content/cases/');
+}
+
+const { Content } = await render(caseItem);
+---
+<BaseLayout
+  title="De fietsenwinkel"
+  description="De eerste praktijkcase van Flowmaker: een fietsenwinkel waar we flows ontwerpen, testen en aanpassen in de echte wereld."
+  pathname="/cases/fietsenwinkel"
+>
+  <header class="page-header container">
+    <span class="eyebrow eyebrow-red">Case · fietsenwinkel</span>
+    <h1>Een fietsenwinkel als lab.</h1>
+    <p class="lede">
+      De eerste praktijkcase van Flowmaker. Geen pilot, geen proeftuin —
+      een gewone winkel waar we dagelijks meedenken.
+    </p>
+  </header>
+
+  <section class="page container-narrow stack-lg notebook" style="padding-left: var(--space-5); padding-right: var(--space-5);">
+    <div class="prose">
+      <Content />
+    </div>
+
+    <SectionHeader
+      eyebrow="Status"
+      title="Waar we nu staan"
+      tone="green"
+    />
+
+    <div class="grid grid-2">
+      <HandmadeBox tone="green">
+        <span class="tag tag--green">in gebruik</span>
+        <h3>Intake-bon</h3>
+        <p>
+          Elke fiets die binnenkomt krijgt een bon met klacht, foto,
+          termijn en prijsopgave. De klant gaat naar huis met dezelfde
+          afspraak als die op papier staat.
+        </p>
+      </HandmadeBox>
+      <HandmadeBox>
+        <span class="tag tag--orange">in test</span>
+        <h3>Werkplaats-bord</h3>
+        <p>
+          Een fysiek bord met vier kolommen. De eigenaar kijkt er in de
+          ochtend naar en weet wat de dag gaat brengen.
+        </p>
+      </HandmadeBox>
+      <HandmadeBox tone="blue" tilt="right">
+        <span class="tag tag--blue">in voorbereiding</span>
+        <h3>Klant-herinnering</h3>
+        <p>
+          Nu handmatig, met een simpel overzicht. Binnenkort
+          half-geautomatiseerd, met een AI-suggestie voor de toon.
+        </p>
+      </HandmadeBox>
+      <HandmadeBox tone="red" tilt="left">
+        <span class="tag tag--red">kladversie</span>
+        <h3>Voorraad-scan</h3>
+        <p>
+          Werkt nog niet. Eerst willen we zeker weten dat de basis-flow
+          voor bestellen en ontvangst werkt — dan pas kijken we of een
+          camera-hulpje helpt.
+        </p>
+      </HandmadeBox>
+    </div>
+
+    <Callout label="De afspraak" tone="red">
+      Wat hier niet werkt, wordt niet aangeprezen in andere cases. De
+      fietsenwinkel is eerlijk, niet altijd succesvol. Dat is de
+      afspraak.
+    </Callout>
+
+    <SectionHeader
+      eyebrow="Wat we leren"
+      title="Drie lessen tot nu toe"
+      tone="blue"
+    />
+
+    <ol class="steps" role="list">
+      <li class="steps__item">
+        <h3>Een A4 is genoeg</h3>
+        <p>
+          De intake-bon was in het begin één A4, met de hand getekend.
+          We zijn daar pas digitaal van geworden toen de fysieke versie
+          drie maanden goed werkte.
+        </p>
+      </li>
+      <li class="steps__item">
+        <h3>Mensen vergeten systemen</h3>
+        <p>
+          Zelfs een goed systeem wordt vergeten als het niet zichtbaar
+          is. Het werkplaats-bord hangt op ooghoogte, niet in een la.
+        </p>
+      </li>
+      <li class="steps__item">
+        <h3>De eigenaar is geen admin</h3>
+        <p>
+          Alles wat we bedenken moet de eigenaar tijd opleveren, niet
+          kosten. Een mooi dashboard dat een uur per dag kost om bij te
+          houden, is geen hulp.
+        </p>
+      </li>
+    </ol>
+
+    <p style="margin-top: var(--space-6)">
+      <a class="btn" href="/contact">Voor jouw zaak langskomen?</a>
+    </p>
+  </section>
+</BaseLayout>
+
+<style>
+  .prose :global(h2) {
+    margin-top: var(--space-7);
+  }
+  .prose :global(h3) {
+    margin-top: var(--space-5);
+  }
+  .prose :global(p) {
+    max-width: 65ch;
+  }
+  .prose :global(ul),
+  .prose :global(ol) {
+    padding-left: 1.25rem;
+    max-width: 65ch;
+  }
+  .prose :global(li) {
+    margin-bottom: var(--space-2);
+  }
+</style>

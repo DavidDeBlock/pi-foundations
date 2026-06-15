@@ -6,7 +6,8 @@
 //   navigate <url>                Alias for open
 //   screenshot <url> <file>       Capture viewport screenshot to <file>
 //                                 Flags: --full-page, --wait-selector <sel>,
-//                                        --wait-timeout <ms>
+//                                        --wait-timeout <ms>, --wait-images,
+//                                        --wait-network-idle, --no-grace
 //   extract <url> [selector]      Print cleaned text of <selector> (default: body)
 //   search <query...>             Google search via Serper API
 //
@@ -103,12 +104,39 @@ async function cmdOpen(url) {
 async function cmdScreenshot(url, file, flags) {
   if (!file) die('screenshot requires <url> <file>');
   await withBrowser(async (page) => {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // Pick load strategy. Default 'load' (window.onload) is far more reliable
+    // than 'domcontentloaded' for JS-heavy sites with carousels, fonts, and
+    // async widgets. 'networkidle' is the strictest — opt-in via flag.
+    const waitUntil = flags['wait-network-idle'] ? 'networkidle' : 'load';
+    await page.goto(url, { waitUntil, timeout: 30000 });
+
+    // Optional: wait for a specific element before capturing.
     if (flags['wait-selector']) {
       await page.waitForSelector(flags['wait-selector'], { timeout: 15000 });
-    } else if (flags['wait-timeout']) {
-      await page.waitForTimeout(Number(flags['wait-timeout']));
     }
+
+    // Optional: wait for all <img> elements to finish loading (handles
+    // lazy-loaded carousels and broken src attributes that would otherwise
+    // leave blank regions in the screenshot).
+    if (flags['wait-images']) {
+      await page.waitForFunction(
+        () => {
+          const imgs = Array.from(document.images);
+          return imgs.length === 0 || imgs.every((img) => img.complete && img.naturalHeight !== 0);
+        },
+        { timeout: 15000 },
+      );
+    }
+
+    // Final grace: explicit --wait-timeout overrides the default. The default
+    // grace of 1500ms gives late-running scripts, animations, and post-load
+    // widgets a chance to settle before we snap. --no-grace skips it.
+    if (flags['wait-timeout']) {
+      await page.waitForTimeout(Number(flags['wait-timeout']));
+    } else if (!flags['no-grace']) {
+      await page.waitForTimeout(1500);
+    }
+
     const opts = { path: file };
     if (flags['full-page']) opts.fullPage = true;
     await page.screenshot(opts);

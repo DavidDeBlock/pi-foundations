@@ -1,0 +1,31 @@
+---
+import type { CollectionEntry } from 'astro:content';
+
+export interface Props {
+  flow: CollectionEntry<'flows'>;
+  tilt?: 'none' | 'left' | 'right';
+}
+
+const { flow, tilt = 'none' } = Astro.props;
+const { data, id } = flow;
+
+const tiltClass = tilt === 'left' ? 'card--tilt-l' : tilt === 'right' ? 'card--tilt-r' : '';
+const href = `/flows#${id}`;
+---
+<a class={`card ${tiltClass}`} href={href}>
+  <div class="card__meta">
+    <span class="tag tag--blue">{data.sector}</span>
+    {data.steps.length > 0 && (
+      <span class="text-small">{data.steps.length} stappen</span>
+    )}
+  </div>
+  <h3>{data.title}</h3>
+  <p>{data.summary}</p>
+  {data.steps.length > 0 && (
+    <ul class="flow-steps" role="list" aria-label={`Stappen in ${data.title}`}>
+      {data.steps.slice(0, 4).map((step) => (
+        <li>{step}</li>
+      ))}
+    </ul>
+  )}
+</a>

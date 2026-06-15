@@ -19,7 +19,7 @@ if [ $# -lt 1 ]; then
   echo "Commands:" >&2
   echo "  open <url>                  Navigate headless; print title, url, console errors" >&2
   echo "  navigate <url>              Alias for open" >&2
-  echo "  screenshot <url> <file>     Capture viewport to <file> (--full-page, --wait-selector=X)" >&2
+  echo "  screenshot <url> <file>     Capture viewport to <file> (--full-page, --wait-selector=X, --wait-timeout=ms, --wait-images, --wait-network-idle, --no-grace)" >&2
   echo "  extract <url> [selector]    Print cleaned text of <selector> (default: body)" >&2
   echo "  search <query...>           Google search via Serper API" >&2
   echo "" >&2
