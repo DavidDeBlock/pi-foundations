@@ -37,11 +37,13 @@ Run with: ``python3 tests/test_monitor.py`` (custom runner)
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # ─── Path setup ──────────────────────────────────────────────────────────
@@ -453,6 +455,296 @@ def test_python_m_commands_monitor_works():
     assert result.returncode == 0, result.stderr
     assert "--logs-dir" in result.stdout
     assert "--interval" in result.stdout
+
+
+# ─── Issue #40: active flow rendering tests ─────────────────────────────
+
+
+def _now_iso() -> str:
+    """Current time as ISO string."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _ago(seconds: int) -> str:
+    """ISO timestamp ``seconds`` ago."""
+    dt = datetime.now(timezone.utc) - timedelta(seconds=seconds)
+    return dt.isoformat()
+
+
+def _event(kind: str, phase: str | None = None, message: str = "", tokens: dict | None = None, timestamp: str | None = None) -> dict:
+    """Build a FlowEvent-like dict."""
+    return {
+        "kind": kind,
+        "message": message,
+        "timestamp": timestamp or _now_iso(),
+        "phase": phase,
+        "attempt": 1 if phase else None,
+        "duration_s": None,
+        "tokens": tokens,
+    }
+
+
+def test_poll_snapshot_detects_active_flows():
+    """``poll_snapshot`` identifies active flows from JSONL logs.
+
+    AC: "Reads ``.maestro/logs/<flow>/<issue>.jsonl`` files"
+    AC: "Identifies active flows from the event log"
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        logs_dir = Path(tmp) / "logs"
+        flow_dir = logs_dir / "builder-reviewer"
+        jsonl_path = flow_dir / "42.jsonl"
+
+        events = [
+            _event("phase_start", phase="scout"),
+            _event("phase_end", phase="scout"),
+            _event("phase_start", phase="builder"),
+        ]
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        with jsonl_path.open("w") as f:
+            for e in events:
+                f.write(json.dumps(e) + "\n")
+
+        state = poll_snapshot(logs_dir, interval_s=1.0)
+    assert state.has_logs_dir is True
+    assert state.active_count == 1
+    assert len(state.active_flows) == 1
+    snapshot = state.active_flows[0]
+    assert snapshot.flow_name == "builder-reviewer"
+    assert snapshot.issue_num == 42
+    assert snapshot.current_phase == "builder"
+
+
+def test_poll_snapshot_skips_completed_flows():
+    """Completed flows (last event is terminal) are not counted as active."""
+    with tempfile.TemporaryDirectory() as tmp:
+        logs_dir = Path(tmp) / "logs"
+        flow_dir = logs_dir / "builder-reviewer"
+        jsonl_path = flow_dir / "42.jsonl"
+
+        events = [
+            _event("phase_start", phase="builder"),
+            _event("phase_end", phase="builder"),
+        ]
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        with jsonl_path.open("w") as f:
+            for e in events:
+                f.write(json.dumps(e) + "\n")
+
+        state = poll_snapshot(logs_dir, interval_s=1.0)
+    assert state.active_count == 0
+    assert len(state.active_flows) == 0
+
+
+def test_poll_snapshot_skips_corrupt_jsonl():
+    """Corrupt JSONL files don't crash the monitor.
+
+    AC: "Corrupt log lines are skipped, monitor does not crash"
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        logs_dir = Path(tmp) / "logs"
+        flow_dir = logs_dir / "builder-reviewer"
+        jsonl_path = flow_dir / "42.jsonl"
+
+        # Write corrupt data mixed with valid events.
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        with jsonl_path.open("w") as f:
+            f.write(json.dumps(_event("phase_start", phase="builder")) + "\n")
+            f.write("this is not json at all\n")  # corrupt
+            f.write('"partial')  # truncated (no newline)
+
+        state = poll_snapshot(logs_dir, interval_s=1.0)
+    assert state.active_count == 1
+    assert state.active_flows[0].current_phase == "builder"
+
+
+def test_poll_snapshot_multiple_active_flows_sorted():
+    """Multiple active flows are returned in stable order (by start time).
+
+    AC: "Multiple active flows render in stable order (sorted by start time)"
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        logs_dir = Path(tmp) / "logs"
+
+        # Issue 99 started first (older timestamp)
+        ts_1 = _ago(600)
+        jsonl_1 = logs_dir / "builder-reviewer" / "99.jsonl"
+        events_1 = [_event("phase_start", phase="builder", timestamp=ts_1)]
+        jsonl_1.parent.mkdir(parents=True, exist_ok=True)
+        with jsonl_1.open("w") as f:
+            for e in events_1:
+                f.write(json.dumps(e) + "\n")
+
+        # Issue 5 started later (newer timestamp)
+        ts_2 = _ago(300)
+        jsonl_2 = logs_dir / "full-lifecycle" / "5.jsonl"
+        events_2 = [_event("phase_start", phase="reviewer", timestamp=ts_2)]
+        jsonl_2.parent.mkdir(parents=True, exist_ok=True)
+        with jsonl_2.open("w") as f:
+            for e in events_2:
+                f.write(json.dumps(e) + "\n")
+
+        state = poll_snapshot(logs_dir, interval_s=1.0)
+    assert state.active_count == 2
+    # Sorted by start_time ascending (oldest first).
+    assert state.active_flows[0].issue_num == 99
+    assert state.active_flows[1].issue_num == 5
+
+
+def test_build_layout_active_flows_shows_count():
+    """Header shows correct count of active flows.
+
+    AC: "Header shows count of active flows"
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        logs_dir = Path(tmp) / "logs"
+        flow_dir = logs_dir / "builder-reviewer"
+        jsonl_path = flow_dir / "42.jsonl"
+
+        events = [_event("phase_start", phase="reviewer")]
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        with jsonl_path.open("w") as f:
+            for e in events:
+                f.write(json.dumps(e) + "\n")
+
+        state = poll_snapshot(logs_dir, interval_s=1.0)
+    layout = build_layout(state)
+    rendered = _render_to_text(layout)
+    assert "1 active flow" in rendered or "1 active flows" in rendered
+
+
+def test_build_layout_active_flow_panel_contains_phase():
+    """Flow panel shows current phase information.
+
+    AC: "Renders one panel per active flow with: ... current phase (X/Y)"
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        logs_dir = Path(tmp) / "logs"
+        flow_dir = logs_dir / "builder-reviewer"
+        jsonl_path = flow_dir / "42.jsonl"
+
+        events = [
+            _event("phase_start", phase="scout"),
+            _event("phase_end", phase="scout"),
+            _event("phase_start", phase="builder"),
+        ]
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        with jsonl_path.open("w") as f:
+            for e in events:
+                f.write(json.dumps(e) + "\n")
+
+        state = poll_snapshot(logs_dir, interval_s=1.0)
+    layout = build_layout(state)
+    rendered = _render_to_text(layout)
+    assert "builder" in rendered.lower()
+    # Phase index should show (2 since scout was first).
+    assert "Phase:" in rendered
+
+
+def test_build_layout_active_flow_panel_contains_issue():
+    """Flow panel shows issue number.
+
+    AC: "Renders one panel per active flow with: issue # + title"
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        logs_dir = Path(tmp) / "logs"
+        flow_dir = logs_dir / "builder-reviewer"
+        jsonl_path = flow_dir / "42.jsonl"
+
+        events = [_event("phase_start", phase="reviewer")]
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        with jsonl_path.open("w") as f:
+            for e in events:
+                f.write(json.dumps(e) + "\n")
+
+        state = poll_snapshot(logs_dir, interval_s=1.0)
+    layout = build_layout(state)
+    rendered = _render_to_text(layout)
+    assert "#42" in rendered
+
+
+def test_build_layout_active_flow_panel_contains_tokens():
+    """Flow panel shows token usage.
+
+    AC: "Renders one panel per active flow with: ... tokens in/out"
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        logs_dir = Path(tmp) / "logs"
+        flow_dir = logs_dir / "builder-reviewer"
+        jsonl_path = flow_dir / "42.jsonl"
+
+        events = [
+            _event(
+                "phase_start",
+                phase="reviewer",
+                tokens={"input": 1000, "output": 500, "cacheRead": 200},
+            ),
+        ]
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        with jsonl_path.open("w") as f:
+            for e in events:
+                f.write(json.dumps(e) + "\n")
+
+        state = poll_snapshot(logs_dir, interval_s=1.0)
+    layout = build_layout(state)
+    rendered = _render_to_text(layout)
+    assert "Tokens:" in rendered
+    # Token values should appear (formatted with commas).
+    assert "1,000" in rendered or "1000" in rendered
+
+
+def test_build_layout_missing_fields_show_placeholders():
+    """When log format is missing fields, card renders with ``?`` placeholders.
+
+    AC: "When PRD #25's log format is missing fields (older logs), the
+    card renders with ? placeholders rather than crashing"
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        logs_dir = Path(tmp) / "logs"
+        flow_dir = logs_dir / "builder-reviewer"
+        jsonl_path = flow_dir / "42.jsonl"
+
+        # Minimal event — no phase, no tokens, empty message.
+        events = [
+            {"kind": "phase_start", "message": "", "timestamp": _now_iso()},
+        ]
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        with jsonl_path.open("w") as f:
+            for e in events:
+                f.write(json.dumps(e) + "\n")
+
+        state = poll_snapshot(logs_dir, interval_s=1.0)
+    # Should not raise.
+    layout = build_layout(state)
+    rendered = _render_to_text(layout)
+    assert "#42" in rendered  # issue number still shown from filename
+
+
+def test_run_monitor_with_active_flows():
+    """``run_monitor`` works correctly when active flows are present.
+
+    Integration test: creates a log directory with an active flow,
+    runs the monitor briefly, and verifies it exits cleanly.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        logs_dir = Path(tmp) / "logs"
+        flow_dir = logs_dir / "builder-reviewer"
+        jsonl_path = flow_dir / "42.jsonl"
+
+        events = [_event("phase_start", phase="builder")]
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        with jsonl_path.open("w") as f:
+            for e in events:
+                f.write(json.dumps(e) + "\n")
+
+        console = Console(force_terminal=False, file=open(os.devnull, "w"))
+        rc = run_monitor(
+            logs_dir,
+            interval=0.1,
+            console=console,
+            input_func=lambda: (_ for _ in ()).throw(EOFError),
+        )
+    assert rc == 0
 
 
 # ─── Runner ──────────────────────────────────────────────────────────────

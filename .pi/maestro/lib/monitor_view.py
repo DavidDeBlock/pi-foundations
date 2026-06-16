@@ -39,12 +39,15 @@ Design notes:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from rich.align import Align
+from rich.columns import Columns
+from rich.console import Group
 from rich.layout import Layout
 from rich.panel import Panel
+from rich.text import Text
 
 
 # ─── Constants ───────────────────────────────────────────────────────────
@@ -71,9 +74,8 @@ class MonitorState:
       - ``logs_dir``: The directory we polled. Stored so the render
         layer can show it in tooltips / debug info without re-doing
         the path resolution.
-      - ``active_count``: Number of flows currently active. In this
-        slice always ``0`` — the empty-state slice does not parse
-        logs. Future slices will compute this from the JSONL files.
+      - ``active_count``: Number of flows currently active. Computed
+        from JSONL event logs via :func:`flow_log_reader.scan_logs_dir`.
       - ``has_logs_dir``: Whether ``logs_dir`` exists and is a
         directory. ``False`` is a valid state (the monitor still
         renders the empty-state panel) — see the AC for the
@@ -81,12 +83,16 @@ class MonitorState:
       - ``interval_s``: The configured poll interval. Surfaced in
         the footer in a future slice; kept on the state object so
         tests can verify the wiring.
+      - ``active_flows``: Tuple of :class:`FlowSnapshot` objects for
+        each active flow, sorted by start time (oldest first). Frozen
+        tuple keeps :class:`MonitorState` hashable.
     """
 
     logs_dir: Path
     active_count: int
     has_logs_dir: bool
     interval_s: float
+    active_flows: tuple = ()  # type: ignore[type-arg]
 
 
 # ─── Snapshot reader ─────────────────────────────────────────────────────
@@ -95,19 +101,20 @@ class MonitorState:
 def poll_snapshot(logs_dir: Path, interval_s: float = 1.0) -> MonitorState:
     """Take a single read pass over ``logs_dir`` and return a snapshot.
 
-    In this slice the function is a stub that:
+    Scans the log directory for active flows by reading JSONL event
+    logs produced by :class:`FileLogger`. An active flow is one whose
+    latest event is ``phase_start`` with no matching terminal event.
+
+    The function:
 
       1. Resolves the path (so a relative ``.maestro/logs`` becomes
          an absolute path for display).
       2. Checks whether the directory exists (without raising).
-      3. Returns an empty-state :class:`MonitorState` with
-         ``active_count=0``.
+      3. Scans JSONL files and identifies active flows.
+      4. Returns a :class:`MonitorState` with populated fields.
 
-    Future slices (post-#25) will replace the body with a real
-    scanner that walks ``<flow>/<issue>.jsonl`` files and counts
-    flows whose latest event is an unmatched ``phase_start``. The
-    function signature and return type are stable — callers do not
-    need to change.
+    Corrupt or partially-written log lines are skipped silently —
+    the function never raises on malformed data.
 
     Args:
         logs_dir: Directory to scan. May be relative or absolute;
@@ -116,17 +123,31 @@ def poll_snapshot(logs_dir: Path, interval_s: float = 1.0) -> MonitorState:
             returned state; not used by the function body.
 
     Returns:
-        A :class:`MonitorState` with ``active_count=0`` and
-        ``has_logs_dir`` reflecting whether ``logs_dir`` exists and
-        is a directory.
+        A :class:`MonitorState` with ``active_count`` reflecting
+        the number of active flows and ``has_logs_dir`` indicating
+        whether ``logs_dir`` exists and is a directory.
     """
     resolved = Path(logs_dir).resolve()
     has_logs_dir = resolved.exists() and resolved.is_dir()
+
+    # Import here to avoid circular dependency at module load time.
+    from flow_log_reader import scan_logs_dir  # noqa: PLC0414
+
+    raw_flows: list = []  # type: ignore[var-annotated]
+    if has_logs_dir:
+        try:
+            raw_flows = scan_logs_dir(resolved)
+        except Exception:  # noqa: BLE001
+            # If scanning fails for any reason (permissions, etc.),
+            # fall back to empty state rather than crashing.
+            pass
+
     return MonitorState(
         logs_dir=resolved,
-        active_count=0,
+        active_count=len(raw_flows),
         has_logs_dir=has_logs_dir,
         interval_s=interval_s,
+        active_flows=tuple(raw_flows),
     )
 
 
@@ -170,13 +191,16 @@ def render_footer(state: MonitorState) -> str:
 def render_body(state: MonitorState) -> Panel:
     """Render the main body cell.
 
-    In this slice the body is always the empty-state panel — a
-    centred message inside a dim-bordered :class:`Panel`. The
-    panel's title tells the operator at a glance that this is the
-    empty state (not a frozen display).
+    When there are active flows, renders one :class:`Panel` per flow
+    in a vertical column. Each panel shows issue # + title, flow name,
+    current phase indicator (e.g. ``3/5 reviewer``), agent role,
+    what the agent is reading/acting on, elapsed time, and token usage.
 
-    Future slices will branch on ``state.active_count > 0`` to
-    render a grid of per-flow cards.
+    When no flows are active, renders the empty-state panel — a
+    centred message inside a dim-bordered :class:`Panel`.
+
+    Flows are displayed newest-first (reversed from scan order) so
+    the most recently started flow appears at the top.
     """
     if state.active_count == 0:
         return Panel(
@@ -185,9 +209,104 @@ def render_body(state: MonitorState) -> Panel:
             title="empty",
             title_align="left",
         )
-    # Unreachable in this slice; kept as an explicit placeholder so
-    # the structural change in the next slice is a small diff.
-    return Panel(EMPTY_STATE_MESSAGE, border_style="dim")
+
+    # Render one panel per active flow, newest first.
+    panels: list[Panel] = []
+    for snapshot in reversed(state.active_flows):
+        panels.append(_render_flow_panel(snapshot))
+
+    body_content = Group(*panels)
+    return Panel(
+        Align.center(body_content, vertical="top"),
+        border_style="dim",
+        title=f"{state.active_count} active",  # type: ignore[arg-type]
+        title_align="left",
+    )
+
+
+# ─── Flow panel rendering ───────────────────────────────────────────────
+
+
+def _render_flow_panel(snapshot: "FlowSnapshot") -> Panel:
+    """Render a single :class:`Panel` for one active flow.
+
+    The panel shows:
+
+      - **Title**: ``#{issue} · {flow_name}``
+      - **Phase**: current phase name with index (e.g. ``3/5 reviewer``)
+      - **Agent**: the role currently working
+      - **Action**: what the agent is reading/acting on
+      - **Elapsed**: time since last ``phase_start``
+      - **Tokens**: input / output / cache-read counts
+
+    Missing fields are rendered as ``?`` rather than crashing.
+
+    Args:
+        snapshot: A :class:`FlowSnapshot` from the log reader.
+
+    Returns:
+        A :class:`Panel` with the flow's current status.
+    """
+    # Import here to avoid circular dependency at module load time.
+    from flow_log_reader import format_elapsed, format_tokens  # noqa: PLC0414
+
+    # Title line: issue number + flow name.
+    issue_label = f"#{snapshot.issue_num}" if snapshot.issue_num is not None else "?"
+    title_text = f"{issue_label} · {snapshot.flow_name}"
+
+    # Phase indicator: e.g. "3/5 reviewer" or just "reviewer".
+    phase_display = snapshot.current_phase or "?"
+    if snapshot.phase_index is not None:
+        total_str = f"/{snapshot.total_phases}" if snapshot.total_phases else ""
+        phase_display = f"{snapshot.phase_index}{total_str} {phase_display}"
+
+    # Agent role.
+    agent_role = snapshot.agent_role or "?"
+
+    # Action description (truncated).
+    action = snapshot.action_description or "—"
+
+    # Elapsed time.
+    elapsed = format_elapsed(snapshot.elapsed_s)
+
+    # Token usage.
+    tokens_in = format_tokens(snapshot.tokens_in, label="in: ")
+    tokens_out = format_tokens(snapshot.tokens_out, label="out: ")
+    cache_str = f"cache: {format_tokens(snapshot.cache_read)}"
+
+    # Build the panel content as structured text.
+    lines = [
+        Text.assemble(
+            (f"Phase: [bold]{phase_display}[/]", "default"),
+        ),
+        Text.assemble(
+            f"Agent: ", "dim",
+            agent_role, "cyan bold",
+        ),
+        Text.assemble(
+            f"Action: ", "dim",
+            action, "default",
+        ),
+        Text.assemble(
+            f"Elapsed: ", "dim",
+            elapsed, "yellow",
+        ),
+        Text.assemble(
+            f"Tokens: ", "dim",
+            tokens_in, "green",
+            "  ", "default",
+            tokens_out, "magenta",
+            "  ", "default",
+            cache_str, "blue",
+        ),
+    ]
+
+    return Panel(
+        Group(*lines),
+        title=title_text,
+        border_style="blue",
+        padding=(0, 1),
+    )
 
 
 # ─── Top-level layout builder ────────────────────────────────────────────
