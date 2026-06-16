@@ -23,7 +23,8 @@ What lives here:
   retrospective pre-run context population, prompt building, RPC,
   verdict extraction, and the retrospective post-run persistence.
 - :func:`_build_session_dir` — the session-log-path builder (moved
-  verbatim from ``flow_engine.py``).
+  verbatim from ``flow_engine.py``). Also used by :mod:`diagnostic`
+  for diagnostic-phase session logs (issue #33).
 - :func:`_extract_phase_tokens` — session-log → ``{tokens_in,
   tokens_out, cache_read}`` reader.
 - :func:`_populate_retrospective_context` — fills the retro
@@ -45,7 +46,6 @@ What lives here:
 
 What stays in ``flow_engine.py``:
 
-- :func:`run_diagnostic` (separate slice, issue #33)
 - The phase loop itself (:func:`run_flow_on_issue`)
 - The value-object dataclasses (:class:`Flow`, :class:`FlowContext`,
   :class:`PhaseState`, :class:`PhaseRun`, :class:`FlowOutcome`,

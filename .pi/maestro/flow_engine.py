@@ -21,11 +21,12 @@ Note on module split (deepening PRD issue #31 + #32):
   live in :mod:`prompt_assembler` (issue #32). The return type
   changed from a loose tuple to the typed
   :class:`~prompt_assembler.PreparedPrompt` value object.
-- This module keeps the phase loop (:func:`run_flow_on_issue`),
-  the diagnostic pass (:func:`run_diagnostic`), and the
-  value-object dataclasses (``Flow``, ``FlowContext``,
+- This module keeps the phase loop (:func:`run_flow_on_issue`)
+  and the value-object dataclasses (``Flow``, ``FlowContext``,
   ``PhaseConfig``, ``PhaseState``, ``PhaseRun``, ``FlowOutcome``,
-  ``Transition``).
+  ``Transition``). The diagnostic pass (:func:`run_diagnostic`)
+  lives in :mod:`diagnostic` (issue #33) and is called via a
+  deferred import from the loop's diagnostic-routing branch.
 - ``phase_runner.run_phase`` is imported lazily inside
   :func:`run_flow_on_issue` and :func:`_run_scout_phase` to avoid
   a circular import (phase_runner imports value objects from
@@ -372,67 +373,13 @@ def get_next_step(transitions: list, current_phase: str, status: str) -> Optiona
 # no longer part of this module's public surface).
 
 
-def run_diagnostic(term: Terminal, flow_config: dict, issue_num: int, failure_context: dict, log: Optional["FlowLogger"] = None) -> dict:
-    """Run a diagnostic pass to analyze what went wrong."""
-    term._print_verbose(f"[DIAGNOSTIC] Analyzing failure on issue #{issue_num}")
-
-    diag_prompt = f"""## DIAGNOSTIC PHASE
-Issue: #{issue_num}
-Failure Context: {json.dumps(failure_context, indent=2)}
-
-Analyze the session logs and identify why the previous phase failed.
-Provide specific actionable insights for the next retry attempt."""
-
-    diag_config = flow_config["phases"]["diagnostic"]
-    timeout = diag_config.get("timeout_seconds", 600)
-    model = diag_config.get("model")
-    provider = diag_config.get("provider")
-
-    # Build session directory for diagnostic runs too
-    flow_name = flow_config.get("name", "unknown")
-    session_dir = _build_session_dir(flow_name, issue_num, "diagnostic")
-    _log = _resolve_log(log)
-    if session_dir:
-        _log.emit(_flow_logger.FlowEvent(
-            kind="diagnostic",
-            message=f"Diagnostic session dir: {session_dir}",
-            timestamp=_flow_logger.now_iso(),
-            phase="diagnostic",
-        ))
-
-    rpc_result = run_rpc_with_session_log(
-        diag_prompt, "diagnostic", timeout,
-        model=model, provider=provider,
-        session_dir=session_dir
-    )
-
-    # Extract verdict info from result dict (new error state format)
-    status_data = rpc_result.get("result", {})
-    phase_status = status_data.get("status")
-
-    if not rpc_result["success"]:
-        return {
-            "status": "failed",
-            "analysis": f"RPC failed: {rpc_result.get('output', '')[:1000]}"
-        }
-
-    # If verdict extraction returned an error, surface it in the analysis
-    if phase_status == "error":
-        details = status_data.get("details", "No verdict extracted")
-        return {
-            "status": "success",
-            "analysis": (
-                f"Diagnostic completed but no structured verdict found: {details}. "
-                f"Raw output: {rpc_result.get('output', '')[:800]}"
-            ),
-        }
-
-    # Standard verdict — include details in analysis when available
-    verdict_details = status_data.get("verdict", "") or status_data.get("issues", [])
-    return {
-        "status": "success",
-        "analysis": rpc_result.get("output", "")[:1000],
-    }
+# NOTE: ``run_diagnostic`` moved to :mod:`diagnostic` (deepening PRD
+# issue #33). The phase loop's diagnostic-routing branch in
+# :func:`run_flow_on_issue` does a deferred import
+# (``from diagnostic import run_diagnostic``) to call into the new
+# module. The diagnostic pass is a loop-level concern (dispatched by
+# the transition table, not by :func:`phase_runner.run_phase`) — see
+# the :mod:`diagnostic` docstring for the full rationale.
 
 
 def load_flow(name: str) -> dict:
@@ -635,7 +582,8 @@ def run_flow_on_issue(
     #
     # Per the deepening PRD issue #30, this same ``StderrLogger`` is
     # the default ``FlowLogger`` for the entire run. Every helper
-    # below (``run_phase``, ``run_diagnostic``, ``_persist_retrospective_result``)
+    # below (``run_phase``, the deferred-imported ``run_diagnostic``
+    # from :mod:`diagnostic`, ``_persist_retrospective_result``)
     # receives it via the ``log=`` keyword. The variable name kept
     # here for the per-phase ``tokens_recorded`` event matches the
     # pre-#30 code, but it's now the run-wide FlowLogger.
@@ -650,6 +598,12 @@ def run_flow_on_issue(
     # circular-import. The function is bound to a local name for
     # readability.
     from phase_runner import run_phase as _phase_runner_run_phase
+
+    # Deferred import: ``diagnostic`` imports :class:`Flow` from this
+    # module at load time (deepening PRD issue #33). Same cycle
+    # pattern as :func:`phase_runner.run_phase` — the import is
+    # resolved at first call to keep module-load time cycle-free.
+    from diagnostic import run_diagnostic as _diagnostic_run_diagnostic
 
     while iteration_count < max_iterations:
         iteration_count += 1
@@ -900,10 +854,15 @@ def run_flow_on_issue(
             break
         elif next_step == "diagnostic" or result["status"] == "error":
             term._print_verbose(f"[DIAGNOSTIC] Running diagnostic for {current_phase}")
-            diag_result = run_diagnostic(term, flow_config, issue_num, {
-                "failed_phase": current_phase,
-                "output_summary": result.get("details", "")[:500]
-            }, log=_log)
+            # :func:`run_diagnostic` lives in :mod:`diagnostic` (deepening
+            # PRD issue #33). The new signature takes the typed :class:`Flow`
+            # value object (``flow``), not the legacy ``flow_config`` dict.
+            diag_result = _diagnostic_run_diagnostic(
+                flow, issue_num, {
+                    "failed_phase": current_phase,
+                    "output_summary": result.get("details", "")[:500],
+                }, term, gh_client, log=_log,
+            )
 
             # Store diagnostic insights regardless of outcome
             if diag_result["status"] == "success":
