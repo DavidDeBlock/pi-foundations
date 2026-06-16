@@ -96,37 +96,59 @@ from commands.retrospective import retrospective_cli  # noqa: E402
 from commands.projects import projects_cli  # noqa: E402
 from commands.onboard import onboard_cmd  # noqa: E402
 from commands.monitor import monitor_cmd  # noqa: E402
+from commands.action import action_cmd  # noqa: E402
 
 
 # ─── Top-level group ─────────────────────────────────────────────────────
 
 
-@click.group()
+@click.group(
+    invoke_without_command=True,
+    context_settings={"ignore_unknown_options": False},
+)
 @click.version_option(
     version="0.3.0",
     prog_name="maestro",
     message="%(prog)s (Maestro orchestrator CLI)",
 )
-def maestro_cli() -> None:
+@click.pass_context
+def maestro_cli(ctx: click.Context) -> None:
     """Maestro — Configurable Loop Orchestrator for Pi Slices.
+
+    Run ``maestro`` (no subcommand) to open the interactive
+    action menu (start single issue, start a batch, quit).
+    The other subcommands are for ops scripts and CI.
 
     Common subcommands:
 
       \b
-      - maestro memory ...          inspect & manage per-issue working memory
-      - maestro scout  ...          inspect Scout phase findings
-      - maestro prompt ...          validate flow tool allowlists
-      - maestro mark-tested ...     write a tested.json evidence marker
-      - maestro mark-reviewed ...   write a reviewed.json evidence marker
-      - maestro mark-manual-tested  write a manual_tested.json evidence marker
-      - maestro evidence ...        inspect & verify evidence markers
-      - maestro retrospective ...   manage per-repo learnings & amendments
-      - maestro projects ...        inspect & manage the onboarded-projects registry
-      - maestro onboard <path>      onboard a repo (mechanical + optional interview)
-      - maestro monitor             read-only live view of active flows
+      - maestro                       interactive action menu (default)
+      - maestro menu                  same as above (explicit form)
+      - maestro memory ...            inspect & manage per-issue working memory
+      - maestro scout  ...            inspect Scout phase findings
+      - maestro prompt ...            validate flow tool allowlists
+      - maestro mark-tested ...       write a tested.json evidence marker
+      - maestro mark-reviewed ...     write a reviewed.json evidence marker
+      - maestro mark-manual-tested    write a manual_tested.json evidence marker
+      - maestro evidence ...          inspect & verify evidence markers
+      - maestro retrospective ...     manage per-repo learnings & amendments
+      - maestro projects ...          inspect & manage the onboarded-projects registry
+      - maestro onboard <path>        onboard a repo (mechanical + optional interview)
+      - maestro monitor               read-only live view of active flows
 
     Run ``maestro <subcommand> --help`` for details on each.
     """
+    # If no subcommand was invoked, launch the action menu
+    # (the default UX). Click's ``invoke_without_command=True``
+    # makes this branch reachable; otherwise ``maestro`` with
+    # no args would print the help and exit 0.
+    if ctx.invoked_subcommand is None:
+        # ``standalone_mode=True`` makes Click handle the
+        # process exit, including KeyboardInterrupt -> 130.
+        # We forward any unrecognised args (none, today) so a
+        # future ``--repo-root`` flag could be added without
+        # touching this branch.
+        ctx.invoke(action_cmd)
 
 
 # Mount the per-domain groups. ``add_command`` preserves each group's
@@ -155,6 +177,12 @@ maestro_cli.add_command(onboard_cmd, name="onboard")
 # ``maestro monitor`` invocation in the monitor PRD and issue #37).
 # The monitor is a read-only process — it never writes to any file.
 maestro_cli.add_command(monitor_cmd, name="monitor")
+
+# Mount the action menu as ``maestro menu`` (the explicit form).
+# The default ``maestro`` (no subcommand) ALSO launches the menu
+# via the group callback above — mounting the command here makes
+# the menu reachable from ops scripts as ``maestro menu``.
+maestro_cli.add_command(action_cmd, name="menu")
 
 
 # ─── Entrypoint ──────────────────────────────────────────────────────────

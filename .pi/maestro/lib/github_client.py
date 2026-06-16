@@ -421,3 +421,42 @@ class GithubClient:
         """Get current timestamp in ISO format."""
         from datetime import datetime, timezone
         return datetime.now(timezone.utc).isoformat()
+
+
+# ─── Authentication probe ───────────────────────────────────────────────
+
+
+def check_gh_authenticated() -> bool:
+    """Return ``True`` iff the ``gh`` CLI is authenticated.
+
+    Runs ``gh auth status`` and checks the return code. This is
+    the canonical way to probe auth without trying a real
+    operation — the call is cheap and has no side effects.
+
+    The function is module-level (not a method) so the action
+    menu can call it before instantiating a :class:`GithubClient`
+    (the constructor itself does an ``_detect_repo`` call that
+    requires auth, so checking upfront avoids a confusing
+    exception inside the menu loop).
+
+    Returns:
+        ``True`` if ``gh auth status`` exits 0. ``False`` on any
+        non-zero exit, ``FileNotFoundError`` (gh not installed),
+        or :class:`subprocess.TimeoutExpired`.
+
+    Notes:
+        The function intentionally never raises — a missing or
+        unauthenticated ``gh`` is a valid runtime condition the
+        action menu must handle gracefully. Callers branch on
+        the return value, not on exceptions.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "status"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False

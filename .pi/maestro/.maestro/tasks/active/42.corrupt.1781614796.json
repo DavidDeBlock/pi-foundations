@@ -1,0 +1,40 @@
+{
+  "issue": 42,
+  "created_at": "2026-06-16T12:59:56.470852+00:00",
+  "updated_at": "2026-06-16T12:59:56.471334+00:00",
+  "repo_path": "",
+  "git_sha": "",
+  "scout": {},
+  "builder": {},
+  "reviewer": {},
+  "test_runner": {},
+  "diagnostic": {},
+  "retrospective": {},
+  "files_touched": [],
+  "test_results": [],
+  "errors": [],
+  "notes": [
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T12:59:56.470947+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T12:59:56.471331+00:00"
+    }
+  ]
+}
