@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""
+monitor_view.py — Pure rendering layer for the Maestro monitor.
+
+The monitor (``maestro monitor``) is a read-only full-screen view of the
+flow log directory. This module contains **only** the rendering logic
+and the snapshot reader — no terminal I/O, no Live loop, no keyboard
+handling. Keeping it pure makes it trivially testable: every function
+in here can be invoked from a test without spinning up a Live context
+manager or a real terminal.
+
+Public surface:
+
+  - :data:`EMPTY_STATE_MESSAGE` — the centred message shown when no
+    flow logs are present.
+  - :data:`FOOTER_HINT` — the constant footer text (refresh + quit).
+  - :class:`MonitorState` — frozen dataclass describing one snapshot.
+  - :func:`build_layout` — build a :class:`rich.layout.Layout` for a
+    given state. Pure: same input → same output.
+  - :func:`poll_snapshot` — read the log directory and produce a
+    :class:`MonitorState`. In this slice the snapshot is always empty
+    (``active_count == 0``) because the slice explicitly does not
+    parse logs. The function is here as the seam where future
+    slices will plug in real log reading.
+
+Design notes:
+
+  - **No I/O in the render functions.** ``build_layout`` and friends
+    take a :class:`MonitorState` and return a ``Layout``. They never
+    touch the filesystem. This is what makes them testable from a
+    plain ``pytest`` invocation.
+  - **No side effects in poll_snapshot.** The function reads
+    ``logs_dir.exists()`` and ``logs_dir.is_dir()`` but never
+    writes, and never raises on a missing directory (per the AC:
+    "Missing ``.maestro/logs/`` directory is handled gracefully").
+  - **Rich only.** All visual output goes through ``rich``. There is
+    no Textual dependency.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from rich.align import Align
+from rich.layout import Layout
+from rich.panel import Panel
+
+
+# ─── Constants ───────────────────────────────────────────────────────────
+#
+# Exposed as module-level constants so tests and (later) other tools
+# can reference the canonical strings without copying them. The
+# footer is intentionally literal — the AC pins the exact text
+# "↻ refreshing · q to quit".
+
+EMPTY_STATE_MESSAGE: str = "No active flows. Run `maestro` to start one."
+FOOTER_HINT: str = "↻ refreshing · q to quit"
+HEADER_TITLE: str = "Maestro Monitor"
+
+
+# ─── Snapshot dataclass ─────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class MonitorState:
+    """A single read pass over the log directory.
+
+    Fields:
+
+      - ``logs_dir``: The directory we polled. Stored so the render
+        layer can show it in tooltips / debug info without re-doing
+        the path resolution.
+      - ``active_count``: Number of flows currently active. In this
+        slice always ``0`` — the empty-state slice does not parse
+        logs. Future slices will compute this from the JSONL files.
+      - ``has_logs_dir``: Whether ``logs_dir`` exists and is a
+        directory. ``False`` is a valid state (the monitor still
+        renders the empty-state panel) — see the AC for the
+        "missing directory is handled gracefully" requirement.
+      - ``interval_s``: The configured poll interval. Surfaced in
+        the footer in a future slice; kept on the state object so
+        tests can verify the wiring.
+    """
+
+    logs_dir: Path
+    active_count: int
+    has_logs_dir: bool
+    interval_s: float
+
+
+# ─── Snapshot reader ─────────────────────────────────────────────────────
+
+
+def poll_snapshot(logs_dir: Path, interval_s: float = 1.0) -> MonitorState:
+    """Take a single read pass over ``logs_dir`` and return a snapshot.
+
+    In this slice the function is a stub that:
+
+      1. Resolves the path (so a relative ``.maestro/logs`` becomes
+         an absolute path for display).
+      2. Checks whether the directory exists (without raising).
+      3. Returns an empty-state :class:`MonitorState` with
+         ``active_count=0``.
+
+    Future slices (post-#25) will replace the body with a real
+    scanner that walks ``<flow>/<issue>.jsonl`` files and counts
+    flows whose latest event is an unmatched ``phase_start``. The
+    function signature and return type are stable — callers do not
+    need to change.
+
+    Args:
+        logs_dir: Directory to scan. May be relative or absolute;
+            non-existent paths are fine (no exception is raised).
+        interval_s: Poll interval in seconds. Stored on the
+            returned state; not used by the function body.
+
+    Returns:
+        A :class:`MonitorState` with ``active_count=0`` and
+        ``has_logs_dir`` reflecting whether ``logs_dir`` exists and
+        is a directory.
+    """
+    resolved = Path(logs_dir).resolve()
+    has_logs_dir = resolved.exists() and resolved.is_dir()
+    return MonitorState(
+        logs_dir=resolved,
+        active_count=0,
+        has_logs_dir=has_logs_dir,
+        interval_s=interval_s,
+    )
+
+
+# ─── Render helpers ──────────────────────────────────────────────────────
+
+
+def render_header(state: MonitorState) -> str:
+    """Render the single-line header.
+
+    Format: ``Maestro Monitor · N active flow(s)`` with the count
+    styled. When ``has_logs_dir`` is false we surface a small
+    warning so the operator knows the monitor is watching a missing
+    directory (the empty-state panel will still render).
+    """
+    count = state.active_count
+    label = "flow" if count == 1 else "flows"
+    base = (
+        f"[bold]{HEADER_TITLE}[/bold]  "
+        f"[cyan]{count}[/cyan] active {label}"
+    )
+    if not state.has_logs_dir:
+        base += (
+            f"  [yellow]· watching {state.logs_dir} (missing)[/yellow]"
+        )
+    else:
+        base += f"  [dim]· {state.logs_dir}[/dim]"
+    return base
+
+
+def render_footer(state: MonitorState) -> str:
+    """Render the single-line footer. Constant across states in this slice.
+
+    The interval is held in ``state`` for future slices; the footer
+    today is the same for every state to match the AC's pinned text.
+    Keeping the state-driven signature means future slices can add
+    info (e.g. "last refresh: 12:34:56") without changing call sites.
+    """
+    return FOOTER_HINT
+
+
+def render_body(state: MonitorState) -> Panel:
+    """Render the main body cell.
+
+    In this slice the body is always the empty-state panel — a
+    centred message inside a dim-bordered :class:`Panel`. The
+    panel's title tells the operator at a glance that this is the
+    empty state (not a frozen display).
+
+    Future slices will branch on ``state.active_count > 0`` to
+    render a grid of per-flow cards.
+    """
+    if state.active_count == 0:
+        return Panel(
+            Align.center(EMPTY_STATE_MESSAGE, vertical="middle"),
+            border_style="dim",
+            title="empty",
+            title_align="left",
+        )
+    # Unreachable in this slice; kept as an explicit placeholder so
+    # the structural change in the next slice is a small diff.
+    return Panel(EMPTY_STATE_MESSAGE, border_style="dim")
+
+
+# ─── Top-level layout builder ────────────────────────────────────────────
+
+
+def build_layout(state: MonitorState) -> Layout:
+    """Build the full-screen monitor layout for ``state``.
+
+    The layout is split into three rows:
+
+      - ``header`` (3 lines): title + active-flow count.
+      - ``body``   (rest):   the empty-state panel (or flow cards
+                              in future slices).
+      - ``footer`` (1 line): the refresh + quit hint.
+
+    Rich's :class:`Layout` is responsive: it re-flows automatically
+    on terminal resize, which satisfies the AC "Terminal resize is
+    handled correctly (no broken layout)" without any custom code.
+    """
+    layout = Layout()
+    layout.split_column(
+        Layout(name="header", size=3),
+        Layout(name="body", ratio=1),
+        Layout(name="footer", size=1),
+    )
+    layout["header"].update(render_header(state))
+    layout["body"].update(render_body(state))
+    layout["footer"].update(render_footer(state))
+    return layout

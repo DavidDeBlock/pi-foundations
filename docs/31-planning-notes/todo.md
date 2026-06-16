@@ -58,6 +58,5 @@ Or lets create a prd for it
 I want to think more about the perspective to build a complete program or app, or whatever you want to call it, from scratch. I want to start with an idea that idea should be questioned, and from that moment the orchestrator should be able to build a complete app by doing research, doing planning, creating the issues, and then autonomously loop over the issues and implement them. That would be the main goal. How should we approach something like that? 
 
 
-/skill:python-implementer Implement issue 33, and do not run the test flow script because it's        
-taking too long. Unless you create a new simple test issue that will run faster, it's okay, but       
-otherwise skip that test.   
+/skill:python-implementer Implement issue 45, and do not run the test flow script because it's        
+taking too long. Unless you create a new simple test issue that will run faster, it's okay, but otherwise skip that test.   

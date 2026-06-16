@@ -95,6 +95,7 @@ from commands.evidence import (  # noqa: E402,F401
 from commands.retrospective import retrospective_cli  # noqa: E402
 from commands.projects import projects_cli  # noqa: E402
 from commands.onboard import onboard_cmd  # noqa: E402
+from commands.monitor import monitor_cmd  # noqa: E402
 
 
 # ─── Top-level group ─────────────────────────────────────────────────────
@@ -122,6 +123,7 @@ def maestro_cli() -> None:
       - maestro retrospective ...   manage per-repo learnings & amendments
       - maestro projects ...        inspect & manage the onboarded-projects registry
       - maestro onboard <path>      onboard a repo (mechanical + optional interview)
+      - maestro monitor             read-only live view of active flows
 
     Run ``maestro <subcommand> --help`` for details on each.
     """
@@ -148,6 +150,11 @@ maestro_cli.add_command(mark_manual_tested_cmd, name="mark-manual-tested")
 # Mount onboard as a flat top-level command (matches the canonical
 # ``maestro onboard <path>`` invocation in the PRD and prompts).
 maestro_cli.add_command(onboard_cmd, name="onboard")
+
+# Mount monitor as a flat top-level command (matches the canonical
+# ``maestro monitor`` invocation in the monitor PRD and issue #37).
+# The monitor is a read-only process — it never writes to any file.
+maestro_cli.add_command(monitor_cmd, name="monitor")
 
 
 # ─── Entrypoint ──────────────────────────────────────────────────────────
