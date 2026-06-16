@@ -48,3 +48,8 @@ coverage/
 # Temporary files
 tmp/
 temp/
+
+# Maestro runtime (sessions, tasks, logs)
+.pi/maestro/sessions/
+.pi/maestro/tasks/
+.maestro/
