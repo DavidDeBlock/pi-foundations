@@ -1,128 +1,518 @@
 #!/usr/bin/env python3
 """
-flow_engine.py - Core execution engine for a single flow on a single issue.
+flow_engine.py — Core execution engine for a single flow on a single issue.
 
-Handles:
-- Issue metadata fetching & header display
-- Phase loop with per-phase retry counters
-- Session log parsing & inline metadata rendering
-- GitHub comment gating (first rejection + final success)
-- Terminal tree layout output
+Public API (the "deep module" surface):
 
-Note on module split (deepening PRD issue #31 + #32):
-- The per-phase function (``run_phase``) and its inner helpers
-  (``_run_phase_inner``, ``_build_session_dir``,
-  ``_extract_phase_tokens``, ``_populate_retrospective_context``,
-  ``_persist_retrospective_result``, the close-phase
-  ``run_close_phase`` / ``_close_phase_result``, the evidence
-  policy helpers) now live in :mod:`phase_runner`.
-- The prompt builder (:func:`~prompt_assembler.build_prompt`) and
-  its debug helper (:func:`~prompt_assembler._print_prompt_debug`)
-  live in :mod:`prompt_assembler` (issue #32). The return type
-  changed from a loose tuple to the typed
-  :class:`~prompt_assembler.PreparedPrompt` value object.
-- This module keeps the phase loop (:func:`run_flow_on_issue`)
-  and the value-object dataclasses (``Flow``, ``FlowContext``,
-  ``PhaseConfig``, ``PhaseState``, ``PhaseRun``, ``FlowOutcome``,
-  ``Transition``). The diagnostic pass (:func:`run_diagnostic`)
-  lives in :mod:`diagnostic` (issue #33) and is called via a
-  deferred import from the loop's diagnostic-routing branch.
-- ``phase_runner.run_phase`` is imported lazily inside
-  :func:`run_flow_on_issue` and :func:`_run_scout_phase` to avoid
-  a circular import (phase_runner imports value objects from
-  here at module load time).
+  * :func:`run_flow` — runs a flow on one issue, returns a
+    :class:`FlowOutcome` value object. The signature is intentionally
+    narrow: ``(flow, context, state, term, gh, log)``. The caller
+    (e.g. ``app_shell.py``, ``PipelineContext.run_flow``) is
+    responsible for the dispatching work — loading the flow, fetching
+    the issue metadata, building the :class:`FlowContext`, picking
+    the first phase, etc. — so this function can stay focused on the
+    phase loop.
+
+  * :func:`load_flow` — loads a flow JSON and returns the raw dict
+    (post-validation, post-defaults). Converted to the typed
+    :class:`Flow` value object via :func:`_flow_from_config`.
+
+  * The value-object dataclasses (:class:`Flow`, :class:`FlowContext`,
+    :class:`PhaseState`, :class:`PhaseRun`, :class:`FlowOutcome`,
+    :class:`PhaseConfig`, :class:`Transition`).
+
+  * Close-phase helpers (:data:`DEFAULT_EVIDENCE_POLICY`,
+    :func:`get_evidence_policy`, :func:`_close_phase_result`) — small,
+    focused, used by the :func:`~phase_runner.run_close_phase`
+    wrapper.
+
+  * Flow helpers: :func:`_initial_phase`, :func:`_extract_parent_issue`,
+    :func:`_format_repo_context`, :func:`_scout_enabled`,
+    :func:`_flow_from_config`. These are used by the dispatcher
+    and the run loop; they're tiny and stay here so the data flow
+    is in one place.
+
+What lives elsewhere (extracted in earlier issues):
+
+  * :mod:`phase_runner` — ``run_phase``, ``_run_phase_inner``,
+    ``_build_session_dir``, ``_extract_phase_tokens``,
+    ``_populate_retrospective_context``, ``_persist_retrospective_result``,
+    ``_format_evidence_summary``, ``_format_learnings_excerpt``,
+    ``_read_agent_text_from_session_log``, ``run_close_phase``.
+  * :mod:`prompt_assembler` — :class:`PreparedPrompt`,
+    :func:`build_prompt`, ``_print_prompt_debug``, the
+    ``_maybe_get_working_memory`` / ``_maybe_get_prefetched_context``
+    helpers.
+  * :mod:`diagnostic` — :func:`run_diagnostic`,
+    :func:`_build_diagnostic_prompt`.
+  * :mod:`flow_dispatcher` — :func:`build_flow_context` (the 7 setup
+    steps: issue metadata, parent PRD, working memory, prefetch,
+    persist, repo context, scout). Owns :func:`_run_scout_phase` and
+    :func:`_build_scout_flow_context` (scout-specific setup work).
+
+This file is the deep module — it has a small public surface and
+delegates the heavy lifting to the per-phase, prompt, diagnostic, and
+dispatcher modules.
+
+Pre-issue-#34 history: ``run_flow_on_issue`` used to live here as a
+6-argument shim (``term, gh, flow_name, issue_num, initial_context,
+phase_callback``) that did its own dispatching and dict-shimming.
+Issue #34 narrows the contract to typed inputs and a
+:class:`FlowOutcome` return value; the dispatching work moves to the
+callers.
 """
 
+from __future__ import annotations
+
 import json
-import os
+import re
 import sys
 import time
-from datetime import datetime
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
-# Add lib to path
+# Add lib to path (matches the convention used across the repo)
 sys.path.insert(0, str(Path(__file__).parent / "lib"))
 
-from terminal import Terminal
-from github_client import GithubClient
-from session_reader import parse_session_log
-import flow_logger as _flow_logger  # noqa: E402  (StderrLogger for token events)
-from working_memory import MemoryStore, WorkingMemory
-from context_prefetch import (
-    prefetch_context,
-    format_prefetched_context,
+from context_prefetch import (  # noqa: E402
     PrefetchedContext,
+    format_prefetched_context,
+    prefetch_context,
 )
-from scout_findings import (
-    parse_scout_findings_from_details,
-    format_scout_findings_markdown,
-)
+from evidence import EvidenceStore, EvidenceType  # noqa: E402
+import flow_logger as _flow_logger  # noqa: E402
+from flow_logger import FlowEvent, FlowLogger  # noqa: E402
+from github_client import GithubClient  # noqa: E402
 from projects_registry import (  # noqa: E402
     REGISTRY_FILENAME as PROJECTS_REGISTRY_FILENAME,
     ProjectsRegistry,
 )
+from scout_findings import format_scout_findings_markdown  # noqa: E402
+from session_reader import parse_session_log  # noqa: E402
+from terminal import Terminal  # noqa: E402
+from working_memory import MemoryStore, WorkingMemory  # noqa: E402
 
 
-# ─── Logging port (per deepening PRD issue #30) ─────────────────────────
-#
-# The runner emits structured :class:`flow_logger.FlowEvent` objects through
-# a :class:`flow_logger.FlowLogger` port. The default adapter is
-# :class:`StderrLogger` — it renders each event as
-# ``[<phase>] <kind>: <message>`` on ``sys.stderr`` so terminal users see
-# the same per-line layout they got from the pre-refactor
-# ``print(..., file=sys.stderr)`` calls.
-#
-# Functions in this module that need to emit a :class:`FlowEvent` take
-# an optional ``log: Optional[FlowLogger]`` keyword. When omitted, the
-# default :class:`StderrLogger` is used (so existing tests and call
-# sites that don't care about logging still get a working terminal
-# line). The entry point :func:`run_flow_on_issue` constructs an
-# explicit logger and passes it through the call chain, so a future
-# CLI flag can swap in a :class:`FileLogger` for operator-mode
-# debugging without touching the helpers below.
+# Re-export ``now_iso`` at module level for callers that reach into
+# ``flow_engine.now_iso()`` (e.g. ``flow_dispatcher``).
+now_iso = _flow_logger.now_iso
 
 
-def _resolve_log(log: Optional["FlowLogger"]) -> "FlowLogger":
+# ─── Logging port helpers (per deepening PRD issue #30) ─────────────────
+
+
+def _resolve_log(log: Optional[FlowLogger]) -> FlowLogger:
     """Return the provided logger, or a fresh :class:`StderrLogger`.
 
-    The default is constructed lazily on first call to avoid a
-    ``sys.stderr`` reference at import time (matches the
-    ``StderrLogger`` adapter's own design — it dereferences
+    Constructed lazily to avoid a ``sys.stderr`` reference at import
+    time (matches ``StderrLogger``'s design — it dereferences
     ``sys.stderr`` at emit time, not at construction).
     """
     return log if log is not None else _flow_logger.StderrLogger()
 
 
-# NOTE: the per-phase evidence-policy code (``DEFAULT_EVIDENCE_POLICY``,
-# ``get_evidence_policy``, ``_close_phase_result``, ``run_close_phase``)
-# moved to :mod:`phase_runner` (deepening PRD issue #31). The close
-# phase is dispatched from inside :func:`phase_runner.run_phase`, so
-# keeping the evidence-policy code with the runner is the right home.
-#
-# NOTE: the working-memory / prefetched accessors
-# (``_maybe_get_working_memory``, ``_maybe_get_prefetched_context``)
-# moved to :mod:`prompt_assembler` (deepening PRD issue #32) alongside
-# ``build_prompt`` — they were only called by the prompt builder and
-# the typed-``FlowContext`` flavour lives in the new module.
+# ─── Evidence policy (close-phase helpers) ──────────────────────────────
+
+
+DEFAULT_EVIDENCE_POLICY: dict = {
+    "required_on_success": ["tested", "reviewed"],
+    "on_missing_evidence": "warn_but_proceed",
+}
+
+
+def get_evidence_policy(flow_config: dict) -> dict:
+    """Return the effective evidence policy for a flow.
+
+    Reads ``flow_config["evidence_policy"]`` and merges with
+    :data:`DEFAULT_EVIDENCE_POLICY`. Unrecognized keys are preserved
+    (forward-compat). Missing policy → defaults.
+    """
+    if not isinstance(flow_config, dict):
+        return dict(DEFAULT_EVIDENCE_POLICY)
+    raw = flow_config.get("evidence_policy")
+    if not isinstance(raw, dict):
+        return dict(DEFAULT_EVIDENCE_POLICY)
+    merged = dict(DEFAULT_EVIDENCE_POLICY)
+    merged.update(raw)
+    return merged
+
+
+def _close_phase_result(
+    flow_config: dict,
+    issue_num: int,
+    evidence_dir=None,
+    log: Optional[FlowLogger] = None,
+) -> dict:
+    """Compute the close-phase result based on the flow's evidence policy.
+
+    Centralised here so the AC-specified policies (``block``,
+    ``warn_but_proceed``, ``ignore``) all live in one place. Used by
+    :func:`phase_runner.run_close_phase` and the phase-runner tests.
+
+    Returns a dict with ``status`` and ``details``. ``status`` is one
+    of:
+
+        - ``"success"`` — evidence is present OR policy allowed
+          proceeding
+        - ``"reject"`` — evidence is missing AND policy is ``block``
+    """
+    policy = get_evidence_policy(flow_config)
+    required = [EvidenceType(t) for t in policy.get("required_on_success", [])]
+    on_missing = policy.get("on_missing_evidence", "warn_but_proceed")
+
+    if evidence_dir is None:
+        store = EvidenceStore(issue_num)
+    else:
+        store = EvidenceStore(issue_num, evidence_dir=Path(evidence_dir))
+
+    ok, missing = store.check(required)
+    required_values = [t.value for t in required]
+
+    if ok:
+        return {
+            "status": "success",
+            "details": f"All evidence present: {required_values}",
+        }
+
+    missing_values = [
+        m.value if isinstance(m, EvidenceType) else str(m) for m in missing
+    ]
+
+    if on_missing == "block":
+        return {
+            "status": "reject",
+            "details": (
+                f"Missing evidence (block policy): {missing_values} "
+                f"(required: {required_values})"
+            ),
+        }
+    if on_missing == "warn_but_proceed":
+        # Use the structured FlowLogger port. Each line is an
+        # ``evidence_warn`` event; the StderrLogger renders
+        # ``evidence_warn: <message>`` (no ``[phase]`` prefix — these
+        # warnings are not phase-scoped).
+        _log = _resolve_log(log)
+        _log.emit(FlowEvent(
+            kind="evidence_warn",
+            message=f"Missing evidence for issue #{issue_num}: {missing_values}",
+            timestamp=_flow_logger.now_iso(),
+        ))
+        _log.emit(FlowEvent(
+            kind="evidence_warn",
+            message="Proceeding without required evidence (warn_but_proceed policy)",
+            timestamp=_flow_logger.now_iso(),
+        ))
+        return {
+            "status": "success",
+            "details": (
+                f"Missing evidence (warned): {missing_values} "
+                f"(required: {required_values})"
+            ),
+        }
+    # ``on_missing == "ignore"`` or any other value → skip the check entirely
+    return {
+        "status": "success",
+        "details": f"Evidence check skipped (policy: {on_missing})",
+    }
+
+
+# ─── Type definitions ───────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class PhaseConfig:
+    """One phase's config, post-validation, post-defaults.
+
+    A flattened, immutable view of a single phase entry from a flow
+    JSON. ``tools`` is a tuple (loaded from prompt frontmatter at
+    construction time) so the dataclass remains hashable.
+    """
+    name: str
+    skill: str
+    timeout_seconds: int
+    retries: int
+    is_local: bool
+    is_optional: bool
+    model: str | None
+    provider: str | None
+    command: str | None
+    tools: tuple = ()
+
+
+@dataclass(frozen=True)
+class Transition:
+    """One transition rule from a flow config.
+
+    ``on_no_gaps`` is the target when a phase returns the
+    ``no_gaps`` status (a verdict outcome that isn't approval and
+    isn't rejection). The other three fields are the standard
+    transition targets.
+    """
+    from_phase: str
+    on_success: str | None
+    on_reject: str | None
+    on_error: str | None
+    on_no_gaps: str | None
+
+
+@dataclass(frozen=True)
+class Flow:
+    """A flow config, validated and defaults applied. Immutable."""
+    name: str
+    description: str
+    scout_enabled: bool
+    evidence_policy: dict
+    phases: dict
+    transitions: tuple
+
+
+@dataclass(frozen=True)
+class FlowContext:
+    """Everything a flow needs to know about an issue at the START of
+    execution. Static — loaded once per flow run.
+
+    ``working_memory``, ``prefetched`` and ``scout_findings`` are
+    typed as forward references to keep this file free of new import
+    dependencies.
+
+    ``comments_count`` and ``created_at`` are the header-display
+    fields populated by :func:`flow_dispatcher.build_flow_context`
+    step 1; callers reproduce the
+    ``term.issue_header(issue_num, title=..., comments_count=...,
+    created_at=...)`` call from them.
+    """
+    flow: "Flow"
+    issue_num: int
+    issue_body: str
+    issue_title: str
+    comments_count: int = 0
+    created_at: str | None = None
+    parent_prd: str | None = None
+    working_memory: "WorkingMemory" = None  # type: ignore[assignment]
+    prefetched: "PrefetchedContext" = None  # type: ignore[assignment]
+    repo_context: dict | None = None
+    scout_findings: "dict | None" = None
+
+
+@dataclass
+class PhaseState:
+    """The per-iteration state, mutated by the runner.
+
+    NOT in :class:`FlowContext` — this is the dynamic, per-iteration
+    state. The runner mutates ``current_phase`` and ``phase_attempt``
+    every iteration, and updates ``previous_output`` /
+    ``diagnostic_insights`` / ``phase_outputs`` as phases complete.
+    """
+    current_phase: str
+    phase_attempt: int = 1
+    previous_output: str = ""
+    diagnostic_insights: str = ""
+    phase_outputs: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PhaseRun:
+    """A single phase attempt, returned in :attr:`FlowOutcome.phases`.
+
+    A single phase can run multiple times (retries). Per-attempt is
+    the source of truth; rolled-up views are derived by callers.
+    """
+    name: str
+    attempt: int
+    status: str  # "approved" | "rejected" | "no_gaps" | "error" | "skipped"
+    duration_s: float | None
+    tokens_in: int | None
+    tokens_out: int | None
+    cache_read: int | None
+    session_log: "Path | None"
+    details: str
+
+
+@dataclass(frozen=True)
+class FlowOutcome:
+    """The runner's return value. Captures the whole run.
+
+    ``events`` is the ordered tuple of every :class:`FlowEvent`
+    emitted by the :class:`FlowLogger` port during the run — useful
+    for the dashboard and for after-the-fact debugging.
+    ``total_tokens_in`` and ``total_tokens_out`` are the sum of
+    :attr:`PhaseRun.tokens_in` / :attr:`PhaseRun.tokens_out` across
+    all attempts (``None`` values ignored). ``status`` is one of:
+
+    * ``"success"`` — flow reached ``finish`` with a clean exit
+    * ``"failed"`` — flow hit an unrecoverable error or the
+      transition table pointed to a non-existent phase
+    * ``"exhausted_iterations"`` — flow loop hit the
+      ``max_iterations=50`` safety guard
+    """
+    flow_name: str
+    issue_num: int
+    status: str
+    iterations: int
+    phases: tuple
+    events: tuple
+    total_duration_s: float
+    evidence_summary: str | None
+    retro_learning: str | None
+    total_tokens_in: int = 0
+    total_tokens_out: int = 0
+
+
+# ─── Flow loading ───────────────────────────────────────────────────────
+
+
+def load_flow(name: str) -> dict:
+    """Load a flow configuration from JSON file with defaults applied.
+
+    Returns the raw dict (post-validation, post-defaults). The dict
+    is the canonical in-process form of the flow; helpers like
+    :func:`_flow_from_config` convert it to the typed
+    :class:`Flow` value object.
+
+    Kept as a dict for backward compatibility with the rest of the
+    code base — the phase runner and prompt builder still consume
+    the dict form, and converting everything to the typed
+    :class:`Flow` is a follow-up slice.
+    """
+    flows_dir = Path(__file__).parent / "flows"
+    flow_file = flows_dir / f"{name}.json"
+
+    if not flow_file.exists():
+        print(f"[ERROR] Flow '{name}' not found at {flow_file}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(flow_file) as f:
+        config = json.load(f)
+
+    if "phases" not in config or "transitions" not in config:
+        print(f"[ERROR] Invalid flow configuration in {flow_file}", file=sys.stderr)
+        sys.exit(1)
+
+    for transition in config["transitions"]:
+        if transition.get("from") and transition["from"] not in config["phases"]:
+            print(
+                f"[ERROR] Phase '{transition['from']}' referenced in "
+                f"transitions but not defined",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    default_retries = 3
+    default_timeout = 1800
+    flow_provider = config.get("default_provider")
+
+    for phase_name, phase_config in config["phases"].items():
+        # Local-only phases (e.g. the ``close`` evidence-gate phase)
+        # don't call an LLM, so ``retries`` and ``model`` are
+        # meaningless for them. We skip the warnings and still inject
+        # a safe default so other code paths that read these fields
+        # don't crash.
+        is_local = bool(phase_config.get("is_local"))
+
+        if "retries" not in phase_config:
+            if not is_local:
+                print(
+                    f"[WARN] Phase '{phase_name}' missing 'retries' field - "
+                    f"applying default: {default_retries}",
+                    file=sys.stderr,
+                )
+                sys.stderr.flush()
+            config["phases"][phase_name]["retries"] = 1
+        elif phase_config["retries"] < 1:
+            print(
+                f"[ERROR] Phase '{phase_name}' has invalid retries: "
+                f"{phase_config['retries']} (must be >= 1)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        if "timeout_seconds" not in phase_config:
+            config["phases"][phase_name]["timeout_seconds"] = default_timeout
+
+        # Apply model/provider defaults from flow-level or hardcoded
+        # fallbacks.
+        if "model" not in phase_config and not is_local:
+            print(
+                f"[WARN] Phase '{phase_name}' missing 'model' field",
+                file=sys.stderr,
+            )
+            sys.stderr.flush()
+
+        if "provider" not in phase_config and flow_provider:
+            config["phases"][phase_name]["provider"] = flow_provider
+
+    return config
+
+
+def _flow_from_config(flow_config: dict) -> "Flow":
+    """Build a :class:`Flow` value object from the dict returned by
+    :func:`load_flow`.
+
+    Used by :func:`flow_dispatcher.build_flow_context` and the
+    :func:`run_flow` runner to convert the raw config into the
+    typed value object. ``phases`` and ``transitions`` are kept in
+    their dict / list form here (the dispatcher only reads
+    ``flow.scout_enabled`` and ``flow.name``; deeper extraction of
+    :class:`PhaseConfig` / :class:`Transition` happens in the
+    per-phase runner).
+    """
+    return Flow(
+        name=flow_config.get("name", ""),
+        description=flow_config.get("description", ""),
+        scout_enabled=bool(flow_config.get("scout_enabled", False)),
+        evidence_policy=dict(flow_config.get("evidence_policy") or {}),
+        phases=dict(flow_config.get("phases") or {}),
+        transitions=tuple(flow_config.get("transitions") or ()),
+    )
+
+
+def _initial_phase(flow_config: dict, skip_scout: bool = False) -> Optional[str]:
+    """Return the first phase to execute, optionally skipping ``scout``.
+
+    Used to keep scout out of the main phase loop when it has
+    already been attempted synchronously by :func:`_run_scout_phase`
+    in :mod:`flow_dispatcher`. Falls back to ``None`` if the flow
+    has no phases.
+    """
+    phases = list(flow_config.get("phases", {}).keys())
+    if not phases:
+        return None
+    if skip_scout and phases[0] == "scout":
+        phases = phases[1:]
+    return phases[0] if phases else None
+
+
+def _extract_parent_issue(body: str) -> Optional[int]:
+    """Extract parent issue number from body if formatted as
+    '## Parent\\n\\n#NNN'."""
+    match = re.search(r"^##\s*Parent\s*\n\s*#(\d+)", body, re.MULTILINE)
+    return int(match.group(1)) if match else None
+
+
+def _scout_enabled(flow_config: dict) -> bool:
+    """Return True iff the flow has scout enabled and a ``scout``
+    phase defined.
+
+    Per the scout PRD, scout is **opt-in per flow** via the
+    ``scout_enabled`` flag. The phase itself must also be present
+    in ``phases`` — a flow with the flag set but no ``scout`` phase
+    is treated as disabled.
+    """
+    if not flow_config.get("scout_enabled", False):
+        return False
+    if "scout" not in flow_config.get("phases", {}):
+        return False
+    return True
 
 
 def _format_repo_context(repo_entry: dict) -> dict:
-    """Build the ``context["repo_context"]`` dict from a registry entry.
-
-    Picks the fields the builder prompt needs to render
-    ``{repo_context}`` — alias, languages, commands, evidence strategy,
-    conventions, gotchas, recommended playbooks. Defensive against
-    missing or extra fields (a corrupt registry entry must not crash
-    the flow).
-
-    Args:
-        repo_entry: A registry entry dict (the value side of the
-            ``{hash: entry}`` projects.json map).
-
-    Returns:
-        A flat dict with the keys the builder prompt expects. Missing
-        fields become safe defaults (empty list / empty string).
+    """Build the ``context["repo_context"]`` dict from a registry
+    entry. Picks the fields the builder prompt needs to render
+    ``{repo_context}`` — alias, languages, commands, evidence
+    strategy, conventions, gotchas, recommended playbooks. Defensive
+    against missing or extra fields (a corrupt registry entry must
+    not crash the flow).
     """
     if not isinstance(repo_entry, dict):
         return {}
@@ -152,206 +542,7 @@ def _format_repo_context(repo_entry: dict) -> dict:
     }
 
 
-# ─── Scout phase ──────────────────────────────────────────────────────────
-
-
-def _scout_enabled(flow_config: dict) -> bool:
-    """Return True iff the flow has scout enabled and a ``scout`` phase defined.
-
-    Per the scout PRD, scout is **opt-in per flow** via the ``scout_enabled``
-    flag. The phase itself must also be present in ``phases`` — a flow with
-    the flag set but no ``scout`` phase is treated as disabled.
-    """
-    if not flow_config.get("scout_enabled", False):
-        return False
-    if "scout" not in flow_config.get("phases", {}):
-        return False
-    return True
-
-
-def _initial_phase(flow_config: dict, skip_scout: bool = False) -> Optional[str]:
-    """Return the first phase to execute, optionally skipping ``scout``.
-
-    Used to keep scout out of the main phase loop when it has already been
-    attempted synchronously by :func:`_run_scout_phase`. Falls back to
-    ``None`` if the flow has no phases.
-    """
-    phases = list(flow_config.get("phases", {}).keys())
-    if not phases:
-        return None
-    if skip_scout and phases[0] == "scout":
-        phases = phases[1:]
-    return phases[0] if phases else None
-
-
-def _run_scout_phase(
-    flow_config: dict,
-    issue_num: int,
-    context: dict,
-    memory_store: MemoryStore,
-    log: Optional["FlowLogger"] = None,
-) -> Optional[dict]:
-    """Run the scout phase synchronously and return parsed findings (or ``None``).
-
-    Behaviour:
-        - **Success**: parses the ``PHASE_OUTPUT`` block, persists the
-          findings to working memory, returns the parsed dict.
-        - **Failure (reject / error / non-parseable output)**: logs a
-          ``[scout] {status}: {details}`` line + a fallback message, persists
-          the failure to working memory for the retrospective phase, and
-          returns ``None``. The builder proceeds with the placeholder
-          markdown (no findings).
-
-    This function is intentionally non-raising: a failing scout must never
-    block the pipeline.
-    """
-    # Deferred import: ``phase_runner`` imports the value objects from
-    # this module at load time, so we have to import it lazily here to
-    # avoid a circular import.
-    from phase_runner import run_phase as _phase_runner_run_phase
-
-    scout_timeout = flow_config.get("scout_timeout_seconds", 240)
-
-    _log = _resolve_log(log)
-    _log.emit(_flow_logger.FlowEvent(
-        kind="scout_complete",
-        message=f"Running scout phase on issue #{issue_num} (timeout={scout_timeout}s)",
-        timestamp=_flow_logger.now_iso(),
-        phase="scout",
-    ))
-
-    # Build the typed inputs ``phase_runner.run_phase`` expects, then
-    # re-shape the returned ``PhaseRun`` back into the legacy
-    # ``(result_dict, session_log_path)`` tuple this helper historically
-    # returned. The re-shape is the only place the legacy
-    # ``result["output"]`` key is constructed (it carried the raw LLM
-    # text so the scout findings parser could read the
-    # ``### PHASE_OUTPUT`` block).
-    flow = _flow_from_config(flow_config)
-    flow_context = _build_scout_flow_context(flow, issue_num, context, memory_store)
-    state = PhaseState(current_phase="scout", phase_attempt=1)
-    term = Terminal(verbosity=0)
-    gh = GithubClient()
-
-    phase_run = _phase_runner_run_phase(
-        "scout", flow, flow_context, state, term, gh, log=_log,
-    )
-    status = phase_run.status
-    details = phase_run.details or ""
-    raw_output = phase_run.details or ""
-    session_log_path = str(phase_run.session_log) if phase_run.session_log else None
-
-    if status != "success":
-        # Non-fatal: log and proceed without findings
-        short = details[:300].replace("\n", " ")
-        # ``scout_complete`` covers every post-run scout outcome that
-        # isn't a clean skip. ``scout_skipped`` is reserved for the
-        # case where the flow disabled scout up front (handled in the
-        # dispatcher) — by the time we reach this code path, scout
-        # actually ran and produced a non-success verdict.
-        _log.emit(_flow_logger.FlowEvent(
-            kind="scout_complete",
-            message=f"{status}: {short}",
-            timestamp=_flow_logger.now_iso(),
-            phase="scout",
-        ))
-        _log.emit(_flow_logger.FlowEvent(
-            kind="scout_complete",
-            message="Builder will proceed without scout findings",
-            timestamp=_flow_logger.now_iso(),
-            phase="scout",
-        ))
-        try:
-            memory_store.update_phase("scout", {
-                "status": status,
-                "details": details[:1000],
-                "session_log": str(session_log_path) if session_log_path else "",
-            })
-        except Exception as mem_err:
-            # Memory persistence is best-effort — never crash the
-            # flow. Emits a ``memory_warn`` event with the ``[scout]``
-            # phase prefix preserved so the existing operator log
-            # format stays scannable.
-            _log.emit(_flow_logger.FlowEvent(
-                kind="memory_warn",
-                message=f"Failed to persist failure to working memory: {mem_err}",
-                timestamp=_flow_logger.now_iso(),
-                phase="scout",
-            ))
-        return None
-
-    # Success — parse the PHASE_OUTPUT block from the raw LLM output
-    findings = parse_scout_findings_from_details(raw_output)
-
-    if "parse_error" in findings:
-        # The scout succeeded but its output wasn't structured — still log it
-        err = findings.get("parse_error", "unknown")
-        _log.emit(_flow_logger.FlowEvent(
-            kind="scout_complete",
-            message=f"Output was unparseable ({err[:200]})",
-            timestamp=_flow_logger.now_iso(),
-            phase="scout",
-        ))
-        _log.emit(_flow_logger.FlowEvent(
-            kind="scout_complete",
-            message="Builder will proceed with raw findings",
-            timestamp=_flow_logger.now_iso(),
-            phase="scout",
-        ))
-
-    # Persist (raw findings dict, possibly with parse_error envelope) to memory
-    try:
-        memory_store.update_phase("scout", {
-            "status": "success",
-            "details": details[:1000],
-            "raw_output": raw_output[:2000],  # cap to keep memory file bounded
-            "findings": findings,
-            "session_log": str(session_log_path) if session_log_path else "",
-        })
-    except Exception as mem_err:
-        _log.emit(_flow_logger.FlowEvent(
-            kind="memory_warn",
-            message=f"Failed to persist findings to working memory: {mem_err}",
-            timestamp=_flow_logger.now_iso(),
-            phase="scout",
-        ))
-
-    return findings
-
-
-def _build_scout_flow_context(
-    flow: "Flow",
-    issue_num: int,
-    context: dict,
-    memory_store: MemoryStore,
-) -> "FlowContext":
-    """Build a minimal :class:`FlowContext` for the scout phase.
-
-    The dispatcher already has the full :class:`FlowContext`; this
-    helper exists for ``_run_scout_phase`` (which only has the legacy
-    ``context`` dict + ``MemoryStore``) so the typed
-    :func:`phase_runner.run_phase` can be called. Every optional field
-    defaults to ``None``; ``issue_body`` is read from
-    ``context["prompt"]`` (the dispatcher sets that to
-    ``"## Issue #N\n\n<body>"``).
-    """
-    prompt_md = context.get("prompt", "") or ""
-    body = ""
-    if prompt_md.startswith(f"## Issue #{issue_num}"):
-        body = prompt_md.split("\n\n", 1)[-1] if "\n\n" in prompt_md else ""
-    parent_prd = context.get("prd_body")
-    try:
-        working_memory = memory_store.load()
-    except Exception:
-        working_memory = WorkingMemory(issue=issue_num, created_at=_flow_logger.now_iso())
-    return FlowContext(
-        flow=flow,
-        issue_num=issue_num,
-        issue_body=body,
-        issue_title="",
-        parent_prd=parent_prd,
-        working_memory=working_memory,
-    )
+# ─── Internal: get_next_step, dict <-> typed bridge ─────────────────────
 
 
 def get_next_step(transitions: list, current_phase: str, status: str) -> Optional[str]:
@@ -363,163 +554,25 @@ def get_next_step(transitions: list, current_phase: str, status: str) -> Optiona
                 return t[key]
     return None
 
-# NOTE: the prompt builder (``build_prompt``) and its debug helper
-# (``_print_prompt_debug``) moved to :mod:`prompt_assembler` (deepening
-# PRD issue #32). The new return type is a :class:`PreparedPrompt`
-# value object instead of a loose ``(text, tools)`` tuple, and the
-# function takes typed ``PhaseConfig`` / ``Flow`` / ``FlowContext`` /
-# ``PhaseState`` objects. Import it from ``prompt_assembler``
-# directly; ``flow_engine`` no longer re-exports it (the function is
-# no longer part of this module's public surface).
 
-
-# NOTE: ``run_diagnostic`` moved to :mod:`diagnostic` (deepening PRD
-# issue #33). The phase loop's diagnostic-routing branch in
-# :func:`run_flow_on_issue` does a deferred import
-# (``from diagnostic import run_diagnostic``) to call into the new
-# module. The diagnostic pass is a loop-level concern (dispatched by
-# the transition table, not by :func:`phase_runner.run_phase`) — see
-# the :mod:`diagnostic` docstring for the full rationale.
-
-
-def load_flow(name: str) -> dict:
-    """Load a flow configuration from JSON file with defaults applied."""
-    FLOWS_DIR = Path(__file__).parent / "flows"
-    flow_file = FLOWS_DIR / f"{name}.json"
-
-    if not flow_file.exists():
-        print(f"[ERROR] Flow '{name}' not found at {flow_file}", file=sys.stderr)
-        sys.exit(1)
-
-    with open(flow_file) as f:
-        config = json.load(f)
-
-    if "phases" not in config or "transitions" not in config:
-        print(f"[ERROR] Invalid flow configuration in {flow_file}", file=sys.stderr)
-        sys.exit(1)
-
-    for transition in config["transitions"]:
-        if transition.get("from") and transition["from"] not in config["phases"]:
-            print(f"[ERROR] Phase '{transition['from']}' referenced in transitions but not defined", file=sys.stderr)
-            sys.exit(1)
-
-    default_retries = 3
-    default_timeout = 1800
-    flow_provider = config.get("default_provider")
-
-    for phase_name, phase_config in config["phases"].items():
-        # Local-only phases (e.g. the ``close`` evidence-gate phase) don't
-        # call an LLM, so ``retries`` and ``model`` are meaningless for them.
-        # We skip the warnings and still inject a safe default so other
-        # code paths that read these fields don't crash.
-        is_local = bool(phase_config.get("is_local"))
-
-        if "retries" not in phase_config:
-            if not is_local:
-                print(f"[WARN] Phase '{phase_name}' missing 'retries' field - applying default: {default_retries}", file=sys.stderr)
-                sys.stderr.flush()
-            config["phases"][phase_name]["retries"] = 1
-        elif phase_config["retries"] < 1:
-            print(f"[ERROR] Phase '{phase_name}' has invalid retries: {phase_config['retries']} (must be >= 1)", file=sys.stderr)
-            sys.exit(1)
-
-        if "timeout_seconds" not in phase_config:
-            config["phases"][phase_name]["timeout_seconds"] = default_timeout
-
-        # Apply model/provider defaults from flow-level or hardcoded fallbacks
-        if "model" not in phase_config and not is_local:
-            print(f"[WARN] Phase '{phase_name}' missing 'model' field", file=sys.stderr)
-            sys.stderr.flush()
-
-        if "provider" not in phase_config and flow_provider:
-            config["phases"][phase_name]["provider"] = flow_provider
-
-    return config
-
-
-def _flow_from_config(flow_config: dict) -> "Flow":
-    """Build a :class:`Flow` value object from the dict returned by
-    :func:`load_flow`.
-
-    Used by the :func:`~flow_dispatcher.build_flow_context` shim to
-    convert the raw config into the typed value object. ``phases`` and
-    ``transitions`` are kept in their dict / list form here (the
-    dispatcher only reads ``flow.scout_enabled`` and ``flow.name``;
-    deeper extraction of ``PhaseConfig`` / ``Transition`` happens in a
-    later slice when the runner narrows to typed inputs).
-
-    Args:
-        flow_config: The dict returned by :func:`load_flow` (post-
-            validation, post-defaults).
-
-    Returns:
-        A :class:`Flow` instance. The ``phases`` and ``transitions``
-        fields mirror the dict's structure; ``evidence_policy`` is
-        passed through.
-    """
-    return Flow(
-        name=flow_config.get("name", ""),
-        description=flow_config.get("description", ""),
-        scout_enabled=bool(flow_config.get("scout_enabled", False)),
-        evidence_policy=dict(flow_config.get("evidence_policy") or {}),
-        phases=dict(flow_config.get("phases") or {}),
-        transitions=tuple(flow_config.get("transitions") or ()),
-    )
-
-
-def _extract_parent_issue(body: str) -> Optional[int]:
-    """Extract parent issue number from body if formatted as '## Parent\n\n#NNN'."""
-    import re
-    match = re.search(r'^##\s*Parent\s*\n\s*#(\d+)', body, re.MULTILINE)
-    return int(match.group(1)) if match else None
-
-
-def run_flow_on_issue(
-    term: Terminal,
-    gh_client: GithubClient,
-    flow_name: str,
-    issue_num: int,
+def _build_legacy_context(
+    flow_context: "FlowContext",
     initial_context: Optional[dict] = None,
-    phase_callback=None,
-) -> bool:
+) -> dict:
+    """Build the legacy dict context the prompt builder + close
+    phase gate consume.
+
+    The :func:`phase_runner.run_phase` typed entry point accepts a
+    :class:`FlowContext` and a :class:`PhaseState` directly, so the
+    dict is no longer required to drive the inner runner. It is,
+    however, still useful for the prompt builder (which reads a few
+    fields off the dict) and as a record of what the flow consumed
+    at the time of dispatch. This helper rebuilds the dict the
+    pre-issue-#34 code path used, so the prompt builder doesn't
+    have to know about the new typed inputs.
     """
-    Run a specific flow on a single GitHub issue.
-    Returns True if completed successfully, False otherwise.
-
-    This is a thin shim. The setup work (issue metadata, parent PRD,
-    working memory, prefetch, repo context, scout) lives in
-    :func:`flow_dispatcher.build_flow_context`; the still-unrefactored
-    phase loop below consumes the dict context the shim rebuilds from
-    the :class:`~flow_engine.FlowContext` value object.
-
-    Behaviour is identical to the pre-extraction code path; the slice
-    is a pure refactor.
-    """
-    from flow_dispatcher import build_flow_context
-
-    flow_config = load_flow(flow_name)
-    flow = _flow_from_config(flow_config)
-    flow_context = build_flow_context(flow, issue_num, gh_client)
-
-    # Display the issue header (preserves the pre-extraction terminal
-    # output). On a fully-successful issue fetch, all three kwargs are
-    # populated; on partial / failed fetches the dispatcher leaves
-    # ``comments_count`` at 0 and ``created_at`` at None, which mirrors
-    # the original fallback path (``term.issue_header(issue_num)`` with
-    # no kwargs).
-    term.issue_header(
-        issue_num,
-        title=flow_context.issue_title,
-        comments_count=flow_context.comments_count,
-        created_at=flow_context.created_at,
-    )
-
-    # ── Rebuild the dict context the still-unrefactored phase loop
-    #    expects. The keys here must match the pre-extraction code path
-    #    exactly so the phase loop, prompt builder, and scout refresh
-    #    continue to work. The :class:`FlowContext` value object is the
-    #    new typed contract; this dict is the legacy shim.
     body = flow_context.issue_body
+    issue_num = flow_context.issue_num
     context = {"prompt": f"## Issue #{issue_num}\n\n{body}"}
     if flow_context.parent_prd:
         context["prd_body"] = flow_context.parent_prd
@@ -531,137 +584,196 @@ def run_flow_on_issue(
     context["prefetched_context"] = flow_context.prefetched
     if flow_context.repo_context:
         context["repo_context"] = flow_context.repo_context
-    # Match the pre-extraction behaviour: set ``scout_findings_md`` IFF
-    # scout was attempted for this flow (i.e. ``_scout_enabled`` is
-    # True). When scout is disabled the key is left unset, and the
-    # prompt builder falls back to ``"(Scout disabled for this flow.)"``.
-    # When scout ran and failed, ``flow_context.scout_findings`` is
-    # ``None`` but the key IS set, so the prompt gets the
+    # Match the pre-extraction behaviour: set ``scout_findings_md``
+    # IFF scout was attempted for this flow. When scout is disabled
+    # the key is left unset, and the prompt builder falls back to
+    # ``"(Scout disabled for this flow.)"``. When scout ran and
+    # failed, ``flow_context.scout_findings`` is ``None`` but the
+    # key IS set, so the prompt gets the
     # ``"## Scout Findings" + no-findings`` message — that is the
     # signal the integration tests rely on.
+    flow_config = {
+        "scout_enabled": flow_context.flow.scout_enabled,
+        "phases": flow_context.flow.phases,
+    }
     if _scout_enabled(flow_config):
-        context["scout_findings_md"] = format_scout_findings_markdown(flow_context.scout_findings)
+        context["scout_findings_md"] = format_scout_findings_markdown(
+            flow_context.scout_findings
+        )
 
-    # The dispatcher persisted git_sha/repo_path on the WorkingMemory
-    # reference it returned; the dict snapshot above was taken before
-    # the post-scout refresh in :func:`build_flow_context`. Reload
-    # here so the phase loop sees the post-scout memory if scout ran.
+    # The dispatcher persisted git_sha/repo_path on the
+    # WorkingMemory reference it returned; the dict snapshot above
+    # was taken before the post-scout refresh in
+    # :func:`build_flow_context`. Reload here so the prompt builder
+    # sees the post-scout memory if scout ran.
     if _scout_enabled(flow_config):
         try:
             context["working_memory"] = MemoryStore(issue_num).load().to_dict()
         except Exception:
             pass
 
-    # The phase loop needs a :class:`MemoryStore` to persist per-phase
-    # results to working memory. The dispatcher created one internally;
-    # we recreate one here so the loop's ``update_phase`` calls
-    # (post-#31, the loop owns the persistence step rather than the
-    # phase runner) have a handle.
-    memory_store = MemoryStore(issue_num)
+    return context
 
-    # Main execution loop for this specific issue
-    max_iterations = 50
+
+# ─── The deep module: run_flow ──────────────────────────────────────────
+
+
+# Number of iterations the loop is allowed to run before bailing
+# out (safety guard against infinite transition loops).
+_MAX_ITERATIONS = 50
+
+
+def run_flow(
+    flow: Flow,
+    context: FlowContext,
+    state: PhaseState,
+    term: Terminal,
+    gh: GithubClient,
+    log: FlowLogger,
+) -> FlowOutcome:
+    """Run a :class:`Flow` on a single GitHub issue.
+
+    The deep-module entry point. Takes typed inputs, returns a
+    :class:`FlowOutcome`. The caller is responsible for the
+    dispatching work (loading the flow, building the
+    :class:`FlowContext`, picking the first phase, etc.) so this
+    function can stay focused on the phase loop.
+
+    Behaviour matches the pre-issue-#34 code path:
+
+      * The legacy dict context is rebuilt from the typed
+        :class:`FlowContext` (the prompt builder and close-phase
+        gate read a few fields off the dict).
+      * The phase loop iterates until ``finish`` is reached, an
+        error is hit, or the ``max_iterations`` safety guard
+        triggers.
+      * The first rejection is posted as a GitHub comment; the
+        final success is posted only if no rejection happened.
+      * Token counts, durations, and per-phase status are
+        accumulated into a :class:`FlowOutcome`.
+
+    Args:
+        flow: The :class:`Flow` value object (typed). ``flow.name``
+            is used for log / comment text; ``flow.phases`` /
+            ``flow.transitions`` drive the loop.
+        context: The :class:`FlowContext` value object (typed).
+            Carries issue body, parent PRD, working memory,
+            prefetched context, repo context, scout findings.
+        state: The :class:`PhaseState` value object (typed). The
+            caller sets ``state.current_phase`` to the first phase
+            (typically the first non-scout phase via
+            :func:`_initial_phase(flow_config, skip_scout=True)`).
+        term: The :class:`Terminal` for verbose output.
+        gh: The :class:`GithubClient` for comment / label updates.
+        log: The :class:`FlowLogger` port for structured events.
+
+    Returns:
+        A :class:`FlowOutcome` capturing the whole run. The
+        ``status`` field is one of ``"success"``,
+        ``"exhausted_iterations"``, or ``"failed"``.
+    """
+    from phase_runner import run_phase as _phase_runner_run_phase
+    from diagnostic import run_diagnostic as _diagnostic_run_diagnostic
+
+    _log = _resolve_log(log)
+    flow_config = {
+        "name": flow.name,
+        "description": flow.description,
+        "scout_enabled": flow.scout_enabled,
+        "scout_timeout_seconds": flow.phases.get("scout", {}).get(
+            "timeout_seconds", 240
+        ),
+        "phases": dict(flow.phases),
+        "transitions": list(flow.transitions),
+        "evidence_policy": dict(flow.evidence_policy),
+    }
+
+    # Display the issue header (matches the pre-issue-#34 terminal
+    # output). On a fully-successful issue fetch, all three kwargs
+    # are populated; on partial / failed fetches the dispatcher
+    # leaves ``comments_count`` at 0 and ``created_at`` at None.
+    term.issue_header(
+        context.issue_num,
+        title=context.issue_title,
+        comments_count=context.comments_count,
+        created_at=context.created_at,
+    )
+
+    # The phase loop needs a :class:`MemoryStore` to persist
+    # per-phase results to working memory.
+    memory_store = MemoryStore(context.issue_num)
+
+    # Main execution loop
     iteration_count = 0
-    current_phase = _initial_phase(flow_config, skip_scout=True)
+    current_phase = state.current_phase
     if current_phase is None:
-        # Edge case: scout was the only phase in the flow
-        term._print_verbose("[ERROR] Flow has no phases to run after scout")
-        return False
-    phase_attempt_count = 1
+        # Edge case: caller didn't pick a phase
+        term._print_verbose("[ERROR] No current phase set on state")
+        return FlowOutcome(
+            flow_name=flow.name,
+            issue_num=context.issue_num,
+            status="failed",
+            iterations=0,
+            phases=(),
+            events=(),
+            total_duration_s=0.0,
+            evidence_summary=None,
+            retro_learning=None,
+        )
+    phase_attempt_count = state.phase_attempt
     first_rejection_posted = False
     completed_successfully = False
-    test_fail_count = 0  # tracks consecutive test_runner rejections for escalation
+    test_fail_count = 0  # tracks consecutive test_runner rejections
 
-    # ── Token observability (per deepening PRD issue #29) ──
-    # Track per-phase ``PhaseRun`` records and aggregate totals. The
-    # ``FlowOutcome`` is built at the end of the run. We use a
-    # ``StderrLogger`` for the per-phase ``tokens_recorded`` event so
-    # operators see ``[builder] tokens: in=N out=M cache=K`` in the
-    # terminal. The outcome is not returned yet — that change is part
-    # of a later interface-narrowing slice.
-    #
-    # Per the deepening PRD issue #30, this same ``StderrLogger`` is
-    # the default ``FlowLogger`` for the entire run. Every helper
-    # below (``run_phase``, the deferred-imported ``run_diagnostic``
-    # from :mod:`diagnostic`, ``_persist_retrospective_result``)
-    # receives it via the ``log=`` keyword. The variable name kept
-    # here for the per-phase ``tokens_recorded`` event matches the
-    # pre-#30 code, but it's now the run-wide FlowLogger.
     phase_runs: list = []
     total_tokens_in: int = 0
     total_tokens_out: int = 0
     run_start = time.monotonic()
-    _log = _flow_logger.StderrLogger()
 
-    # Deferred import: ``phase_runner`` imports value objects from
-    # this module at load time, so a top-level import here would
-    # circular-import. The function is bound to a local name for
-    # readability.
-    from phase_runner import run_phase as _phase_runner_run_phase
-
-    # Deferred import: ``diagnostic`` imports :class:`Flow` from this
-    # module at load time (deepening PRD issue #33). Same cycle
-    # pattern as :func:`phase_runner.run_phase` — the import is
-    # resolved at first call to keep module-load time cycle-free.
-    from diagnostic import run_diagnostic as _diagnostic_run_diagnostic
-
-    while iteration_count < max_iterations:
+    while iteration_count < _MAX_ITERATIONS:
         iteration_count += 1
-        next_step = None  # reset each iteration; escalation may set it before transition lookup
+        next_step = None  # reset each iteration; escalation may set it
 
-        # ── Build the typed ``PhaseState`` for this iteration ──
+        # ── Build the typed :class:`PhaseState` for this iteration
         # Carry forward any ``phase_outputs`` the previous iteration
-        # wrote (e.g. the close phase's verdict, read by retrospective).
-        # The :class:`PhaseState` is the ONE mutable value object —
-        # the phase runner mutates ``phase_outputs`` etc. in place and
-        # the loop reads them back.
+        # wrote (e.g. the close phase's verdict, read by
+        # retrospective).
         _state = PhaseState(
             current_phase=current_phase,
             phase_attempt=phase_attempt_count,
-            previous_output=context.get("previous_output", ""),
-            diagnostic_insights=context.get("diagnostic_insights", ""),
-            phase_outputs=context.get("phase_outputs") or {},
+            previous_output=state.previous_output,
+            diagnostic_insights=state.diagnostic_insights,
+            phase_outputs=dict(state.phase_outputs) if state.phase_outputs else {},
         )
 
         phase_run = _phase_runner_run_phase(
-            current_phase, flow, flow_context, _state, term, gh_client, log=_log,
+            current_phase, flow, context, _state, term, gh, log=_log,
+        )
+        session_log_path = (
+            str(phase_run.session_log) if phase_run.session_log else None
         )
 
-        # Re-shape the typed ``PhaseRun`` back into the legacy
-        # ``(result_dict, session_log_path)`` tuple the rest of the
-        # loop consumes. This keeps the rest of the loop unchanged
-        # and lets the new ``PhaseRun`` be the canonical record
-        # appended to ``phase_runs`` below.
-        result = {
-            "status": phase_run.status,
-            "details": phase_run.details,
-            "output": phase_run.details,
-            "tokens_in": phase_run.tokens_in,
-            "tokens_out": phase_run.tokens_out,
-            "cache_read": phase_run.cache_read,
-        }
-        session_log_path = str(phase_run.session_log) if phase_run.session_log else None
-
-        # Propagate the per-iteration mutations back to the legacy
-        # context dict so the (still-dict-based) prompt builder reads
-        # the same state it would have in the pre-refactor code path.
-        # This is the "shim back" half of the typed ↔ dict bridge.
+        # Propagate per-iteration mutations back to the typed state
+        # so subsequent iterations see the same data the legacy dict
+        # would have seen.
         if _state.phase_outputs:
-            context["phase_outputs"] = dict(_state.phase_outputs)
+            state.phase_outputs = dict(_state.phase_outputs)
         if _state.diagnostic_insights:
-            context["diagnostic_insights"] = _state.diagnostic_insights
+            state.diagnostic_insights = _state.diagnostic_insights
         if _state.previous_output:
-            context["previous_output"] = _state.previous_output
+            state.previous_output = _state.previous_output
 
-        term._print_verbose(f"[PHASE] {current_phase} -> {result['status']}")
-        # Mirror the verbose line as a structured ``phase_end`` event
-        # (issue #30). The kind is ``phase_end`` per the issue's
-        # mapping table; the message carries the same "{phase} ->
-        # {status}" text the terminal verbose print uses, so the
-        # ``FlowLogger`` JSONL has the same information.
-        _log.emit(_flow_logger.FlowEvent(
+        # Convenience local — the loop body below uses both the
+        # typed ``PhaseRun`` (for events / token counters) and the
+        # legacy ``(status, details)`` fields (for terminal output
+        # and transition lookup).
+        status = phase_run.status
+        details = phase_run.details or ""
+
+        term._print_verbose(f"[PHASE] {current_phase} -> {status}")
+        _log.emit(FlowEvent(
             kind="phase_end",
-            message=f"{current_phase} -> {result['status']}",
+            message=f"{current_phase} -> {status}",
             timestamp=_flow_logger.now_iso(),
             phase=current_phase,
         ))
@@ -684,166 +796,135 @@ def run_flow_on_issue(
                     model=model,
                     duration_seconds=duration,
                     file_ops_written=written,
-                    file_ops_failed=failed
+                    file_ops_failed=failed,
                 )
             except Exception as e:
                 term._print_verbose(f"[WARNING] Failed to parse session log: {e}")
 
         # Handle phase result
-        if result["status"] == "success":
+        if status == "success":
             term.phase_approved(current_phase, is_retry=is_retry)
-        elif result["status"] == "no_gaps":
-            term._print_verbose(f"[NO_GAPS] {current_phase}: No significant gaps found - finishing.")
-        elif result["status"] == "reject":
+        elif status == "no_gaps":
+            term._print_verbose(
+                f"[NO_GAPS] {current_phase}: No significant gaps found - finishing."
+            )
+        elif status == "reject":
             if not first_rejection_posted:
-                gh_client.post_phase_comment(
-                    issue_num=issue_num,
+                gh.post_phase_comment(
+                    issue_num=context.issue_num,
                     phase=current_phase,
                     status="rejected",
-                    details=result.get("details", "")[:300]
+                    details=details[:300],
                 )
                 first_rejection_posted = True
-            term.feedback(result.get("details", ""))
-        elif result["status"] == "error":
-            term._print_verbose(f"[ERROR] Phase error: {result.get('details', 'Unknown')}")
+            term.feedback(details)
+        elif status == "error":
+            term._print_verbose(f"[ERROR] Phase error: {details}")
             term.failure(f"{current_phase} failed with error")
-            gh_client.post_phase_comment(
-                issue_num=issue_num,
+            gh.post_phase_comment(
+                issue_num=context.issue_num,
                 phase=current_phase,
                 status="error",
-                details=result.get("details", "Error executing phase")[:300]
+                details=(details or "Error executing phase")[:300],
             )
 
         # ── Persist phase result to working memory ──
-        # Update the named phase's section with a structured summary so
-        # the next phase (or a future retry) can read what happened. Errors
-        # get a separate append so the retrospective phase can scan them
-        # without re-parsing the phase output.
         try:
             phase_data = {
-                "status": result["status"],
+                "status": status,
                 "attempt": phase_attempt_count,
-                "details": (result.get("details", "") or "")[:1000],
+                "details": (details or "")[:1000],
                 "session_log": str(session_log_path) if session_log_path else "",
             }
             memory = memory_store.update_phase(current_phase, phase_data)
-            if result["status"] in ("error",):
+            if status == "error":
                 memory_store.append_error(
-                    current_phase,
-                    result.get("details", "Unknown error"),
+                    current_phase, details or "Unknown error",
                 )
-            # Refresh the in-memory copy so the next phase sees the latest
-            # state without needing to hit disk again. The legacy
-            # ``context`` dict (used by the dict-based prompt builder)
-            # and the typed :class:`FlowContext` (used by
-            # :func:`phase_runner.run_phase`) both need the same
-            # refresh.
-            context["working_memory"] = memory.to_dict()
-            flow_context = replace(flow_context, working_memory=memory)
+            # Refresh the in-memory copy so the next phase sees the
+            # latest state without needing to hit disk again.
+            from dataclasses import replace as _dc_replace
+            context = _dc_replace(context, working_memory=memory)
         except Exception as mem_err:
             # Memory persistence is best-effort — never crash the flow.
             term._print_verbose(f"[memory] Failed to update working memory: {mem_err}")
 
         # ── Token observability (per deepening PRD issue #29) ──
-        # Build a ``PhaseRun`` value object for this attempt, update the
-        # running totals, and emit two ``FlowEvent``s through the
-        # ``FlowLogger`` port:
-        #   - ``phase_end`` carries the raw token dict so the file-based
-        #     ``FileLogger`` JSONL (when wired in by a later slice) has
-        #     the data; ``StderrLogger`` shows the standard message and
-        #     ignores the dict.
-        #   - ``tokens_recorded`` is the operator-friendly summary that
-        #     ``StderrLogger`` renders as ``[phase] tokens: in=N out=M
-        #     cache=K`` (per the PRD). Only emitted when we have a usage
-        #     block — phases without a session log (close, local cmds)
-        #     have no tokens to report.
-        _event_ts = _flow_logger.now_iso()
-        # Use the typed ``PhaseRun`` returned by
-        # :func:`phase_runner.run_phase` directly — it already carries
-        # the canonical token / session_log / duration / details data.
-        _phase_run = phase_run
-        phase_runs.append(_phase_run)
-        if _phase_run.tokens_in is not None:
-            total_tokens_in += _phase_run.tokens_in
-        if _phase_run.tokens_out is not None:
-            total_tokens_out += _phase_run.tokens_out
+        phase_runs.append(phase_run)
+        if phase_run.tokens_in is not None:
+            total_tokens_in += phase_run.tokens_in
+        if phase_run.tokens_out is not None:
+            total_tokens_out += phase_run.tokens_out
 
+        _event_ts = _flow_logger.now_iso()
         _token_dict = {
-            "in": _phase_run.tokens_in,
-            "out": _phase_run.tokens_out,
-            "cache": _phase_run.cache_read,
+            "in": phase_run.tokens_in,
+            "out": phase_run.tokens_out,
+            "cache": phase_run.cache_read,
         }
         # phase_end — always emitted (for the structured JSONL log)
-        _log.emit(_flow_logger.FlowEvent(
+        _log.emit(FlowEvent(
             kind="phase_end",
-            message=f"{current_phase} {result['status']}",
+            message=f"{current_phase} {status}",
             timestamp=_event_ts,
             phase=current_phase,
             attempt=phase_attempt_count,
-            duration_s=None,
-            tokens=_token_dict if _phase_run.tokens_in is not None else None,
+            duration_s=phase_run.duration_s,
+            tokens=_token_dict if phase_run.tokens_in is not None else None,
         ))
-        # tokens_recorded — only when we have usage data, and only via
-        # the StderrLogger (file JSONL already carries the dict on the
-        # phase_end event). This is the operator's terminal-visible
-        # per-phase totals line.
-        if _phase_run.tokens_in is not None:
-            _log.emit(_flow_logger.FlowEvent(
+        # tokens_recorded — only when we have usage data, and only
+        # via the structured port. This is the operator's
+        # terminal-visible per-phase totals line.
+        if phase_run.tokens_in is not None:
+            _log.emit(FlowEvent(
                 kind="tokens_recorded",
                 message="",
                 timestamp=_event_ts,
                 phase=current_phase,
                 attempt=phase_attempt_count,
-                duration_s=None,
+                duration_s=phase_run.duration_s,
                 tokens=_token_dict,
             ))
 
-        # ── Fire phase callback (for deterministic label management) ──
-        if phase_callback:
-            try:
-                phase_callback(
-                    phase_name=current_phase,
-                    status=result["status"],
-                    attempt_count=phase_attempt_count,
-                    details=result.get("details", ""),
-                )
-            except Exception as cb_err:
-                term._print_verbose(f"[WARNING] Phase callback error: {cb_err}")
-
         # ── Test failure escalation tracking ──
-        if current_phase == "test_runner" and result["status"] == "reject":
+        if current_phase == "test_runner" and status == "reject":
             test_fail_count += 1
             max_rejects = flow_config["phases"].get("test_runner", {}).get(
                 "max_rejects_before_diagnostic", 2
             )
             if test_fail_count >= max_rejects:
                 term._print_verbose(
-                    f"[TEST_ESCALATION] test_runner failed {test_fail_count} times — "
-                    f"routing to diagnostic (threshold: {max_rejects})"
+                    f"[TEST_ESCALATION] test_runner failed {test_fail_count} "
+                    f"times — routing to diagnostic (threshold: {max_rejects})"
                 )
                 # Override transition: force diagnostic instead of builder
                 next_step = "diagnostic"
             else:
                 term._print_verbose(
-                    f"[TEST_RETRY] test_runner failed ({test_fail_count}/{max_rejects}) — "
-                    f"sending output to builder for fix"
+                    f"[TEST_RETRY] test_runner failed ({test_fail_count}/"
+                    f"{max_rejects}) — sending output to builder for fix"
                 )
         elif current_phase != "test_runner":
             # Reset counter when we leave test_runner phase
             if test_fail_count > 0:
                 test_fail_count = 0
 
-        # Determine next step from transitions (only if escalation didn't already set it)
+        # Determine next step from transitions (only if escalation
+        # didn't already set it).
         if next_step is None:
-            next_step = get_next_step(flow_config["transitions"], current_phase, result["status"])
+            next_step = get_next_step(
+                flow_config["transitions"], current_phase, status
+            )
 
         if not next_step:
-            term._print_verbose(f"[ERROR] No transition defined for {current_phase} -> {result['status']}")
-            # Structured log mirror (issue #30) — ``phase_end`` with
-            # the failing phase and the unresolved status.
-            _log.emit(_flow_logger.FlowEvent(
+            term._print_verbose(
+                f"[ERROR] No transition defined for {current_phase} -> {status}"
+            )
+            _log.emit(FlowEvent(
                 kind="phase_end",
-                message=f"No transition defined for {current_phase} -> {result['status']}",
+                message=(
+                    f"No transition defined for {current_phase} -> {status}"
+                ),
                 timestamp=_flow_logger.now_iso(),
                 phase=current_phase,
             ))
@@ -852,37 +933,49 @@ def run_flow_on_issue(
         if next_step == "finish":
             completed_successfully = True
             break
-        elif next_step == "diagnostic" or result["status"] == "error":
-            term._print_verbose(f"[DIAGNOSTIC] Running diagnostic for {current_phase}")
-            # :func:`run_diagnostic` lives in :mod:`diagnostic` (deepening
-            # PRD issue #33). The new signature takes the typed :class:`Flow`
-            # value object (``flow``), not the legacy ``flow_config`` dict.
+        elif next_step == "diagnostic" or status == "error":
+            term._print_verbose(
+                f"[DIAGNOSTIC] Running diagnostic for {current_phase}"
+            )
             diag_result = _diagnostic_run_diagnostic(
-                flow, issue_num, {
+                flow, context.issue_num, {
                     "failed_phase": current_phase,
-                    "output_summary": result.get("details", "")[:500],
-                }, term, gh_client, log=_log,
+                    "output_summary": (details or "")[:500],
+                }, term, gh, log=_log,
             )
 
             # Store diagnostic insights regardless of outcome
             if diag_result["status"] == "success":
-                term._print_verbose(f"Diagnostic analysis: {diag_result['analysis'][:150]}")
-                context["diagnostic_insights"] = diag_result.get("analysis", "")
+                term._print_verbose(
+                    f"Diagnostic analysis: {diag_result['analysis'][:150]}"
+                )
+                state.diagnostic_insights = diag_result.get("analysis", "")
                 diag_verdict = "success"
             else:
-                term._print_verbose(f"[DIAGNOSTIC] Diagnostic itself failed: {diag_result.get('analysis', 'Unknown')}")
-                context["diagnostic_insights"] = diag_result.get("analysis", "Diagnostic failed")
+                term._print_verbose(
+                    f"[DIAGNOSTIC] Diagnostic itself failed: "
+                    f"{diag_result.get('analysis', 'Unknown')}"
+                )
+                state.diagnostic_insights = (
+                    diag_result.get("analysis", "Diagnostic failed")
+                )
                 diag_verdict = "reject"
 
-            # After diagnostic, resolve where to go next from the diagnostic phase's transitions
-            post_diag_step = get_next_step(flow_config["transitions"], "diagnostic", diag_verdict)
+            # After diagnostic, resolve where to go next from the
+            # diagnostic phase's transitions.
+            post_diag_step = get_next_step(
+                flow_config["transitions"], "diagnostic", diag_verdict
+            )
             if not post_diag_step:
-                term._print_verbose(f"[ERROR] No transition defined for diagnostic -> {diag_verdict}")
-                # Structured log mirror (issue #30) — ``phase_end`` with
-                # ``phase=diagnostic`` and the error in the message.
-                _log.emit(_flow_logger.FlowEvent(
+                term._print_verbose(
+                    f"[ERROR] No transition defined for "
+                    f"diagnostic -> {diag_verdict}"
+                )
+                _log.emit(FlowEvent(
                     kind="phase_end",
-                    message=f"No transition defined for diagnostic -> {diag_verdict}",
+                    message=(
+                        f"No transition defined for diagnostic -> {diag_verdict}"
+                    ),
                     timestamp=_flow_logger.now_iso(),
                     phase="diagnostic",
                 ))
@@ -891,46 +984,59 @@ def run_flow_on_issue(
                 completed_successfully = True
                 break
             else:
-                context["previous_output"] = f"## DIAGNOSTIC COMPLETED\n{context.get('diagnostic_insights', '')[:300]}"
+                state.previous_output = (
+                    f"## DIAGNOSTIC COMPLETED\n"
+                    f"{state.diagnostic_insights[:300]}"
+                )
                 current_phase = post_diag_step
                 phase_attempt_count = 1
                 continue  # skip the retry-check below; we already advanced cleanly
         else:
-            # Preserve issue/PRD context across phase transitions - only update previous_output
-            context["previous_output"] = f"## {current_phase.upper()} COMPLETED\n{result.get('details', '')[:300]}"
+            # Preserve issue/PRD context across phase transitions -
+            # only update previous_output.
+            state.previous_output = (
+                f"## {current_phase.upper()} COMPLETED\n{details[:300]}"
+            )
             current_phase = next_step
             phase_attempt_count = 1
 
         if next_step == current_phase:
             phase_attempt_count += 1
 
-    if iteration_count >= max_iterations:
-        term.failure(f"Reached maximum iterations ({max_iterations}) - possible infinite loop")
-    else:
-        # Post final success comment only on first pass (no rejection)
-        if completed_successfully and not first_rejection_posted:
-             gh_client.post_phase_comment(
-                issue_num=issue_num,
-                phase=current_phase,
-                status="approved",
-                details=f"{current_phase} approved after {phase_attempt_count} attempt(s)"
-            )
+    # Post final success comment only on first pass (no rejection)
+    if (
+        completed_successfully
+        and not first_rejection_posted
+        and iteration_count < _MAX_ITERATIONS
+    ):
+        gh.post_phase_comment(
+            issue_num=context.issue_num,
+            phase=current_phase,
+            status="approved",
+            details=(
+                f"{current_phase} approved after {phase_attempt_count} "
+                f"attempt(s)"
+            ),
+        )
 
-    # ── Build the FlowOutcome (per deepening PRD issue #29) ──
-    # The outcome captures every per-attempt ``PhaseRun`` plus the
-    # aggregated totals. The return value of this function is still
-    # ``bool`` for backward compatibility (the pipeline layer reads
-    # the bool) — the ``FlowOutcome`` is constructed here for the
-    # future interface-narrowing slice that will surface it to callers.
-    # For now it lives only on the in-loop ``phase_runs`` list and
-    # the running ``total_tokens_in/out`` counters. Using ``_`` to
-    # silence the linter for the deliberately-unused value.
-    _ = FlowOutcome(
-        flow_name=flow_config.get("name", "unknown"),
-        issue_num=issue_num,
-        status=("success" if completed_successfully
-                else ("exhausted_iterations" if iteration_count >= max_iterations
-                      else "failed")),
+    if iteration_count >= _MAX_ITERATIONS and not completed_successfully:
+        term.failure(
+            f"Reached maximum iterations ({_MAX_ITERATIONS}) - "
+            f"possible infinite loop"
+        )
+
+    # ── Build the :class:`FlowOutcome` ──
+    if completed_successfully:
+        outcome_status = "success"
+    elif iteration_count >= _MAX_ITERATIONS:
+        outcome_status = "exhausted_iterations"
+    else:
+        outcome_status = "failed"
+
+    return FlowOutcome(
+        flow_name=flow.name,
+        issue_num=context.issue_num,
+        status=outcome_status,
         iterations=iteration_count,
         phases=tuple(phase_runs),
         events=(),
@@ -941,219 +1047,36 @@ def run_flow_on_issue(
         total_tokens_out=total_tokens_out,
     )
 
-    return completed_successfully
 
-
-# ─── New value-object types ─────────────────────────────────────────────
+# ─── Public exports ─────────────────────────────────────────────────────
 #
-# These types are added in a no-behavior-change commit so that subsequent
-# issues (logger migration, dispatcher extraction, runner narrowing) can
-# build on typed values instead of loose ``flow_config: dict`` and
-# ``context: dict`` parameters. The existing ``run_flow_on_issue`` and its
-# callers are intentionally unchanged in this slice.
-#
-# Per the deepening PRD:
-#   - ``Flow``, ``FlowContext``, ``PhaseRun``, ``FlowOutcome`` and the
-#     helpers ``PhaseConfig`` / ``Transition`` are frozen — they describe
-#     static or completed values that should not mutate.
-#   - ``PhaseState`` is the ONE mutable type. It is the loop's local
-#     state and mutates every iteration. "Frozen" would be a lie.
-#
-# Forward references to ``WorkingMemory``, ``PrefetchedContext``,
-# ``ScoutFindings`` and ``FlowEvent`` are kept as strings so this file
-# does not gain a new import dependency in the no-behavior-change slice.
+# ``run_flow`` is the new public surface; ``load_flow`` is preserved
+# for backward compatibility (other modules still call it). The
+# pre-issue-#34 ``run_flow_on_issue`` shim has been deleted —
+# callers do their own dispatching (see ``app_shell.py:_run`` and
+# ``pipelines.context.PipelineContext.run_flow``).
 
-from dataclasses import dataclass, field, replace  # noqa: E402  (kept grouped with types)
-
-
-@dataclass(frozen=True)
-class PhaseConfig:
-    """One phase's config, post-validation, post-defaults.
-
-    A flattened, immutable view of a single phase entry from a flow JSON.
-    ``tools`` is a tuple (loaded from prompt frontmatter at construction
-    time) so the dataclass remains hashable.
-    """
-    name: str
-    skill: str
-    timeout_seconds: int
-    retries: int
-    is_local: bool
-    is_optional: bool
-    model: str | None
-    provider: str | None
-    command: str | None
-    tools: tuple = ()
-
-
-@dataclass(frozen=True)
-class Transition:
-    """One transition rule from a flow config.
-
-    ``on_no_gaps`` is the target when a phase returns the ``no_gaps``
-    status (a verdict outcome that isn't approval and isn't rejection).
-    The other three fields are the standard transition targets.
-    """
-    from_phase: str
-    on_success: str | None
-    on_reject: str | None
-    on_error: str | None
-    on_no_gaps: str | None
-
-
-@dataclass(frozen=True)
-class Flow:
-    """A flow config, validated and defaults applied. Immutable."""
-    name: str
-    description: str
-    scout_enabled: bool
-    evidence_policy: dict
-    phases: dict
-    transitions: tuple
-
-
-@dataclass(frozen=True)
-class FlowContext:
-    """Everything a flow needs to know about an issue at the START of
-    execution. Static — loaded once per flow run.
-
-    ``working_memory``, ``prefetched`` and ``scout_findings`` are typed
-    as forward references to keep this file free of new import
-    dependencies in the no-behavior-change slice.
-
-    ``comments_count`` and ``created_at`` are the header-display
-    fields populated by :func:`flow_dispatcher.build_flow_context`
-    step 1. The shim uses them to reproduce the pre-refactor
-    ``term.issue_header(issue_num, title=..., comments_count=...,
-    created_at=...)`` call — the dispatcher does not have access to
-    the ``Terminal``, so the values are carried on the ``FlowContext``
-    instead.
-    """
-    flow: "Flow"
-    issue_num: int
-    issue_body: str
-    issue_title: str
-    comments_count: int = 0
-    created_at: str | None = None
-    parent_prd: str | None = None
-    working_memory: "WorkingMemory" = None  # type: ignore[assignment]
-    prefetched: "PrefetchedContext" = None  # type: ignore[assignment]
-    repo_context: dict | None = None
-    scout_findings: "ScoutFindings | None" = None
-
-
-@dataclass
-class PhaseState:
-    """The per-iteration state, mutated by the runner.
-
-    NOT in ``FlowContext`` — this is the dynamic, per-iteration state.
-    The runner mutates ``current_phase`` and ``phase_attempt`` every
-    iteration, and updates ``previous_output`` / ``diagnostic_insights``
-    / ``phase_outputs`` as phases complete.
-    """
-    current_phase: str
-    phase_attempt: int = 1
-    previous_output: str = ""
-    diagnostic_insights: str = ""
-    phase_outputs: dict = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class PhaseRun:
-    """A single phase attempt, returned in ``FlowOutcome.phases``.
-
-    A single phase can run multiple times (retries). Per-attempt is the
-    source of truth; rolled-up views are derived by callers.
-    """
-    name: str
-    attempt: int
-    status: str  # "approved" | "rejected" | "no_gaps" | "error" | "skipped"
-    duration_s: float | None
-    tokens_in: int | None
-    tokens_out: int | None
-    cache_read: int | None
-    session_log: "Path | None"
-    details: str
-
-
-@dataclass(frozen=True)
-class FlowOutcome:
-    """The runner's return value. Captures the whole run.
-
-    ``events`` is the ordered tuple of every ``FlowEvent`` emitted by the
-    ``FlowLogger`` port during the run — useful for the dashboard and for
-    after-the-fact debugging. ``total_tokens_in`` and
-    ``total_tokens_out`` are the sum of ``PhaseRun.tokens_in`` /
-    ``tokens_out`` across all attempts (None values ignored), populated
-    by the token-plumbing slice (issue #29).
-    """
-    flow_name: str
-    issue_num: int
-    status: str  # "success" | "failed" | "exhausted_iterations" | "no_gaps"
-    iterations: int
-    phases: tuple
-    events: tuple
-    total_duration_s: float
-    evidence_summary: str | None
-    retro_learning: str | None
-    total_tokens_in: int = 0
-    total_tokens_out: int = 0
-
-
-# ─── Re-exports for backward compatibility ──────────────────────────
-#
-# Deepening PRD issue #31 moved the per-phase functions (and their
-# helpers) to :mod:`phase_runner`. To keep existing test files and
-# external callers working without changes, the symbols that USED to
-# live in this module are re-exported from ``phase_runner`` here.
-#
-# The re-export is implemented via a PEP 562 module-level
-# ``__getattr__`` (Python 3.7+). The first access to any moved
-# symbol triggers a deferred import of ``phase_runner`` — at which
-# point both modules are fully loaded, so there is no circular
-# import at module-load time. The resolved symbol is cached on
-# ``sys.modules['flow_engine'].__dict__`` so subsequent accesses
-# are O(1) and the ``from flow_engine import X`` idiom works.
-_MOVED_TO_PHASE_RUNNER = frozenset({
+__all__ = [
     "DEFAULT_EVIDENCE_POLICY",
+    "Flow",
+    "FlowContext",
+    "FlowEvent",
+    "FlowLogger",
+    "FlowOutcome",
+    "PhaseConfig",
+    "PhaseRun",
+    "PhaseState",
+    "Transition",
+    "_build_legacy_context",
+    "_close_phase_result",
+    "_extract_parent_issue",
+    "_flow_from_config",
+    "_format_repo_context",
+    "_initial_phase",
+    "_resolve_log",
+    "_scout_enabled",
     "get_evidence_policy",
-    "run_close_phase",
-    "run_phase",
-    "_build_session_dir",
-    "_extract_phase_tokens",
-    "_run_phase_inner",
-    "_populate_retrospective_context",
-    "_persist_retrospective_result",
-    "_format_evidence_summary",
-    "_format_learnings_excerpt",
-    "_read_agent_text_from_session_log",
-})
-
-
-def __getattr__(name: str):  # PEP 562 — module-level lazy attribute access
-    """Re-export symbols that moved to :mod:`phase_runner` (issue #31).
-
-    The first access to a moved symbol triggers a deferred import of
-    :mod:`phase_runner`. Both modules are fully loaded by then, so
-    there is no circular import. The symbol is cached in the module
-    globals so subsequent lookups are direct.
-    """
-    if name in _MOVED_TO_PHASE_RUNNER:
-        from phase_runner import (  # noqa: WPS433  (intentional deferred import)
-            DEFAULT_EVIDENCE_POLICY,
-            get_evidence_policy,
-            run_close_phase,
-            run_phase,
-            _build_session_dir,
-            _extract_phase_tokens,
-            _run_phase_inner,
-            _populate_retrospective_context,
-            _persist_retrospective_result,
-            _format_evidence_summary,
-            _format_learnings_excerpt,
-            _read_agent_text_from_session_log,
-        )
-        value = locals()[name]
-        globals()[name] = value  # cache for subsequent direct access
-        return value
-    raise AttributeError(f"module 'flow_engine' has no attribute {name!r}")
+    "get_next_step",
+    "load_flow",
+    "run_flow",
+]

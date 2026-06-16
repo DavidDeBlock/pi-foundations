@@ -1,7 +1,7 @@
 {
   "issue": 42,
   "created_at": "2026-06-15T22:16:27.771871+00:00",
-  "updated_at": "2026-06-15T22:16:40.745849+00:00",
+  "updated_at": "2026-06-16T08:56:31.097232+00:00",
   "repo_path": "/home/david/projects/pi-foundations/.pi/maestro",
   "git_sha": "ae554fdab7bca85b8c9356c4787460f6ef1f3cf1",
   "scout": {
@@ -14,13 +14,1218 @@
     },
     "session_log": "/tmp/scout.jsonl"
   },
-  "builder": {},
+  "builder": {
+    "status": "success",
+    "attempt": 1,
+    "details": "root cause: bad config",
+    "session_log": ""
+  },
   "reviewer": {},
   "test_runner": {},
   "diagnostic": {},
   "retrospective": {},
   "files_touched": [],
   "test_results": [],
-  "errors": [],
-  "notes": []
+  "errors": [
+    {
+      "timestamp": "2026-06-16T08:27:40.665838+00:00",
+      "phase": "builder",
+      "error": "boom"
+    },
+    {
+      "timestamp": "2026-06-16T08:27:45.701840+00:00",
+      "phase": "builder",
+      "error": "boom"
+    }
+  ],
+  "notes": [
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:27:40.668051+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:27:40.668511+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:27:40.670317+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "reject",
+        "attempt": 2,
+        "details": "phase_b found issues",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:27:40.670876+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:27:40.671296+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:27:40.671717+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:27:40.673450+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "retro",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "downgraded from error",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:27:40.673913+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:27:40.676377+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:27:40.676812+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "reject",
+        "attempt": 1,
+        "details": "needs fix",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:27:40.678626+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "all good",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:27:40.679199+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:39.863995+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:39.864574+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:39.866468+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "reject",
+        "attempt": 2,
+        "details": "phase_b found issues",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:39.867223+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:39.867749+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:39.868296+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:39.870093+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "retro",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "downgraded from error",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:39.871427+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:39.873255+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:39.873821+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "reject",
+        "attempt": 1,
+        "details": "needs fix",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:39.875829+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "all good",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:39.876576+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "reject",
+        "attempt": 1,
+        "details": "needs fix",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:44.870592+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "all good",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:44.871453+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:44.874219+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "reject",
+        "attempt": 2,
+        "details": "phase_b found issues",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:44.875084+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:44.875821+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:44.876508+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:44.879776+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "retro",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "downgraded from error",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:44.880467+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:44.888363+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:44.889092+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:44.891723+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:28:44.893214+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "reject",
+        "attempt": 1,
+        "details": "needs fix",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:42:48.835301+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "all good",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:42:48.836267+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:42:48.838966+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "reject",
+        "attempt": 2,
+        "details": "phase_b found issues",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:42:48.839963+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:42:48.840760+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:42:48.841542+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:42:48.844215+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "retro",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "downgraded from error",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:42:48.845045+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:42:48.861729+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:42:48.862629+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:42:48.865473+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:42:48.866398+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "reject",
+        "attempt": 1,
+        "details": "needs fix",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:44:58.801928+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "all good",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:44:58.803029+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:44:58.805845+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "reject",
+        "attempt": 2,
+        "details": "phase_b found issues",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:44:58.806972+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:44:58.807925+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:44:58.808830+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:44:58.811666+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "retro",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "downgraded from error",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:44:58.812706+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:44:58.821455+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:44:58.822403+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:44:58.825314+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:44:58.826316+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:55:53.203507+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:55:53.204713+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:55:53.207241+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "reject",
+        "attempt": 2,
+        "details": "phase_b found issues",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:55:53.208483+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:55:53.209611+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:55:53.210681+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:55:53.213894+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "retro",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "downgraded from error",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:55:53.215064+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:55:53.217478+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:55:53.218583+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "reject",
+        "attempt": 1,
+        "details": "needs fix",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:55:53.220984+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "all good",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:55:53.222174+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:17.192212+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:17.193556+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:17.196147+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "reject",
+        "attempt": 2,
+        "details": "phase_b found issues",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:17.197610+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:17.198838+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:17.200012+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:17.203168+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "retro",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "downgraded from error",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:17.204402+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:17.206926+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:17.208104+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "reject",
+        "attempt": 1,
+        "details": "needs fix",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:17.210805+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "all good",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:17.212336+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "reject",
+        "attempt": 1,
+        "details": "needs fix",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:21.338240+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "all good",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:21.339737+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:21.343032+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "reject",
+        "attempt": 2,
+        "details": "phase_b found issues",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:21.344582+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:21.345899+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:21.347246+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:21.351141+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "retro",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "downgraded from error",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:21.352433+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:21.360906+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:21.362341+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:21.366426+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:21.367790+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "reject",
+        "attempt": 1,
+        "details": "needs fix",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:31.065115+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "all good",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:31.067795+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:31.071412+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "reject",
+        "attempt": 2,
+        "details": "phase_b found issues",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:31.073125+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:31.074730+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:31.076242+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:31.079739+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "retro",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "downgraded from error",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:31.081233+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:31.090820+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:31.092334+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:31.095766+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T08:56:31.097228+00:00"
+    }
+  ]
 }

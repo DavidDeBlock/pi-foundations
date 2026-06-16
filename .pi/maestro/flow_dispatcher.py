@@ -52,6 +52,10 @@ from flow_engine import (  # noqa: E402  (intentional intra-package import)
     PrefetchedContext,
     _extract_parent_issue,
     _format_repo_context,
+    _scout_enabled,
+)
+from scout_runner import (  # noqa: E402  (intentional intra-package import)
+    _run_scout_phase,
 )
 from github_client import GithubClient  # noqa: E402
 
@@ -202,7 +206,7 @@ def build_flow_context(
     # reference afterwards so the ``FlowContext.working_memory``
     # snapshot reflects the scout section.
     scout_findings: Optional[dict] = None
-    if memory_store is not None and _flow_engine._scout_enabled(flow_config):
+    if memory_store is not None and _scout_enabled(flow_config):
         # The scout helper expects a context dict; build the minimal
         # one it needs (the phase loop will rebuild the full dict
         # from the returned ``FlowContext``).
@@ -212,7 +216,7 @@ def build_flow_context(
         }
         if parent_prd:
             scout_context["prd_body"] = parent_prd
-        scout_findings = _flow_engine._run_scout_phase(
+        scout_findings = _run_scout_phase(
             flow_config, issue_num, scout_context, memory_store
         )
         # Refresh the in-memory view so the returned FlowContext

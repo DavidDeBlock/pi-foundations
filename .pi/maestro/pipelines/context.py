@@ -94,69 +94,96 @@ class PipelineContext:
         phase_callback=None,
     ) -> bool:
         """Execute a flow on a specific GitHub issue with retry logic.
-        
-        Calls into the existing flow_engine.py with this context's
-        Terminal and GithubClient instances. Automatically retries
-        transient failures (network blips, LLM timeouts) up to max_retries times.
-        Failed attempts are recorded in self.errors for batch reporting.
-        
+
+        Calls into the new narrow ``flow_engine.run_flow(flow, context,
+        state, term, gh, log) -> FlowOutcome`` interface, doing the
+        dispatching work (load flow → build :class:`FlowContext` →
+        pick first phase) at this layer. Automatically retries
+        transient failures (network blips, LLM timeouts) up to
+        max_retries times. Failed attempts are recorded in
+        self.errors for batch reporting.
+
         Args:
             flow_name: Name of the flow to execute (e.g., 'builder-reviewer').
             issue_num: GitHub issue number to process.
             max_retries: Maximum retry attempts for transient failures.
                         Defaults to 3 if not specified.
-            phase_callback: Optional callable(phase_name, status, attempt_count,
-                          details) fired after each phase completes. Used by
-                          pipelines for deterministic label management.
-        
+            phase_callback: Reserved for future deterministic-label slices.
+                          Currently unused (the runner emits its own
+                          :class:`FlowEvent` sequence through the
+                          :class:`FlowLogger` port).
+
         Returns:
             True if flow completed successfully, False after all retries exhausted.
         """
-        from flow_engine import run_flow_on_issue
-        
+        from flow_engine import (
+            FlowLogger,
+            PhaseState,
+            _flow_from_config,
+            _initial_phase,
+            load_flow,
+            run_flow,
+        )
+        from flow_dispatcher import build_flow_context
+        from flow_logger import StderrLogger
+
         if not self.term:
             raise RuntimeError("PipelineContext.term not initialized")
-        
+
         if max_retries is None:
             max_retries = 3
-        
+
         step_key = f"{flow_name}:issue-{issue_num}"
         last_exception = None
-        
+
         # Build initial context from variables (skip artifact keys)
         initial_context = {
             key: value for key, value in self.variables.items()
             if not key.startswith('artifact:')
         }
-        
+
+        # The new :func:`run_flow` doesn't accept an ``initial_context``
+        # kwarg — variable injection happens via the dispatcher's
+        # ``build_flow_context`` call (the dispatcher doesn't read
+        # initial_context yet, so this is currently a no-op). The
+        # ``initial_context`` parameter is kept for backward
+        # compatibility with pipeline scripts that still pass it.
+
         for attempt in range(1, max_retries + 1):
             try:
-                success = run_flow_on_issue(
-                    term=self.term,
-                    gh_client=self.github,
-                    flow_name=flow_name,
-                    issue_num=issue_num,
-                    initial_context=initial_context or None,
-                    phase_callback=phase_callback,
+                flow_config = load_flow(flow_name)
+                flow = _flow_from_config(flow_config)
+                flow_context = build_flow_context(flow, issue_num, self.github)
+                state = PhaseState(
+                    current_phase=_initial_phase(flow_config, skip_scout=True),
                 )
-                
-                if success:
+                log = StderrLogger()
+                outcome = run_flow(
+                    flow, flow_context, state,
+                    self.term, self.github, log,
+                )
+
+                if outcome.status == "success":
                     self.completed_steps += 1
                     return True
                 else:
-                    # Flow ran but didn't complete successfully (not a transient error)
-                    # Record as failure and don't retry
-                    self.record_error(step_key, "Flow completed with status: failed")
+                    # Flow ran but didn't complete successfully (not a
+                    # transient error) — record as failure and don't
+                    # retry.
+                    self.record_error(
+                        step_key,
+                        f"Flow completed with status: {outcome.status}",
+                    )
                     return False
-                    
+
             except KeyboardInterrupt:
                 # Don't retry keyboard interrupts — re-raise immediately
                 raise
-                
+
             except Exception as e:
                 last_exception = e
                 error_msg = str(e)[:200]
-                
+
                 if attempt < max_retries:
                     if self.term:
                         self.term.warning(
@@ -170,7 +197,7 @@ class PipelineContext:
                     )
                     if self.term:
                         self.term.failure(f"[pipeline] {error_detail}")
-        
+
         # All retries exhausted — record the error
         self.record_error(step_key, str(last_exception)[:300])
         return False

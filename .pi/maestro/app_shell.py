@@ -22,7 +22,52 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from terminal import Terminal
 from github_client import GithubClient
-from flow_engine import run_flow_on_issue
+from flow_engine import (
+    FlowContext,
+    PhaseState,
+    _flow_from_config,
+    _initial_phase,
+    load_flow,
+    run_flow,
+)
+from flow_dispatcher import build_flow_context
+import flow_logger as _flow_logger
+
+
+def _run(flow_name: str, issue_num: int, term: Terminal,
+         gh: GithubClient, log: "_flow_logger.FlowLogger | None" = None
+         ) -> bool:
+    """Run a flow on a single issue using the narrow :func:`run_flow` API.
+
+    The dispatching work (load flow → build :class:`FlowContext` → pick
+    first phase → call ``run_flow``) is the responsibility of the
+    caller now that ``run_flow_on_issue`` has been deleted. This
+    helper keeps the three call sites in :class:`MaestroApp`
+    one-liners.
+
+    Args:
+        flow_name: Name of the flow JSON to load (e.g.
+            ``"builder-reviewer"``).
+        issue_num: GitHub issue number to run the flow on.
+        term: The :class:`Terminal` for verbose output.
+        gh: The :class:`GithubClient` for comment / label updates.
+        log: Optional :class:`FlowLogger` port. Defaults to a fresh
+            :class:`StderrLogger` so terminal output stays
+            unchanged.
+
+    Returns:
+        ``True`` iff the flow's :class:`FlowOutcome` reports
+        ``status == "success"``.
+    """
+    flow_config = load_flow(flow_name)
+    flow = _flow_from_config(flow_config)
+    flow_context = build_flow_context(flow, issue_num, gh)
+    state = PhaseState(
+        current_phase=_initial_phase(flow_config, skip_scout=True),
+    )
+    _log = log if log is not None else _flow_logger.StderrLogger()
+    outcome = run_flow(flow, flow_context, state, term, gh, _log)
+    return outcome.status == "success"
 
 
 class MaestroApp:
@@ -81,9 +126,7 @@ class MaestroApp:
             for num in issue_nums:
                 self.term._print_verbose(f"[START] Processing issue #{num} with flow '{flow_name}'")
                 try:
-                    success = run_flow_on_issue(
-                        self.term, self.gh_client, flow_name, num
-                    )
+                    success = _run(flow_name, num, self.term, self.gh_client)
                     if success:
                         success_count += 1
                     else:
@@ -148,7 +191,7 @@ class MaestroApp:
         if self.args.issue:
             self.term._print_verbose(f"[START] Processing issue #{self.args.issue} with flow '{flow_name}'")
             try:
-                success = run_flow_on_issue(self.term, self.gh_client, flow_name, self.args.issue)
+                success = _run(flow_name, self.args.issue, self.term, self.gh_client)
                 if success:
                     self.term.summary(issues_completed=1, issues_failed=0)
                 else:

@@ -81,24 +81,34 @@ def test_context_record_error_prints_to_terminal():
 
 
 def test_context_run_flow_calls_flow_engine():
-    """Test that run_flow calls flow_engine.run_flow_on_issue."""
+    """Test that run_flow calls flow_engine.run_flow (issue #34)."""
     from unittest.mock import patch
-    
+
     mock_term = MagicMock()
     mock_gh = MagicMock()
     ctx = PipelineContext(term=mock_term, gh_client=mock_gh)
-    
-    with patch('flow_engine.run_flow_on_issue') as mock_run:
-        mock_run.return_value = True
+
+    # The narrow ``run_flow(flow, context, state, term, gh, log)``
+    # returns a :class:`FlowOutcome` with a ``status`` field. The
+    # ``PipelineContext.run_flow`` adapter treats ``status ==
+    # "success"`` as a successful run.
+    fake_outcome = MagicMock()
+    fake_outcome.status = "success"
+
+    # ``PipelineContext.run_flow`` does a lazy
+    # ``from flow_engine import run_flow`` inside the method body, so
+    # the function reference is resolved at call time. Patching
+    # ``flow_engine.run_flow`` is enough.
+    with patch('flow_engine.run_flow', return_value=fake_outcome) as mock_run, \
+         patch('flow_dispatcher.build_flow_context', return_value=MagicMock()):
         result = ctx.run_flow("builder-reviewer", 42)
-        
+
         assert result is True
         mock_run.assert_called_once()
         call_args = mock_run.call_args
-        assert call_args[1]['term'] is mock_term
-        assert call_args[1]['gh_client'] is mock_gh
-        assert call_args[1]['flow_name'] == "builder-reviewer"
-        assert call_args[1]['issue_num'] == 42
+        # run_flow is called positionally: (flow, context, state, term, gh, log)
+        assert call_args.args[3] is mock_term
+        assert call_args.args[4] is mock_gh
 
 
 def test_context_artifact_write_in_memory():

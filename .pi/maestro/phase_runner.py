@@ -89,12 +89,15 @@ if str(_LIB_DIR) not in sys.path:
 import flow_logger as _flow_logger  # noqa: E402
 from flow_logger import FlowEvent, FlowLogger  # noqa: E402
 from flow_engine import (  # noqa: E402
+    DEFAULT_EVIDENCE_POLICY,
     Flow,
     FlowContext,
     PhaseConfig,
     PhaseRun,
     PhaseState,
+    _close_phase_result,
     _flow_from_config,
+    get_evidence_policy,
 )
 from prompt_assembler import PreparedPrompt, build_prompt  # noqa: E402
 from github_client import GithubClient  # noqa: E402
@@ -126,108 +129,12 @@ def _resolve_log(log: Optional[FlowLogger]) -> FlowLogger:
 
 
 # ─── Evidence policy (close phase) ──────────────────────────────────────
-
-
-DEFAULT_EVIDENCE_POLICY: dict = {
-    "required_on_success": ["tested", "reviewed"],
-    "on_missing_evidence": "warn_but_proceed",
-}
-
-
-def get_evidence_policy(flow_config: dict) -> dict:
-    """Return the effective evidence policy for a flow.
-
-    Reads ``flow_config["evidence_policy"]`` and merges with
-    :data:`DEFAULT_EVIDENCE_POLICY`. Unrecognized keys are preserved
-    (forward-compat). Missing policy → defaults.
-    """
-    if not isinstance(flow_config, dict):
-        return dict(DEFAULT_EVIDENCE_POLICY)
-    raw = flow_config.get("evidence_policy")
-    if not isinstance(raw, dict):
-        return dict(DEFAULT_EVIDENCE_POLICY)
-    merged = dict(DEFAULT_EVIDENCE_POLICY)
-    merged.update(raw)
-    return merged
-
-
-def _close_phase_result(
-    flow_config: dict,
-    issue_num: int,
-    evidence_dir=None,
-    log: Optional[FlowLogger] = None,
-) -> dict:
-    """Compute the close-phase result based on the flow's evidence policy.
-
-    Centralised here so the AC-specified policies (``block``,
-    ``warn_but_proceed``, ``ignore``) all live in one place. Used by
-    :func:`run_close_phase` and the phase-runner tests.
-
-    Returns a dict with ``status`` and ``details``. ``status`` is one
-    of:
-
-        - ``"success"`` — evidence is present OR policy allowed
-          proceeding
-        - ``"reject"`` — evidence is missing AND policy is ``block``
-    """
-    policy = get_evidence_policy(flow_config)
-    required = [EvidenceType(t) for t in policy.get("required_on_success", [])]
-    on_missing = policy.get("on_missing_evidence", "warn_but_proceed")
-
-    if evidence_dir is None:
-        store = EvidenceStore(issue_num)
-    else:
-        store = EvidenceStore(issue_num, evidence_dir=Path(evidence_dir))
-
-    ok, missing = store.check(required)
-    required_values = [t.value for t in required]
-
-    if ok:
-        return {
-            "status": "success",
-            "details": f"All evidence present: {required_values}",
-        }
-
-    missing_values = [
-        m.value if isinstance(m, EvidenceType) else str(m) for m in missing
-    ]
-
-    if on_missing == "block":
-        return {
-            "status": "reject",
-            "details": (
-                f"Missing evidence (block policy): {missing_values} "
-                f"(required: {required_values})"
-            ),
-        }
-    if on_missing == "warn_but_proceed":
-        # Use the structured FlowLogger port. Each line is an
-        # ``evidence_warn`` event; the StderrLogger renders
-        # ``evidence_warn: <message>`` (no ``[phase]`` prefix — these
-        # warnings are not phase-scoped).
-        _log = _resolve_log(log)
-        _log.emit(FlowEvent(
-            kind="evidence_warn",
-            message=f"Missing evidence for issue #{issue_num}: {missing_values}",
-            timestamp=_flow_logger.now_iso(),
-        ))
-        _log.emit(FlowEvent(
-            kind="evidence_warn",
-            message="Proceeding without required evidence (warn_but_proceed policy)",
-            timestamp=_flow_logger.now_iso(),
-        ))
-        return {
-            "status": "success",
-            "details": (
-                f"Missing evidence (warned): {missing_values} "
-                f"(required: {required_values})"
-            ),
-        }
-    # ``on_missing == "ignore"`` or any other value → skip the check entirely
-    return {
-        "status": "success",
-        "details": f"Evidence check skipped (policy: {on_missing})",
-    }
+#
+# The :data:`DEFAULT_EVIDENCE_POLICY`, :func:`get_evidence_policy`, and
+# :func:`_close_phase_result` helpers live in :mod:`flow_engine` (issue
+# #34 — they're imported above). :func:`run_close_phase` is the public
+# wrapper for the per-phase close dispatch — it stays here because
+# :func:`_run_phase_inner` calls it directly.
 
 
 def run_close_phase(

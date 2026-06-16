@@ -153,12 +153,16 @@ def _run_flow_with_canned_rpc(rpc_responses: list, scout_enabled: bool = True) -
                 return MemoryStore(issue_num, memory_dir=tmpdir)
             MockStore.side_effect = factory
 
-            flow_engine.run_flow_on_issue(
-                term=term,
-                gh_client=gh_mock,
-                flow_name="builder-reviewer",
-                issue_num=42,
-                initial_context=None,
+            # Issue #34: ``run_flow_on_issue`` was replaced by the narrow
+            # :func:`flow_engine.run_flow` + caller-side dispatch. The
+            # :func:`app_shell._run` helper does the dispatching work
+            # (load flow → build :class:`FlowContext` → pick first
+            # phase) so this integration test can call a single
+            # function and exercise the full scout → builder →
+            # reviewer path.
+            from app_shell import _run
+            _run(
+                "builder-reviewer", 42, term, gh_mock,
             )
     finally:
         import shutil

@@ -175,7 +175,7 @@ def test_happy_path_all_fields_populated(tmp_path: Path):
          patch.object(flow_engine, "MemoryStore") as MockStore, \
          patch.object(flow_engine, "prefetch_context") as mock_pref, \
          patch.object(flow_engine, "ProjectsRegistry") as MockReg, \
-         patch.object(flow_engine, "_run_scout_phase") as mock_scout:
+         patch.object(flow_dispatcher, "_run_scout_phase") as mock_scout:
         # Real MemoryStore against the temp dir
         from context_prefetch import PrefetchedContext
         mock_pref.return_value = PrefetchedContext(git_sha="deadbeef")
@@ -335,7 +335,7 @@ def test_scout_failure_yields_none_findings(tmp_path: Path):
          patch.object(flow_engine, "MemoryStore") as MockStore, \
          patch.object(flow_engine, "prefetch_context") as mock_pref, \
          patch.object(flow_engine, "ProjectsRegistry") as MockReg, \
-         patch.object(flow_engine, "_run_scout_phase") as mock_scout:
+         patch.object(flow_dispatcher, "_run_scout_phase") as mock_scout:
         from context_prefetch import PrefetchedContext
         mock_pref.return_value = PrefetchedContext(git_sha="abc")
         def factory(issue_num, memory_dir=None):
@@ -374,7 +374,7 @@ def test_successful_scout_persists_findings_to_memory(tmp_path: Path):
          patch.object(flow_engine, "MemoryStore") as MockStore, \
          patch.object(flow_engine, "prefetch_context") as mock_pref, \
          patch.object(flow_engine, "ProjectsRegistry") as MockReg, \
-         patch.object(flow_engine, "_run_scout_phase") as mock_scout:
+         patch.object(flow_dispatcher, "_run_scout_phase") as mock_scout:
         from context_prefetch import PrefetchedContext
         mock_pref.return_value = PrefetchedContext(git_sha="abc")
         def factory(issue_num, memory_dir=None):
@@ -505,7 +505,7 @@ def test_scout_disabled_vs_failed_different_outcomes(tmp_path: Path):
          patch.object(flow_engine, "MemoryStore") as MockStore, \
          patch.object(flow_engine, "prefetch_context") as mock_pref, \
          patch.object(flow_engine, "ProjectsRegistry") as MockReg, \
-         patch.object(flow_engine, "_run_scout_phase") as mock_scout:
+         patch.object(flow_dispatcher, "_run_scout_phase") as mock_scout:
         from context_prefetch import PrefetchedContext
         mock_pref.return_value = PrefetchedContext(git_sha="abc")
         def factory(issue_num, memory_dir=None):
@@ -527,7 +527,7 @@ def test_scout_disabled_vs_failed_different_outcomes(tmp_path: Path):
          patch.object(flow_engine, "MemoryStore") as MockStore, \
          patch.object(flow_engine, "prefetch_context") as mock_pref, \
          patch.object(flow_engine, "ProjectsRegistry") as MockReg, \
-         patch.object(flow_engine, "_run_scout_phase") as mock_scout:
+         patch.object(flow_dispatcher, "_run_scout_phase") as mock_scout:
         from context_prefetch import PrefetchedContext
         mock_pref.return_value = PrefetchedContext(git_sha="abc")
         def factory(issue_num, memory_dir=None):

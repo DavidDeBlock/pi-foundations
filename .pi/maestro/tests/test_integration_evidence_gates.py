@@ -52,7 +52,7 @@ from evidence import (  # noqa: E402
     make_reviewed_marker,
     make_tested_marker,
 )
-from flow_engine import run_close_phase  # noqa: E402
+from phase_runner import run_close_phase  # noqa: E402  (issue #34: moved out of flow_engine)
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────

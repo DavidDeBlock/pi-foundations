@@ -28,9 +28,9 @@ Maestro consists of **five layers**, plus a **per-domain CLI surface**:
 | Layer | Directory/File | Purpose |
 |-------|---------------|---------|
 | **Entry Point** | `orchestrate.py` | CLI entry point & argument parsing |
-| **App Shell** | `app_shell.py` | High-level workflow manager (modes, gap-check logic, autonomous loop) |
-| **Flow Engine** | `flow_engine.py` | Core engine: runs flows on issues, manages phase transitions, enforces tool allowlists + evidence policies |
-| **Pipelines** | `pipelines/` | Scriptable pipeline abstraction with context API and runner |
+| **App Shell** | `app_shell.py` | High-level workflow manager (modes, gap-check logic, autonomous loop). The `_run` helper builds the typed :class:`FlowContext` and calls the narrow :func:`flow_engine.run_flow` API. |
+| **Flow Engine** | `flow_engine.py` + `phase_runner.py` + `prompt_assembler.py` + `diagnostic.py` + `flow_dispatcher.py` + `scout_runner.py` | Core engine: runs flows on issues, manages phase transitions, enforces tool allowlists + evidence policies. See [Flow Engine Module Map](#flow-engine-module-map-deep-module). |
+| **Pipelines** | `pipelines/` | Scriptable pipeline abstraction with context API and runner. `PipelineContext.run_flow` is the narrow typed adapter that mirrors `app_shell._run`. |
 | **Dashboard** | `dashboard.py` + `panels/` + `lib/dashboard_api.py` | Interactive Textual UI for monitoring orchestrator state |
 | **CLI Surface** | `commands/` + `maestro.py` | Top-level `maestro` Click group aggregating all subcommand groups (memory, scout, prompt, evidence, retrospective, onboard, projects) |
 
@@ -110,7 +110,7 @@ Maestro consists of **five layers**, plus a **per-domain CLI surface**:
 │   ├── test_pipeline_dashboard_extended.py # Extended dashboard tests (12 tests)
 │   ├── test_pipeline_monitor_panel.py    # Monitor panel rendering (24 tests)
 │   ├── test_pipeline_runner.py           # PipelineRunner engine (13 tests)
-│   ├── test_run_single_flow.py           # Single flow execution (15 tests)
+│   ├── test_run_flow.py                 # Narrow `run_flow` API integration (7 tests, fast) — single-phase retry, multi-phase rejection routing, optional-phase error, diagnostic routing, close-phase block policy, FlowOutcome shape, ListLogger event sequence
 │   ├── test_verdict_extractor.py         # Verdict extraction (26 tests)
 │   ├── test_verdict_regression.py        # Regression with real session logs (23 tests)
 │   ├── test_dashboard_app.py             # Dashboard app shell (19 tests)
@@ -134,7 +134,7 @@ Maestro consists of **five layers**, plus a **per-domain CLI surface**:
 │   ├── test_flow_engine_tools.py         # Flow-level tool-allowlist enforcement (5 tests)
 │   ├── test_prompt_loader.py             # Prompt loader + frontmatter parsing (8 tests)
 │   ├── test_integration_tool_enforcement.py # Tool enforcement end-to-end (3 tests)
-│   ├── test_flow_engine_integration.py   # Flow engine end-to-end (10 tests)
+│   ├── test_flow_engine_logging.py     # Close-phase FlowLogger event sequence (4 tests)
 │   ├── test_maestro_cli.py               # Top-level `maestro` Click group (15 tests)
 ├── scripts/                  # Python analysis toolkit — structured codebase introspection
 │   ├── class-hierarchy.py            # Class inheritance tree scanner
@@ -149,7 +149,12 @@ Maestro consists of **five layers**, plus a **per-domain CLI surface**:
 ├── config.json               # Runtime configuration (repo_override, gh_timeout, default_model/provider, session_dir)
 ├── orchestrate.py            # CLI entry point & argument parsing
 ├── app_shell.py              # High-level workflow manager (modes, gap-check logic, autonomous loop)
-├── flow_engine.py            # Core engine: runs flows on issues, manages phase transitions
+├── flow_engine.py            # Core engine: runs flows on issues, manages phase transitions (deep module; see "Flow Engine Module Map" below)
+├── phase_runner.py           # Per-phase execution: run_phase → PhaseRun, evidence gate, retrospective persistence
+├── prompt_assembler.py       # build_prompt(phase, …) -> PreparedPrompt (typed prompt builder, .md frontmatter + variable substitution)
+├── diagnostic.py             # run_diagnostic(flow, issue, failure_ctx, term, gh, log) — loop-level diagnostic pass
+├── flow_dispatcher.py        # build_flow_context(flow, issue_num, gh) -> FlowContext — 7 setup steps (issue metadata, parent PRD, memory, prefetch, persist, repo context, scout)
+├── scout_runner.py           # _run_scout_phase — synchronous scout run; non-fatal
 ├── dashboard.py              # Interactive Textual UI for monitoring orchestrator state
 ├── cli-demo.py               # Demo script showcasing Rich library features (tables, syntax highlighting, live progress)
 └── IMPLEMENTATION_PLAN.md    # Phased implementation roadmap
@@ -345,6 +350,99 @@ Variables are injected into `.md` (preferred) or `.tmpl` (legacy) prompt files b
 
 ---
 
+## Flow Engine Module Map (deep module)
+
+The flow engine is split into six small, focused modules. The
+**deep module** is :mod:`flow_engine` — it owns the public runner
+API, the typed value objects, and the phase loop. The other five
+modules are owned by it and contain the per-phase, prompt,
+diagnostic, dispatcher, and scout concerns respectively.
+
+| Module | Lines | Public surface |
+|---|---|---|
+| `flow_engine.py` | ~1,080 | `run_flow(flow, context, state, term, gh, log) -> FlowOutcome` (the deep module), `load_flow`, `Flow` / `FlowContext` / `PhaseState` / `PhaseRun` / `FlowOutcome` value objects, close-phase helpers (`get_evidence_policy`, `_close_phase_result`) |
+| `phase_runner.py` | ~1,170 | `run_phase(name, flow, context, state, term, gh, log) -> PhaseRun` (per-phase runner), `run_close_phase` (close-phase wrapper), session-log / token / retrospective helpers |
+| `prompt_assembler.py` | ~456 | `build_prompt(phase, phase_config, flow, issue_num, context, state, log, extra_context) -> PreparedPrompt` (typed prompt builder) |
+| `diagnostic.py` | ~238 | `run_diagnostic(flow, issue_num, failure_context, term, gh, log) -> dict` (loop-level diagnostic pass) |
+| `flow_dispatcher.py` | ~250 | `build_flow_context(flow, issue_num, gh) -> FlowContext` (7 setup steps: issue metadata, parent PRD, working memory, prefetch, persist, repo context, scout) |
+| `scout_runner.py` | ~250 | `_run_scout_phase(flow_config, issue_num, context, memory_store, log) -> dict` (synchronous scout run; non-fatal) |
+
+### The deep module: `run_flow(flow, context, state, term, gh, log) -> FlowOutcome`
+
+```python
+from flow_engine import (
+    Flow, FlowContext, PhaseState, load_flow, run_flow,
+    _flow_from_config, _initial_phase,
+)
+from flow_dispatcher import build_flow_context
+from flow_logger import StderrLogger
+from terminal import Terminal
+from github_client import GithubClient
+
+term = Terminal(verbose=True)
+gh = GithubClient()
+
+flow_config = load_flow("builder-reviewer")
+flow = _flow_from_config(flow_config)
+context = build_flow_context(flow, issue_num=42, gh=gh)
+state = PhaseState(
+    current_phase=_initial_phase(flow_config, skip_scout=True),
+)
+log = StderrLogger()
+
+outcome = run_flow(flow, context, state, term, gh, log)
+
+# outcome.status is one of: "success", "failed", "exhausted_iterations"
+if outcome.status == "success":
+    ...
+```
+
+The caller (e.g. :func:`app_shell._run`, :meth:`pipelines.context.PipelineContext.run_flow`)
+is responsible for the dispatching work (load flow → build
+:class:`FlowContext` → pick first phase) so :func:`run_flow` can
+stay focused on the phase loop. The :class:`FlowOutcome` value
+object captures the whole run: status, iterations, per-attempt
+:class:`PhaseRun` records with duration and tokens, total tokens,
+and total duration.
+
+### The `FlowContext` value object
+
+A frozen dataclass that holds everything a flow needs to know
+about an issue at the START of execution:
+
+```python
+@dataclass(frozen=True)
+class FlowContext:
+    flow: Flow
+    issue_num: int
+    issue_body: str
+    issue_title: str
+    comments_count: int = 0
+    created_at: str | None = None
+    parent_prd: str | None = None
+    working_memory: WorkingMemory | None = None
+    prefetched: PrefetchedContext | None = None
+    repo_context: dict | None = None
+    scout_findings: dict | None = None
+```
+
+The dispatcher populates every field from the issue's
+GitHub metadata, working memory file, prefetch cache, projects
+registry, and scout run. Failures in any of those sources are
+non-fatal — the corresponding field is left as `None` (or a fresh
+empty value) and the flow proceeds.
+
+### The `FlowLogger` port
+
+Every helper that needs to emit a runtime event takes a
+:class:`flow_logger.FlowLogger` port. The default adapter is
+:class:`flow_logger.StderrLogger` (renders `[<phase>] <kind>: <message>` on
+`sys.stderr`); :class:`flow_logger.FileLogger` writes an
+append-only JSONL at `.maestro/logs/<flow>/<issue>.jsonl` for
+post-hoc debugging; :class:`flow_logger.ListLogger` is the
+in-memory test adapter. New adapters (e.g. a JSON-RPC forwarder)
+can be plugged in without touching the deep module.
+
 ## Working Memory & Context Prefetch
 
 Per-issue structured memory survives across flow restarts, retries, and agent loops. The context prefetch module caches static repo info (test command, build command, dependencies, conventions) once per git SHA so the builder doesn't waste time on `cat package.json`.
@@ -380,7 +478,7 @@ maestro scout  --memory-dir /tmp/foo show 42
 
 ### How it's wired in
 
-- `flow_engine.run_flow_on_issue()` loads/initialises the memory at flow start, computes the prefetched context once, and injects both into every phase prompt.
+- `flow_engine.run_flow()` (issue #34: was `run_flow_on_issue`) loads/initialises the memory at flow start, computes the prefetched context once, and injects both into every phase prompt. The dispatching work (load flow → build `FlowContext` → pick first phase) is done by callers (`app_shell._run` or `PipelineContext.run_flow`); `run_flow` itself just runs the phase loop.
 
 ---
 
@@ -805,7 +903,7 @@ Entries live in `.maestro/projects.json`, keyed by the first 12 hex chars of `SH
 
 ### Auto-loading context into flows
 
-`flow_engine.run_flow()` resolves the target repo's path, looks up its entry in the registry, and injects it as `context["repo_context"]`. Every phase prompt that references `{repo_context}` (notably `builder.md`) renders the JSON inline near the top of the prompt. The builder starts each run knowing the test command, the conventions, and the gotchas — no re-discovery tax on iteration 1.
+`flow_dispatcher.build_flow_context()` resolves the target repo's path, looks up its entry in the registry, and injects it as `context["repo_context"]`. Every phase prompt that references `{repo_context}` (notably `builder.md`) renders the JSON inline near the top of the prompt. The builder starts each run knowing the test command, the conventions, and the gotchas — no re-discovery tax on iteration 1.
 
 ```markdown
 ## Repo Context (from onboarding)
@@ -939,7 +1037,7 @@ Maestro has comprehensive test coverage across multiple layers: **~38 test files
 | **Pipeline engine** | `test_pipeline_runner.py`, `test_pipeline_context.py` | 28 tests — PipelineRunner execution, context variable management, artifact storage |
 | **Dashboard UI** | `test_pipeline_dashboard.py`, `test_pipeline_dashboard_extended.py`, `test_pipeline_monitor_panel.py`, `test_dashboard_app.py`, `test_session_browser.py` | 87 tests — dashboard rendering, progress bars, scorecards, session browser, monitor panel |
 | **Autonomous pipeline** | `test_autonomous_pipeline.py` | 7 tests — full autonomous workflow logic |
-| **Flow execution** | `test_run_single_flow.py`, `test_flow_engine_integration.py` | 25 tests — single flow on issue with retries + flow engine end-to-end |
+| **Flow execution** | `test_run_flow.py`, `test_flow_engine_logging.py` | 11 tests — narrow `run_flow` API (7) + close-phase logging (4) |
 | **Comment parsing** | `test_comment_parser.py` | 3 tests — phase output block extraction |
 | **GitHub client** | `test_github_client.py` | 14 tests — GitHub API wrapper operations |
 | **Context prefetch** | `test_context_prefetch.py` | 12 tests — repo context cache keyed on git SHA |

@@ -44,8 +44,8 @@ from evidence import (  # noqa: E402
 from flow_engine import (  # noqa: E402
     DEFAULT_EVIDENCE_POLICY,
     get_evidence_policy,
-    run_close_phase,
 )
+from phase_runner import run_close_phase  # noqa: E402  (issue #34: moved out of flow_engine)
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────
