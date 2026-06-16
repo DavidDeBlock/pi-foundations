@@ -1,7 +1,7 @@
 {
   "issue": 44,
   "created_at": "2026-06-16T13:03:31.951906+00:00",
-  "updated_at": "2026-06-16T13:33:54.377776+00:00",
+  "updated_at": "2026-06-16T13:34:40.776445+00:00",
   "repo_path": "/home/david/projects/pi-foundations/.pi/maestro",
   "git_sha": "e588dc5dbceee0dd8d12841f61fa46ad212923aa",
   "scout": {
@@ -12,8 +12,8 @@
   "builder": {
     "status": "error",
     "attempt": 1,
-    "details": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/44/builder-reviewer-builder-2026-06-16T13:33:51.jsonl/2026-06-16T13-33-52-312Z_019ed0a3-6f38-7be8-b195-42363698fa19.jsonl). The agent may not have emitted a verdict block.",
-    "session_log": "/home/david/projects/pi-foundations/.pi/maestro/sessions/44/builder-reviewer-builder-2026-06-16T13:33:51.jsonl/2026-06-16T13-33-52-312Z_019ed0a3-6f38-7be8-b195-42363698fa19.jsonl"
+    "details": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/44/builder-reviewer-builder-2026-06-16T13:34:38.jsonl/2026-06-16T13-34-38-707Z_019ed0a4-2473-7568-ac53-5c35dbeab4ad.jsonl). The agent may not have emitted a verdict block.",
+    "session_log": "/home/david/projects/pi-foundations/.pi/maestro/sessions/44/builder-reviewer-builder-2026-06-16T13:34:38.jsonl/2026-06-16T13-34-38-707Z_019ed0a4-2473-7568-ac53-5c35dbeab4ad.jsonl"
   },
   "reviewer": {},
   "test_runner": {},
@@ -1136,6 +1136,11 @@
       "timestamp": "2026-06-16T13:33:54.377770+00:00",
       "phase": "builder",
       "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/44/builder-reviewer-builder-2026-06-16T13:33:51.jsonl/2026-06-16T13-33-52-312Z_019ed0a3-6f38-7be8-b195-42363698fa19.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:34:40.776440+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/44/builder-reviewer-builder-2026-06-16T13:34:38.jsonl/2026-06-16T13-34-38-707Z_019ed0a4-2473-7568-ac53-5c35dbeab4ad.jsonl). The agent may not have emitted a verdict block."
     }
   ],
   "notes": []
