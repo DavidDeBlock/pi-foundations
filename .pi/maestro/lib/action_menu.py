@@ -799,6 +799,7 @@ def run_action_menu(
     available_flows: Optional[list[str]] = None,
     spawn_fn: Optional[Callable[[int, str], SpawnResult]] = None,
     console: Optional[Console] = None,
+    config_path: Optional[Path] = None,
 ) -> int:
     """Run the top-level action menu loop.
 
@@ -917,11 +918,12 @@ def run_action_menu(
                     default_flow=default_flow,
                     spawn_fn=spawn_fn,
                     repo_root=repo_root,
+                    config_path=config_path,
                 )
             elif choice == "show_config":
-                _show_config(io=io)
+                _show_config(io=io, config_path=config_path)
             elif choice == "edit_config":
-                _edit_config(io=io)
+                _edit_config(io=io, config_path=config_path)
             # Unknown keys are silently ignored — the operator
             # can correct on the next iteration. We do not log
             # them because InquirerPy's select prompt already

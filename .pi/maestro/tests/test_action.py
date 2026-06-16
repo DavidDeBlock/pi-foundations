@@ -76,10 +76,13 @@ from action_menu import (  # noqa: E402
     DEFAULT_FLOW_SENTINEL,
     MENU_OPTIONS,
     BatchSpec,
+    LabelRule,
     ScriptedMenuIO,
     SpawnResult,
     load_available_flows,
+    load_config,
     load_default_flow,
+    load_label_rules,
     resolve_flow,
     run_action_menu,
     run_batch,
@@ -123,6 +126,15 @@ class _FakeGithubClient:
     def fetch_issues_by_label(self, label: str) -> list[_FakeIssue]:
         self.fetched.append(label)
         return self._issues
+
+    def fetch_issues_by_labels(self, labels: list[str]) -> list[_FakeIssue]:
+        """Fetch issues matching ANY of the given labels."""
+        self.fetched.extend(labels)
+        # Return all issues that have at least one matching label
+        return [
+            issue for issue in self._issues
+            if any(lbl in issue.labels for lbl in labels)
+        ]
 
 
 def _make_spawn_log() -> list[tuple[int, str, bool, str | None]]:
@@ -857,6 +869,270 @@ def test_action_menu_eof_returns_zero():
     assert rc == 0
 
 
+# ─── Label rules loading tests (issue #39) ──────────────────────────────
+
+
+def test_load_label_rules_valid_config():
+    """A valid label_rules array returns LabelRule objects."""
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = Path(tmp) / "config.json"
+        cfg.write_text(
+            json.dumps({
+                "label_rules": [
+                    {"label": "ready-for-agent", "flow": "builder-reviewer"},
+                    {"label": "needs-audit", "flow": "prd-audit"},
+                ]
+            }),
+            encoding="utf-8",
+        )
+        rules = load_label_rules(cfg)
+    assert len(rules) == 2
+    assert rules[0] == LabelRule(label="ready-for-agent", flow="builder-reviewer")
+    assert rules[1] == LabelRule(label="needs-audit", flow="prd-audit")
+
+
+def test_load_label_rules_missing_file():
+    """A missing config file returns an empty list (no error)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        rules = load_label_rules(Path(tmp) / "missing.json")
+    assert rules == []
+
+
+def test_load_label_rules_invalid_json():
+    """A corrupt config file returns an empty list (no error)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = Path(tmp) / "config.json"
+        cfg.write_text("{ not valid json", encoding="utf-8")
+        rules = load_label_rules(cfg)
+    assert rules == []
+
+
+def test_load_label_rules_empty_array():
+    """An empty label_rules array returns an empty list."""
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = Path(tmp) / "config.json"
+        cfg.write_text(json.dumps({"label_rules": []}), encoding="utf-8")
+        rules = load_label_rules(cfg)
+    assert rules == []
+
+
+def test_load_label_rules_skips_malformed_entries():
+    """Entries missing 'label' or 'flow' are silently skipped."""
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = Path(tmp) / "config.json"
+        cfg.write_text(
+            json.dumps({
+                "label_rules": [
+                    {"label": "good", "flow": "builder-reviewer"},  # valid
+                    {"label": "no-flow"},                              # missing flow
+                    {"flow": "orphan-flow"},                           # missing label
+                    {"label": "", "flow": "empty-label"},             # empty label
+                    "not-a-dict",                                       # non-dict entry
+                ]
+            }),
+            encoding="utf-8",
+        )
+        rules = load_label_rules(cfg)
+    assert len(rules) == 1
+    assert rules[0] == LabelRule(label="good", flow="builder-reviewer")
+
+
+def test_load_config_valid():
+    """load_config returns the full config dict."""
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = Path(tmp) / "config.json"
+        expected = {"default_flow": "gap-check", "poll_interval": 60}
+        cfg.write_text(json.dumps(expected), encoding="utf-8")
+        result = load_config(cfg)
+    assert result == expected
+
+
+def test_load_config_missing_file():
+    """load_config returns empty dict for missing file."""
+    with tempfile.TemporaryDirectory() as tmp:
+        result = load_config(Path(tmp) / "missing.json")
+    assert result == {}
+
+
+# ─── Autonomous loop tests (issue #39) ──────────────────────────────────
+
+
+def test_autonomous_menu_option_visible():
+    """The top-level menu exposes the 'Run autonomous' option."""
+    keys = [k for k, _ in MENU_OPTIONS]
+    assert "autonomous" in keys
+
+
+def test_autonomous_empty_rules_shows_warning():
+    """When label_rules is empty/missing, a warning is shown and no loop runs.
+
+    AC: 'Empty label_rules array gives a clear error and returns to the menu'.
+    """
+    fake_gh = _FakeGithubClient([])
+    io = ScriptedMenuIO([
+        "autonomous",  # choose autonomous — gets warning, returns to menu
+        "quit",
+    ])
+
+    rc = run_action_menu(
+        io=io,
+        gh_client_factory=lambda: fake_gh,
+        default_flow="builder-reviewer",
+        available_flows=["builder-reviewer"],
+    )
+    assert rc == 0
+    # A warning about no label_rules should have been emitted
+    warnings = [m for m, k in io.messages if k == "warning"]
+    assert any("label_rules" in m.lower() for m in warnings), (
+        f"no label_rules warning in: {io.messages}"
+    )
+
+
+def test_autonomous_starts_matching_issues():
+    """Autonomous mode starts issues matching configured label rules.
+
+    AC: 'Issues matching a rule are started with the configured flow'.
+    """
+    import time as _time_module
+
+    # Create a temp config with label_rules
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg_path = Path(tmp) / "config.json"
+        cfg_path.write_text(
+            json.dumps({
+                "label_rules": [
+                    {"label": "ready-for-agent", "flow": "builder-reviewer"},
+                ],
+                "poll_interval": 1,  # short interval for test
+            }),
+            encoding="utf-8",
+        )
+
+        issues = [
+            _FakeIssue(50, "Ready issue", ["ready-for-agent"]),
+            _FakeIssue(51, "Unrelated issue", ["other-label"]),
+        ]
+        fake_gh = _FakeGithubClient(issues)
+
+        io = ScriptedMenuIO([
+            "autonomous",
+            "quit",
+        ])
+
+        log: list[tuple[int, str]] = []
+        def _fake_spawn(n: int, f: str) -> SpawnResult:
+            log.append((n, f))
+            return SpawnResult(issue_num=n, flow_name=f, started=True, error=None)
+
+        # Mock time.sleep to raise KeyboardInterrupt after first call,
+        # so the autonomous loop runs one iteration then exits cleanly.
+        sleep_calls = {"count": 0}
+        original_sleep = _time_module.sleep
+        def _mock_sleep(seconds: float) -> None:
+            sleep_calls["count"] += 1
+            if sleep_calls["count"] >= 2:
+                raise KeyboardInterrupt("test exit")
+        _time_module.sleep = _mock_sleep
+        try:
+            rc = run_action_menu(
+                io=io,
+                gh_client_factory=lambda: fake_gh,
+                default_flow="builder-reviewer",
+                available_flows=["builder-reviewer"],
+                spawn_fn=_fake_spawn,
+                config_path=cfg_path,
+            )
+        finally:
+            _time_module.sleep = original_sleep
+
+        assert rc == 0
+        # Only issue #50 matches the rule; #51 does not.
+        assert len(log) == 1, f"expected 1 spawn, got {len(log)}: {log}"
+        assert log[0] == (50, "builder-reviewer")
+        # Startup message should be present
+        infos = [m for m, k in io.messages if k == "info"]
+        assert any("Autonomous mode" in m for m in infos), (
+            f"no 'Autonomous mode' startup msg in: {io.messages}"
+        )
+
+
+def test_autonomous_keyboard_interrupt_stops_cleanly():
+    """Ctrl-C during the autonomous loop returns 0 cleanly.
+
+    AC: 'Ctrl-c stops the loop cleanly'.
+    """
+    class _InterruptOnSecondSelect(ScriptedMenuIO):
+        """Raises KeyboardInterrupt on the second select call."""
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._select_count = 0
+
+        def select(self, message, choices):
+            self._select_count += 1
+            if self._select_count >= 2:
+                raise KeyboardInterrupt
+            return super().select(message, choices)
+
+    io = _InterruptOnSecondSelect(["autonomous", "quit"])
+    rc = run_action_menu(
+        io=io,
+        gh_client_factory=lambda: _FakeGithubClient([]),
+        default_flow="builder-reviewer",
+        available_flows=["builder-reviewer"],
+    )
+    assert rc == 0
+
+
+# ─── Show config tests (issue #39) ──────────────────────────────────────
+
+
+def test_show_config_menu_option_visible():
+    """The top-level menu exposes the 'Show config' option."""
+    keys = [k for k, _ in MENU_OPTIONS]
+    assert "show_config" in keys
+
+
+def test_show_config_displays_config_and_returns_to_menu():
+    """Choosing 'Show config' displays the config and returns to menu.
+
+    AC: 'Show config displays the active label_rules array'.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg_path = Path(tmp) / "config.json"
+        cfg_path.write_text(
+            json.dumps({
+                "default_flow": "builder-reviewer",
+                "label_rules": [
+                    {"label": "ready", "flow": "builder-reviewer"},
+                ],
+            }),
+            encoding="utf-8",
+        )
+
+        io = ScriptedMenuIO([
+            "show_config",
+            "quit",
+        ])
+
+        rc = run_action_menu(
+            io=io,
+            gh_client_factory=lambda: _FakeGithubClient([]),
+            default_flow="builder-reviewer",
+            available_flows=["builder-reviewer"],
+        )
+        assert rc == 0
+        # After show_config, the menu loops back (quit is processed)
+
+
+# ─── Edit config tests (issue #39) ──────────────────────────────────────
+
+
+def test_edit_config_menu_option_visible():
+    """The top-level menu exposes the 'Edit config' option."""
+    keys = [k for k, _ in MENU_OPTIONS]
+    assert "edit_config" in keys
+
+
 # ─── CLI wiring tests ───────────────────────────────────────────────────
 
 
@@ -921,6 +1197,24 @@ tests = [
     test_action_menu_quit_returns_zero,
     test_action_menu_keyboard_interrupt_returns_zero,
     test_action_menu_eof_returns_zero,
+    # Label rules loading (issue #39)
+    test_load_label_rules_valid_config,
+    test_load_label_rules_missing_file,
+    test_load_label_rules_invalid_json,
+    test_load_label_rules_empty_array,
+    test_load_label_rules_skips_malformed_entries,
+    test_load_config_valid,
+    test_load_config_missing_file,
+    # Autonomous loop (issue #39)
+    test_autonomous_menu_option_visible,
+    test_autonomous_empty_rules_shows_warning,
+    test_autonomous_starts_matching_issues,
+    test_autonomous_keyboard_interrupt_stops_cleanly,
+    # Show config (issue #39)
+    test_show_config_menu_option_visible,
+    test_show_config_displays_config_and_returns_to_menu,
+    # Edit config (issue #39)
+    test_edit_config_menu_option_visible,
     # CLI wiring
     test_maestro_help_lists_menu_subcommand,
     test_maestro_menu_help_describes_command,

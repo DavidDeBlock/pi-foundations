@@ -1,24 +1,24 @@
 {
   "issue": 42,
   "created_at": "2026-06-16T10:32:39.773522+00:00",
-  "updated_at": "2026-06-16T13:41:59.703025+00:00",
+  "updated_at": "2026-06-16T14:10:03.325723+00:00",
   "repo_path": "/home/david/projects/pi-foundations",
-  "git_sha": "03bdf9b0c2db495651e9986128c9be5167a7d844",
+  "git_sha": "e76275b33163523c69ad1d2e60beb2df0e49053e",
   "scout": {
     "status": "error",
-    "details": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-scout-2026-06-16T13:38:18.jsonl/2026-06-16T13-38-19-044Z_019ed0a7-8124-7774-8db1-5d0eb483dfc9.jsonl). The agent may not have emitted a verdict block.",
+    "details": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-scout-2026-06-16T14:06:21.jsonl/2026-06-16T14-06-22-597Z_019ed0c1-3185-78e4-a1d2-e2f83275f389.jsonl). The agent may not have emitted a verdict block.",
     "raw_output": "{\"type\":\"response\",\"command\":\"prompt\",\"success\":true}\n{\"type\":\"agent_start\"}\n{\"type\":\"turn_start\"}\n{\"type\":\"message_start\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"# Scout — Read-Only Exploration\\n\\nYou are a read-only scout. You have **240 seconds** to explore the target repository and return structured findings that the implementer will read before writing code. The issue number is in `## Parent\\n\\n#35 — [PRD] Rich-based Issue Manager + Live Monitor — Pure-CLI Dashboard for Maestro\\n\\n## What to build\\n\\nAdd a **\\\"Launch monitor\\\"** option to the action menu. Selecting it spawns `maestro monitor` as a subprocess in the same terminal. The action menu waits for the monitor process to exit, then reappears. If the monitor fails to launch (e.g. command not found, broken install), a clear error is shown and the menu returns without losing state.\\n\\n## Acceptance criteria\\n\\n- [ ] \\\"Launch monitor\\\" option is visible in the action menu\\n- [ ] Selecting it spawns `maestro monitor` as a subprocess\\n- [ ] The action menu pauses (does not exit) while the monitor runs\\n- [ ] When the monitor exits, the menu reappears\\n- [ ] If `maestro monitor` cannot be launched, an error message is shown and the menu is preserved\\n- [ ] Keyboard interrupt (ctrl-c) in the action menu still works to return to the shell\\n\\n## Blocked by\\n\\n- #36 — Action menu: entrypoint + start single issue\\n- #37 — Monitor: entrypoint + empty state`.\\n\\n## Input\\n\\nYou receive from the orchestrator:\\n- **Issue title and body:** ## Parent\\n\\n#35 — [PRD] Rich-based Issue Manager + Live Monitor — Pure-CLI Dashboard for Maestro\\n\\n## What to build\\n\\nAdd a **\\\"Launch monitor\\\"** option to the action menu. Selecting it spawns `maestro monitor` as a subprocess in the same terminal. The action menu waits for the monitor process to exit, then reappears. If the monitor fails to launch (e.g. command not found, broken install), a clear error is shown and the menu returns without losing state.\\n\\n## Ac",
     "findings": {
       "raw": "{\"type\":\"response\",\"command\":\"prompt\",\"success\":true}\n{\"type\":\"agent_start\"}\n{\"type\":\"turn_start\"}\n{\"type\":\"message_start\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"# Scout — Read-Only Exploration\\n\\nYou are a read-only scout. You have **240 seconds** to explore the target repository and return structured findings that the implementer will read before writing code. The issue number is in `## Parent\\n\\n#35 — [PRD] Rich-based Issue Manager + Live Monitor — Pure-CLI Dashboard for Maestro\\n\\n## What to build\\n\\nAdd a **\\\"Launch monitor\\\"** option to the action menu. Selecting it spawns `maestro monitor` as a subprocess in the same terminal. The action menu waits for the monitor process to exit, then reappears. If the monitor fails to launch (e.g. command not found, broken install), a clear error is shown and the menu returns without losing state.\\n\\n## Acceptance criteria\\n\\n- [ ] \\\"Launch monitor\\\" option is visible in the action menu\\n- [ ] Selecting it spawns `maestro monitor` as a subprocess\\n- [ ] The action menu pauses (does not exit) while the monitor runs\\n- [ ] When the monitor exits, the menu reappears\\n- [ ] If `maestro monitor` cannot be launched, an error message is shown and the menu is preserved\\n- [ ] Keyboard interrupt (ctrl-c) in the action menu still works to return to the shell\\n\\n## Blocked by\\n\\n- #36 — Action menu: entrypoint + start single issue\\n- #37 — Monitor: entrypoint + empty state`.\\n\\n## Input\\n\\nYou receive from the orchestrator:\\n- **Issue title and body:** ## Parent\\n\\n#35 — [PRD] Rich-based Issue Manager + Live Monitor — Pure-CLI Dashboard for Maestro\\n\\n## What to build\\n\\nAdd a **\\\"Launch monitor\\\"** option to the action menu. Selecting it spawns `maestro monitor` as a subprocess in the same terminal. The action menu waits for the monitor process to exit, then reappears. If the monitor fails to launch (e.g. command not found, broken install), a clear error is shown and the menu returns without losing state.\\n\\n## Ac",
       "parse_error": "no PHASE_OUTPUT block found"
     },
-    "session_log": "/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-scout-2026-06-16T13:38:18.jsonl/2026-06-16T13-38-19-044Z_019ed0a7-8124-7774-8db1-5d0eb483dfc9.jsonl"
+    "session_log": "/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-scout-2026-06-16T14:06:21.jsonl/2026-06-16T14-06-22-597Z_019ed0c1-3185-78e4-a1d2-e2f83275f389.jsonl"
   },
   "builder": {
     "status": "error",
     "attempt": 1,
-    "details": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:41:56.jsonl/2026-06-16T13-41-57-493Z_019ed0aa-d675-7f12-90b0-ee10c4bee310.jsonl). The agent may not have emitted a verdict block.",
-    "session_log": "/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:41:56.jsonl/2026-06-16T13-41-57-493Z_019ed0aa-d675-7f12-90b0-ee10c4bee310.jsonl"
+    "details": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:10:00.jsonl/2026-06-16T14-10-00-891Z_019ed0c4-863b-7a33-9728-4bb878e57364.jsonl). The agent may not have emitted a verdict block.",
+    "session_log": "/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:10:00.jsonl/2026-06-16T14-10-00-891Z_019ed0c4-863b-7a33-9728-4bb878e57364.jsonl"
   },
   "reviewer": {},
   "test_runner": {},
@@ -341,6 +341,1006 @@
       "timestamp": "2026-06-16T13:41:59.703019+00:00",
       "phase": "builder",
       "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:41:56.jsonl/2026-06-16T13-41-57-493Z_019ed0aa-d675-7f12-90b0-ee10c4bee310.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:53:43.236217+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:53:40.jsonl/2026-06-16T13-53-41-016Z_019ed0b5-9298-70eb-ab46-bd2dbe187812.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:53:48.086161+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:53:45.jsonl/2026-06-16T13-53-45-897Z_019ed0b5-a5a9-73af-9ee6-744bd7d0532f.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:53:52.871688+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:53:49.jsonl/2026-06-16T13-53-50-523Z_019ed0b5-b7bb-72bb-ac0e-dc42105a1048.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:53:57.332970+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:53:54.jsonl/2026-06-16T13-53-55-173Z_019ed0b5-c9e5-712b-96f8-2ec04483ff84.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:54:01.774493+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:53:58.jsonl/2026-06-16T13-53-59-511Z_019ed0b5-dad7-78b8-8d95-0df5d51f7d82.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:54:06.070974+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:54:03.jsonl/2026-06-16T13-54-03-968Z_019ed0b5-ec40-77de-a1e9-1a65298a0dc8.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:54:10.422170+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:54:07.jsonl/2026-06-16T13-54-08-240Z_019ed0b5-fcf0-7c0c-b69f-cb7454c26adc.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:54:14.873408+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:54:11.jsonl/2026-06-16T13-54-12-604Z_019ed0b6-0dfc-7b73-a2ca-4a12c1cf9b85.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:54:19.313156+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:54:16.jsonl/2026-06-16T13-54-17-108Z_019ed0b6-1f94-76ee-9ac4-90ea871051bc.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:54:24.115079+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:54:20.jsonl/2026-06-16T13-54-21-516Z_019ed0b6-30cc-7b2d-92c9-a9a8633410e1.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:54:28.819996+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:54:25.jsonl/2026-06-16T13-54-26-280Z_019ed0b6-4368-75a4-9312-418590d32f94.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:54:33.197613+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:54:30.jsonl/2026-06-16T13-54-30-950Z_019ed0b6-55a6-7019-9ad5-abca599daaf8.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:54:37.668548+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:54:34.jsonl/2026-06-16T13-54-35-383Z_019ed0b6-66f7-79c9-878f-5df296572b16.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:54:41.979979+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:54:39.jsonl/2026-06-16T13-54-39-839Z_019ed0b6-785f-7460-a66d-0d5f0662b56c.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:54:46.362346+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:54:43.jsonl/2026-06-16T13-54-44-157Z_019ed0b6-893d-7d13-91de-35c958ac76a3.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:54:50.830868+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:54:47.jsonl/2026-06-16T13-54-48-635Z_019ed0b6-9abb-7de8-8838-d5165a69efc4.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:54:55.762917+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:54:52.jsonl/2026-06-16T13-54-52-963Z_019ed0b6-aba2-77b0-a787-f081ece308c4.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:00.329601+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:54:57.jsonl/2026-06-16T13-54-57-917Z_019ed0b6-befd-7b45-950f-648d974010ec.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:05.024567+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:01.jsonl/2026-06-16T13-55-02-492Z_019ed0b6-d0dc-702a-8889-f56184d70f17.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:09.660519+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:06.jsonl/2026-06-16T13-55-07-193Z_019ed0b6-e339-7601-b44f-9f3cbe3a7c83.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:14.541832+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:11.jsonl/2026-06-16T13-55-11-984Z_019ed0b6-f5f0-7e1e-bd1f-a77220460676.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:18.085779+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:14.jsonl/2026-06-16T13-55-15-608Z_019ed0b7-0418-7985-88c8-aa769bc65192.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:19.373685+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:16.jsonl/2026-06-16T13-55-17-158Z_019ed0b7-0a26-7045-b7cd-69f43443dca7.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:22.873269+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:19.jsonl/2026-06-16T13-55-20-629Z_019ed0b7-17b5-73c7-814f-51c221e51a75.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:24.105403+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:21.jsonl/2026-06-16T13-55-21-897Z_019ed0b7-1ca9-7947-95dd-e99740f1abdd.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:27.711504+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:24.jsonl/2026-06-16T13-55-25-506Z_019ed0b7-2ac1-7f7a-872b-c97d4f7d23a0.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:28.775245+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:25.jsonl/2026-06-16T13-55-26-400Z_019ed0b7-2e40-7364-b5d8-4b20c12ed9dc.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:32.469085+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:29.jsonl/2026-06-16T13-55-30-229Z_019ed0b7-3d35-7a5e-8a43-15df4bd1d288.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:33.353809+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:30.jsonl/2026-06-16T13-55-31-051Z_019ed0b7-406b-76e4-adee-040353fc1c06.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:37.074842+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:34.jsonl/2026-06-16T13-55-34-859Z_019ed0b7-4f4b-7c2f-8172-2b27dd39470b.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:38.036522+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:35.jsonl/2026-06-16T13-55-35-785Z_019ed0b7-52e9-78b0-9d95-d4c145193edc.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:41.521696+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:38.jsonl/2026-06-16T13-55-39-418Z_019ed0b7-611a-76d2-b8f3-469e1ebd9820.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:42.778549+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:39.jsonl/2026-06-16T13-55-40-451Z_019ed0b7-6523-7bce-8f5c-94a0d3e50a1b.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:46.286604+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:43.jsonl/2026-06-16T13-55-43-954Z_019ed0b7-72d2-7c00-9a05-b7557e94993d.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:47.651556+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:44.jsonl/2026-06-16T13-55-45-133Z_019ed0b7-776d-769b-9699-956d437a441d.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:51.001494+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:47.jsonl/2026-06-16T13-55-48-718Z_019ed0b7-856e-737a-9fde-077aab2c9d82.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:52.248437+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:49.jsonl/2026-06-16T13-55-49-994Z_019ed0b7-8a6a-780b-b71a-d8e1b3abc70c.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:56.074364+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:52.jsonl/2026-06-16T13-55-53-752Z_019ed0b7-9918-724f-a184-e657397314af.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:55:56.746622+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:53.jsonl/2026-06-16T13-55-54-611Z_019ed0b7-9c73-7789-b134-cb3f8cc4c18e.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:02.539628+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:58.jsonl/2026-06-16T13-56-00-309Z_019ed0b7-b2b5-747d-9718-d81a6a1e7530.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:02.683714+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:58.jsonl/2026-06-16T13-55-59-758Z_019ed0b7-b08e-74a6-8b59-f4ff0ffa7028.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:02.914568+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:55:59.jsonl/2026-06-16T13-56-00-548Z_019ed0b7-b3a4-7885-bfaf-6a52792b9664.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:08.518159+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:04.jsonl/2026-06-16T13-56-06-082Z_019ed0b7-c942-7b78-a23b-8f9dc40092a3.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:08.561425+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:04.jsonl/2026-06-16T13-56-06-082Z_019ed0b7-c942-7b78-a23b-8f9dc40092a3.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:08.688336+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:04.jsonl/2026-06-16T13-56-06-353Z_019ed0b7-ca50-7f71-a3ca-6d352795c1ab.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:14.330337+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:10.jsonl/2026-06-16T13-56-11-910Z_019ed0b7-e006-7958-99e5-2e391e0aa170.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:14.498823+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:10.jsonl/2026-06-16T13-56-12-181Z_019ed0b7-e115-7900-8d35-e58d0557627c.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:14.516703+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:10.jsonl/2026-06-16T13-56-12-126Z_019ed0b7-e0de-79cf-8675-ee569613acd1.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:19.880845+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:16.jsonl/2026-06-16T13-56-17-472Z_019ed0b7-f5c0-72f7-8d8e-ab42dc324320.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:20.135285+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:16.jsonl/2026-06-16T13-56-17-881Z_019ed0b7-f759-7e17-a5bf-60abbaf000b3.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:20.368258+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:17.jsonl/2026-06-16T13-56-18-167Z_019ed0b7-f877-77a6-88bd-37093bbc6450.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:25.720217+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:21.jsonl/2026-06-16T13-56-23-241Z_019ed0b8-0c49-7e4b-a97f-2e4798dda80b.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:25.990536+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:22.jsonl/2026-06-16T13-56-23-755Z_019ed0b8-0e4b-7c70-8de1-c413288059cc.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:26.321582+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:22.jsonl/2026-06-16T13-56-23-484Z_019ed0b8-0d3b-7b02-aa61-97d3cbdd753b.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:31.190395+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:27.jsonl/2026-06-16T13-56-28-688Z_019ed0b8-2190-7a6d-b0cc-6169b91179c9.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:32.099486+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:28.jsonl/2026-06-16T13-56-29-544Z_019ed0b8-24e8-77a2-8d6d-228eb8a75a6a.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:32.406596+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:28.jsonl/2026-06-16T13-56-30-042Z_019ed0b8-26d9-763f-927d-fce40987eabd.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:36.883937+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:32.jsonl/2026-06-16T13-56-34-049Z_019ed0b8-3681-7cc0-8fec-df393e161b3b.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:37.677748+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:34.jsonl/2026-06-16T13-56-35-009Z_019ed0b8-3a41-71d7-b2d4-9b9313422d55.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:38.396089+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:34.jsonl/2026-06-16T13-56-35-934Z_019ed0b8-3ddd-7e43-8a91-538a036c089f.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:42.303680+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:38.jsonl/2026-06-16T13-56-40-081Z_019ed0b8-4e11-792e-b847-bfa78f366c47.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:43.065548+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:39.jsonl/2026-06-16T13-56-40-845Z_019ed0b8-510d-738b-bfc0-1cb92d6ef2a3.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:43.712758+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:40.jsonl/2026-06-16T13-56-41-591Z_019ed0b8-53f7-705b-8e13-8f080f2920e5.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:47.152901+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:44.jsonl/2026-06-16T13-56-45-005Z_019ed0b8-614d-7638-96ae-e1e44c031c5d.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:48.646117+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:44.jsonl/2026-06-16T13-56-46-525Z_019ed0b8-673d-7905-9ebd-4efc7b9c79da.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:48.886332+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:45.jsonl/2026-06-16T13-56-46-818Z_019ed0b8-6862-7d65-8bdd-0f050bc8cc4d.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:52.373700+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:49.jsonl/2026-06-16T13-56-50-235Z_019ed0b8-75ba-7676-8034-2e36cbe80987.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:53.667317+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:50.jsonl/2026-06-16T13-56-51-602Z_019ed0b8-7b12-790f-93d7-eb0937e53abc.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:54.074530+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:50.jsonl/2026-06-16T13-56-52-019Z_019ed0b8-7cb3-7ee5-b63d-d0f8dfef80b5.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:57.945882+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:54.jsonl/2026-06-16T13-56-55-823Z_019ed0b8-8b8f-7542-af6d-8a9c2d1a97b0.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:59.309645+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:56.jsonl/2026-06-16T13-56-57-050Z_019ed0b8-905a-74aa-b138-0bf641c7d1a2.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:56:59.806308+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:56:56.jsonl/2026-06-16T13-56-57-612Z_019ed0b8-928a-74a6-adf5-0e18f273af0e.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:03.646840+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:00.jsonl/2026-06-16T13-57-01-657Z_019ed0b8-a259-7f89-bf90-062dea741ddd.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:04.287760+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:01.jsonl/2026-06-16T13-57-02-316Z_019ed0b8-a4ec-7fc9-93d4-68db42d8d699.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:05.237919+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:02.jsonl/2026-06-16T13-57-03-146Z_019ed0b8-a82a-7773-b81b-0d70eb7c0a49.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:09.338861+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:05.jsonl/2026-06-16T13-57-07-322Z_019ed0b8-b87a-7e1f-a1b8-dbe656b6dcbd.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:09.846389+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:06.jsonl/2026-06-16T13-57-07-777Z_019ed0b8-ba41-7ffc-bfc9-d845481c3132.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:10.611271+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:07.jsonl/2026-06-16T13-57-08-565Z_019ed0b8-bd55-7f42-bacd-0e8863eeafc9.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:14.725548+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:11.jsonl/2026-06-16T13-57-12-295Z_019ed0b8-cbe7-73dd-9f98-c463b76fab6e.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:15.899964+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:12.jsonl/2026-06-16T13-57-13-688Z_019ed0b8-d158-7bad-8fa9-8e277a932d7c.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:15.938429+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:12.jsonl/2026-06-16T13-57-13-899Z_019ed0b8-d22b-7948-814c-81a9491017e8.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:19.816798+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:16.jsonl/2026-06-16T13-57-17-663Z_019ed0b8-e0de-76dd-a00c-fbbc68b45b0b.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:21.920946+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:18.jsonl/2026-06-16T13-57-19-801Z_019ed0b8-e939-7890-9681-bdd4b699ff58.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:22.156354+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:18.jsonl/2026-06-16T13-57-19-801Z_019ed0b8-e939-7890-9681-bdd4b699ff58.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:24.720156+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:21.jsonl/2026-06-16T13-57-22-544Z_019ed0b8-f3ef-76f2-94e9-a13b3d1f0f61.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:28.311704+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:24.jsonl/2026-06-16T13-57-26-139Z_019ed0b9-01fb-7715-b5c4-8bfde6e0d2a7.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:28.575357+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:24.jsonl/2026-06-16T13-57-26-511Z_019ed0b9-036f-768c-8ad6-b23d2565185f.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:30.034887+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:27.jsonl/2026-06-16T13-57-27-918Z_019ed0b9-08ee-7edf-922d-cb76aaeeed0b.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:34.765749+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:30.jsonl/2026-06-16T13-57-32-511Z_019ed0b9-1adf-7b60-9220-fe125ea79b54.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:34.823635+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:31.jsonl/2026-06-16T13-57-32-640Z_019ed0b9-1b60-7612-9ba0-937847da8f13.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:35.545763+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:31.jsonl/2026-06-16T13-57-33-272Z_019ed0b9-1dd7-7a20-8bfb-a909f8530bad.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:41.077965+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:37.jsonl/2026-06-16T13-57-38-742Z_019ed0b9-3336-7a82-84cb-a535ca094924.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:41.485677+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:37.jsonl/2026-06-16T13-57-39-396Z_019ed0b9-35c4-7c82-bd8d-586be264c434.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:41.607606+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:37.jsonl/2026-06-16T13-57-39-245Z_019ed0b9-352d-7817-8e38-7827d24ed22a.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:46.799861+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:43.jsonl/2026-06-16T13-57-44-222Z_019ed0b9-489e-7764-8491-7dbe0c0bfec4.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:48.086113+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:44.jsonl/2026-06-16T13-57-45-683Z_019ed0b9-4e53-7ff9-8b68-93f6b66ec02b.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:48.475125+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:44.jsonl/2026-06-16T13-57-45-744Z_019ed0b9-4e90-7c3c-b634-c12e9eb5b635.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:52.361977+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:48.jsonl/2026-06-16T13-57-49-964Z_019ed0b9-5f0c-76e1-a430-d7053da0970d.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:53.497413+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:50.jsonl/2026-06-16T13-57-51-106Z_019ed0b9-6382-7797-b98d-067162af12e8.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:57.361395+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:54.jsonl/2026-06-16T13-57-55-091Z_019ed0b9-7313-7b42-b475-3d14d5380747.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:57:57.962249+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:55.jsonl/2026-06-16T13-57-55-852Z_019ed0b9-760c-721c-b37f-05f308339b96.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:02.140679+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:59.jsonl/2026-06-16T13-57-59-713Z_019ed0b9-8521-71ff-994f-4d66558dcab6.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:02.960374+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:57:59.jsonl/2026-06-16T13-58-00-558Z_019ed0b9-886e-7c1a-a68e-a2657236f7e9.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:07.083371+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:03.jsonl/2026-06-16T13-58-04-495Z_019ed0b9-97cf-7966-aa89-da546b621f01.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:08.150269+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:04.jsonl/2026-06-16T13-58-05-733Z_019ed0b9-9ca5-7dcb-900b-addda6cc4e8d.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:12.371657+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:08.jsonl/2026-06-16T13-58-09-385Z_019ed0b9-aae9-7cfe-abbd-d645ef1af2d5.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:12.989018+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:09.jsonl/2026-06-16T13-58-10-751Z_019ed0b9-b03f-7111-8770-a1eb04de411f.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:17.257836+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:14.jsonl/2026-06-16T13-58-14-789Z_019ed0b9-c004-727e-9766-90af4ec25342.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:17.815003+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:14.jsonl/2026-06-16T13-58-15-609Z_019ed0b9-c339-7673-a322-d12e03e73ab7.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:21.781007+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:18.jsonl/2026-06-16T13-58-19-517Z_019ed0b9-d27d-75b4-b88b-344dffd92c5f.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:23.024421+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:19.jsonl/2026-06-16T13-58-20-616Z_019ed0b9-d6c8-75bd-bd90-56b5d3dcbc5d.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:26.551024+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:23.jsonl/2026-06-16T13-58-24-186Z_019ed0b9-e4ba-7631-a0a7-a1453d2a013f.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:28.076403+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:24.jsonl/2026-06-16T13-58-25-673Z_019ed0b9-ea89-71ef-8e6f-3ed6f5b7f4e9.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:31.475166+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:28.jsonl/2026-06-16T13-58-29-039Z_019ed0b9-f7af-7fd4-a965-b8d027690c33.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:33.074952+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:29.jsonl/2026-06-16T13-58-30-780Z_019ed0b9-fe7c-769d-9d1b-3195ff22b7a9.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:36.600638+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:33.jsonl/2026-06-16T13-58-34-076Z_019ed0ba-0b5c-7195-aa15-2501cbc9e264.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:38.080707+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:35.jsonl/2026-06-16T13-58-35-786Z_019ed0ba-120a-7cfa-b253-4c3da67056fa.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:41.755662+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:38.jsonl/2026-06-16T13-58-38-895Z_019ed0ba-1e2f-71d8-bcd8-6c48495294c8.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:42.826771+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:39.jsonl/2026-06-16T13-58-40-464Z_019ed0ba-2450-7377-8210-4d9050c6a561.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:47.287000+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:43.jsonl/2026-06-16T13-58-44-695Z_019ed0ba-34d7-7ea8-aeec-31b44180349a.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:47.499776+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:44.jsonl/2026-06-16T13-58-45-293Z_019ed0ba-372c-7770-acd9-a7cd2a4a5098.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:52.140012+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:49.jsonl/2026-06-16T13-58-49-923Z_019ed0ba-4943-7c5e-bf54-a0a532d63d8a.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:52.518900+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:49.jsonl/2026-06-16T13-58-50-170Z_019ed0ba-4a3a-76fa-8796-a7370a97404f.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:57.082730+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:53.jsonl/2026-06-16T13-58-54-567Z_019ed0ba-5b67-7d93-89b6-dbc06b1c6cb9.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:58:57.334105+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:54.jsonl/2026-06-16T13-58-55-042Z_019ed0ba-5d42-7558-91a1-26f6cef96a6a.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:02.127596+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:58.jsonl/2026-06-16T13-58-59-663Z_019ed0ba-6f4f-736f-b430-246355bd8060.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:02.248122+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:58:59.jsonl/2026-06-16T13-58-59-933Z_019ed0ba-705d-75c5-8afd-df984d406c32.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:06.822821+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:03.jsonl/2026-06-16T13-59-04-685Z_019ed0ba-82ed-7b83-b26d-bebb33c07d2b.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:06.901361+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:03.jsonl/2026-06-16T13-59-04-516Z_019ed0ba-8244-7336-981d-2a9e7952c3b3.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:11.428012+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:08.jsonl/2026-06-16T13-59-09-300Z_019ed0ba-94f4-7a3b-adda-707dd4334ba0.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:11.746939+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:08.jsonl/2026-06-16T13-59-09-320Z_019ed0ba-9508-79f9-9468-d525fa54a218.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:16.237842+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:13.jsonl/2026-06-16T13-59-14-020Z_019ed0ba-a764-78cc-9f43-d9ad1c703632.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:16.618929+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:13.jsonl/2026-06-16T13-59-14-129Z_019ed0ba-a7d1-7da6-83df-b53f9ae7a18b.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:21.365249+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:17.jsonl/2026-06-16T13-59-18-613Z_019ed0ba-b955-7497-8012-fd60e1854350.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:21.441951+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:18.jsonl/2026-06-16T13-59-18-984Z_019ed0ba-bac8-7322-90fd-9ccbdea33824.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:26.144679+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:23.jsonl/2026-06-16T13-59-23-874Z_019ed0ba-cde2-7039-9f8a-6bcdfb879787.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:26.526398+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:23.jsonl/2026-06-16T13-59-23-874Z_019ed0ba-cde2-7039-9f8a-6bcdfb879787.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:31.076625+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:27.jsonl/2026-06-16T13-59-28-487Z_019ed0ba-dfe7-74fe-8a7a-4ba82072524b.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:31.257176+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:28.jsonl/2026-06-16T13-59-29-053Z_019ed0ba-e21d-7a7c-9e6d-1dc97a90caea.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:35.680354+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:32.jsonl/2026-06-16T13-59-33-455Z_019ed0ba-f34f-7fda-8a1a-47ecd531b0a6.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:35.782057+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:32.jsonl/2026-06-16T13-59-33-626Z_019ed0ba-f3fa-7edd-b961-e239e59e53e8.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:40.532052+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:37.jsonl/2026-06-16T13-59-38-268Z_019ed0bb-061c-7e67-911f-71171d56dfff.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:45.060447+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:42.jsonl/2026-06-16T13-59-42-703Z_019ed0bb-176f-7134-90d4-91ba8bcfbdfe.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:49.321911+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:46.jsonl/2026-06-16T13-59-47-251Z_019ed0bb-2933-7574-a61f-ecdeb23be3b8.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:53.834768+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:50.jsonl/2026-06-16T13-59-51-484Z_019ed0bb-39bc-7f01-97c2-d0f0c10d5818.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T13:59:58.227026+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:55.jsonl/2026-06-16T13-59-56-020Z_019ed0bb-4b74-7d1c-b44f-04f039e55cf2.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:00:03.060919+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T13:59:59.jsonl/2026-06-16T14-00-00-425Z_019ed0bb-5ca9-73af-bb5d-8babe1372b06.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:00:07.597107+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:00:04.jsonl/2026-06-16T14-00-05-256Z_019ed0bb-6f88-710b-84b4-d1ec8fec1442.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:00:12.061434+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:00:09.jsonl/2026-06-16T14-00-09-791Z_019ed0bb-813e-7f32-8737-f149d4670437.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:00:16.417978+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:00:13.jsonl/2026-06-16T14-00-14-235Z_019ed0bb-929b-7368-8106-4030b011be1a.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:06:28.485348+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:06:25.jsonl/2026-06-16T14-06-25-975Z_019ed0c1-3eb7-7ad3-adee-5b7b3389effe.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:06:33.468272+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:06:30.jsonl/2026-06-16T14-06-31-036Z_019ed0c1-527c-7231-9791-439a86f08822.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:06:38.358223+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:06:35.jsonl/2026-06-16T14-06-35-805Z_019ed0c1-651d-7e18-9a70-1ceaac845716.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:06:42.781541+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:06:39.jsonl/2026-06-16T14-06-40-564Z_019ed0c1-77b4-78ac-85fb-a3b3f9cc49df.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:06:47.261796+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:06:44.jsonl/2026-06-16T14-06-44-947Z_019ed0c1-88d3-70ce-8e41-e9679a181c56.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:06:51.603241+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:06:48.jsonl/2026-06-16T14-06-49-390Z_019ed0c1-9a2e-77d3-975d-57a25a485739.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:06:56.357057+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:06:53.jsonl/2026-06-16T14-06-53-803Z_019ed0c1-ab6b-7165-82d5-8486349bf4ba.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:07:00.790328+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:06:57.jsonl/2026-06-16T14-06-58-523Z_019ed0c1-bddb-73e5-895a-2c7465b2eac1.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:07:05.127280+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:07:02.jsonl/2026-06-16T14-07-02-944Z_019ed0c1-cf20-78ab-8eff-281bef89ea12.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:07:09.510368+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:07:06.jsonl/2026-06-16T14-07-07-292Z_019ed0c1-e01c-7354-8c98-226c0756df5e.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:07:13.967710+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:07:11.jsonl/2026-06-16T14-07-11-730Z_019ed0c1-f172-7745-a2e9-0ca3cf164743.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:07:18.460350+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:07:15.jsonl/2026-06-16T14-07-16-231Z_019ed0c2-0307-726f-8e73-5cb90d073aad.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:07:22.767120+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:07:19.jsonl/2026-06-16T14-07-20-796Z_019ed0c2-14dc-77c9-8f21-68257355423a.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:07:26.973645+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:07:24.jsonl/2026-06-16T14-07-25-013Z_019ed0c2-2555-720a-a519-d8d8ea8ecc4c.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:07:31.294747+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:07:28.jsonl/2026-06-16T14-07-29-329Z_019ed0c2-3631-7989-ac95-a8487f0b84ca.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:07:35.551277+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:07:32.jsonl/2026-06-16T14-07-33-434Z_019ed0c2-463a-7e28-a28c-944101077bb9.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:07:39.790228+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:07:37.jsonl/2026-06-16T14-07-37-756Z_019ed0c2-571c-7543-a9de-8b6866991446.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:07:44.027028+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:07:41.jsonl/2026-06-16T14-07-41-948Z_019ed0c2-677c-74f8-a38d-923473d9059d.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:07:48.229233+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:07:45.jsonl/2026-06-16T14-07-46-143Z_019ed0c2-77df-7388-baf1-a11953e8f8d4.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:07:52.365245+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:07:49.jsonl/2026-06-16T14-07-50-383Z_019ed0c2-886e-70bb-be33-4dcb9312bac3.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:07:56.484480+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:07:53.jsonl/2026-06-16T14-07-54-537Z_019ed0c2-98a9-7de7-849b-43cd95600287.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:08:00.633774+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:07:58.jsonl/2026-06-16T14-07-58-644Z_019ed0c2-a8b4-70c9-9dc2-17a62009390d.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:08:04.876378+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:08:02.jsonl/2026-06-16T14-08-02-892Z_019ed0c2-b94c-7650-9305-4b28827561b6.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:08:09.009469+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:08:06.jsonl/2026-06-16T14-08-07-057Z_019ed0c2-c991-7a0e-a55e-92daf3cc3ce9.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:08:13.068539+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:08:10.jsonl/2026-06-16T14-08-11-172Z_019ed0c2-d9a4-7c7b-bd48-6012ba918fd4.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:08:17.388024+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:08:14.jsonl/2026-06-16T14-08-15-247Z_019ed0c2-e98f-7232-a627-9a7af5ca5b1d.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:08:21.812309+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:08:18.jsonl/2026-06-16T14-08-19-521Z_019ed0c2-fa41-7a8e-aed7-e85b202d08a9.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:08:26.167693+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:08:23.jsonl/2026-06-16T14-08-24-026Z_019ed0c3-0bd9-7c37-8f9a-0c6d1ad0a96e.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:08:30.378484+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:08:27.jsonl/2026-06-16T14-08-28-410Z_019ed0c3-1cfa-7832-ace7-3b9e617e26ec.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:08:34.626772+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:08:31.jsonl/2026-06-16T14-08-32-670Z_019ed0c3-2d9e-7c2f-9ab8-f27951245345.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:08:38.937744+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:08:36.jsonl/2026-06-16T14-08-36-898Z_019ed0c3-3e22-72be-a832-1f50840d9406.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:08:43.183710+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:08:40.jsonl/2026-06-16T14-08-41-222Z_019ed0c3-4f06-7367-90d5-4bec8840dc8a.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:08:47.609297+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:08:44.jsonl/2026-06-16T14-08-45-468Z_019ed0c3-5f9c-75fb-a04c-b513e492314c.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:08:52.143980+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:08:49.jsonl/2026-06-16T14-08-49-902Z_019ed0c3-70ee-7174-b163-d50927161a7d.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:08:56.680133+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:08:53.jsonl/2026-06-16T14-08-54-450Z_019ed0c3-82b2-7550-88f1-ae87f6618d48.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:09:01.914647+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:08:58.jsonl/2026-06-16T14-08-58-806Z_019ed0c3-93b6-72be-8378-02832289929d.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:09:06.203911+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:09:03.jsonl/2026-06-16T14-09-04-233Z_019ed0c3-a8e9-767f-a87b-16934007d96b.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:09:10.603766+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:09:07.jsonl/2026-06-16T14-09-08-646Z_019ed0c3-ba26-7bd2-b104-97503783e165.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:09:15.028666+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:09:12.jsonl/2026-06-16T14-09-12-948Z_019ed0c3-caf4-7808-9c00-c30426c4cf64.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:09:19.224268+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:09:16.jsonl/2026-06-16T14-09-17-286Z_019ed0c3-dbe6-7355-ae4c-b84cf403d1e7.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:09:23.358571+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:09:20.jsonl/2026-06-16T14-09-21-422Z_019ed0c3-ec0e-7de9-b750-46f59a94b2f2.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:09:28.187133+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:09:25.jsonl/2026-06-16T14-09-26-119Z_019ed0c3-fe67-7808-92dc-77da6e525f65.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:09:32.457711+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:09:29.jsonl/2026-06-16T14-09-30-444Z_019ed0c4-0f4c-7615-9b85-83bd3a1665de.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:09:36.792810+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:09:33.jsonl/2026-06-16T14-09-34-695Z_019ed0c4-1fe7-7d59-abb3-0cafaa76f193.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:09:41.249510+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:09:38.jsonl/2026-06-16T14-09-39-026Z_019ed0c4-30d2-76f5-8a4c-b3a3569dd766.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:09:45.686710+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:09:42.jsonl/2026-06-16T14-09-43-477Z_019ed0c4-4235-7a69-8560-0a0e77cbcd25.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:09:50.089451+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:09:47.jsonl/2026-06-16T14-09-47-885Z_019ed0c4-536d-7379-afa0-0d5df22352f5.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:09:54.355399+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:09:51.jsonl/2026-06-16T14-09-52-243Z_019ed0c4-6473-7d41-8b30-91629b7d6a1e.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:09:58.771177+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:09:55.jsonl/2026-06-16T14-09-56-535Z_019ed0c4-7536-77dd-8f87-089a2f9d7caf.jsonl). The agent may not have emitted a verdict block."
+    },
+    {
+      "timestamp": "2026-06-16T14:10:03.325717+00:00",
+      "phase": "builder",
+      "error": "Verdict extraction failed: No verdict found in session log (/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-06-16T14:10:00.jsonl/2026-06-16T14-10-00-891Z_019ed0c4-863b-7a33-9728-4bb878e57364.jsonl). The agent may not have emitted a verdict block."
     }
   ],
   "notes": [
