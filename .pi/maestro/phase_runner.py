@@ -955,6 +955,7 @@ def run_phase(
         details: str,
         session_log_path: Optional[str],
         tokens: Optional[dict] = None,
+        output: Optional[str] = None,
     ) -> PhaseRun:
         duration_s = (datetime.now() - started).total_seconds()
         if tokens is None:
@@ -969,6 +970,7 @@ def run_phase(
             cache_read=tokens.get("cache_read"),
             session_log=Path(session_log_path) if session_log_path else None,
             details=(details or "")[:1000],
+            output=output,
         )
 
     if is_optional:
@@ -1022,10 +1024,12 @@ def run_phase(
 
         # Happy-path: package the result + tokens into a PhaseRun.
         details = (result.get("details", "") if isinstance(result, dict) else "")
+        raw_output = (result.get("output", "") if isinstance(result, dict) else "")
         phase_run = _build_phase_run(
             status=result.get("status", "error") if isinstance(result, dict) else "error",
             details=details,
             session_log_path=session_log,
+            output=raw_output or None,
         )
         return phase_run
 
@@ -1033,10 +1037,12 @@ def run_phase(
         phase_name, flow, context, state, log=_log,
     )
     details = (result.get("details", "") if isinstance(result, dict) else "")
+    raw_output = (result.get("output", "") if isinstance(result, dict) else "")
     phase_run = _build_phase_run(
         status=result.get("status", "error") if isinstance(result, dict) else "error",
         details=details,
         session_log_path=session_log,
+        output=raw_output or None,
     )
     return phase_run
 

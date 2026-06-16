@@ -39,6 +39,17 @@ The test surface (per the issue AC, ≥7 tests):
   7. ``test_run_flow_logger_records_event_sequence`` — the
      :class:`ListLogger` records the expected event sequence
      (``phase_end`` + ``tokens_recorded`` per attempt).
+
+Plus 4 close-phase variants (issue #45, moved from
+``test_flow_evidence.py``): the close phase is exercised in
+isolation via :func:`phase_runner.run_close_phase` to confirm the
+three policies (``block``, ``warn_but_proceed``, ``ignore``) plus
+the happy-path-when-evidence-present variant.
+
+  8. ``test_close_phase_succeeds_when_evidence_present``
+  9. ``test_close_phase_rejected_when_evidence_missing_with_block_policy``
+ 10. ``test_close_phase_warns_when_missing_with_warn_policy``
+ 11. ``test_close_phase_skips_check_with_ignore_policy``
 """
 
 import json
@@ -66,6 +77,13 @@ from flow_engine import (  # noqa: E402
     run_flow,
 )
 from flow_logger import ListLogger  # noqa: E402
+from phase_runner import run_close_phase  # noqa: E402  (issue #45: close-phase variants)
+from evidence import (  # noqa: E402  (issue #45: close-phase variants)
+    EvidenceStore,
+    EvidenceType,
+    make_reviewed_marker,
+    make_tested_marker,
+)
 
 
 # ─── Shared fixtures ────────────────────────────────────────────────────
@@ -577,6 +595,95 @@ def test_run_flow_logger_records_event_sequence():
     # The two phase_end events should reference the two phases.
     phases_referenced = {ev.phase for ev in phase_end_events}
     assert phases_referenced == {"phase_a", "phase_b"}
+
+
+# ─── Close-phase variants (moved from test_flow_evidence.py, issue #45) ──
+#
+# These tests exercise :func:`phase_runner.run_close_phase` directly
+# (not via ``run_flow``) to cover the three evidence policies in
+# isolation. The routing-to-diagnostic angle for the ``block`` policy
+# is already covered by ``test_run_flow_close_phase_block_policy_routes_to_diagnostic``.
+
+
+def _close_phase_flow(policy: str, required: list[str] | None = None) -> dict:
+    """Build a minimal close-phase flow config for the given policy."""
+    if required is None:
+        required = ["tested", "reviewed"]
+    return {
+        "name": "close-test",
+        "phases": {
+            "close": {"is_local": True, "command": "x", "timeout_seconds": 30},
+        },
+        "transitions": [],
+        "evidence_policy": {
+            "required_on_success": required,
+            "on_missing_evidence": policy,
+        },
+    }
+
+
+def test_close_phase_succeeds_when_evidence_present():
+    """When all required markers are present and verified, the close
+    phase returns ``success`` regardless of policy (block, warn, ignore).
+    """
+    d = Path(tempfile.mkdtemp(prefix="maestro_run_flow_close_"))
+    try:
+        # Pre-write the required evidence
+        store = EvidenceStore(42, evidence_dir=d)
+        store.write(make_tested_marker(42, "test", 0, 5, 5))
+        store.write(make_reviewed_marker(42, 0, 0, "human"))
+
+        for policy_name in ("block", "warn_but_proceed", "ignore"):
+            flow = _close_phase_flow(policy_name)
+            result = run_close_phase(flow, 42, evidence_dir=d)
+            assert result["status"] == "success", (
+                f"policy={policy_name}: expected success, got {result}"
+            )
+            assert "All evidence present" in result["details"]
+    finally:
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_close_phase_rejected_when_evidence_missing_with_block_policy():
+    """``block`` policy + missing evidence → ``reject`` (flow engine status)."""
+    d = Path(tempfile.mkdtemp(prefix="maestro_run_flow_close_"))
+    try:
+        # No evidence written
+        flow = _close_phase_flow("block")
+        result = run_close_phase(flow, 42, evidence_dir=d)
+        assert result["status"] == "reject"
+        assert "Missing evidence" in result["details"]
+        assert "block policy" in result["details"]
+    finally:
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_close_phase_warns_when_missing_with_warn_policy():
+    """``warn_but_proceed`` policy + missing evidence → ``success`` (with warning)."""
+    d = Path(tempfile.mkdtemp(prefix="maestro_run_flow_close_"))
+    try:
+        flow = _close_phase_flow("warn_but_proceed")
+        result = run_close_phase(flow, 42, evidence_dir=d)
+        assert result["status"] == "success"
+        assert "warned" in result["details"].lower() or "missing" in result["details"].lower()
+    finally:
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_close_phase_skips_check_with_ignore_policy():
+    """``ignore`` policy + missing evidence → ``success`` (no check)."""
+    d = Path(tempfile.mkdtemp(prefix="maestro_run_flow_close_"))
+    try:
+        flow = _close_phase_flow("ignore")
+        result = run_close_phase(flow, 42, evidence_dir=d)
+        assert result["status"] == "success"
+        assert "skipped" in result["details"].lower() or "ignore" in result["details"].lower()
+    finally:
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
 
 
 # ─── Test runner ────────────────────────────────────────────────────────

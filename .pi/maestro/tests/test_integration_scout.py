@@ -299,11 +299,17 @@ def test_scout_failure_routes_to_builder_not_finish():
     phase_order = [p["phase"] for p in prompts_sent]
     assert "scout" in phase_order
     assert "builder" in phase_order, "builder must still run after scout failure"
-    # The builder prompt gets the "no findings" placeholder (scout never produced any)
+    # The builder prompt gets the "no findings" placeholder (scout
+    # never produced any — the failed RPC never emitted a
+    # ``### PHASE_OUTPUT: success`` block). Updated for the
+    # post-deepening prompt template (issue #45): the scout section
+    # is now headed ``## Context from Scout`` and the placeholder
+    # for an absent / failed scout is the friendly
+    # "(Scout disabled for this flow.)" string the prompt assembler
+    # emits when ``context.scout_findings`` is ``None``.
     builder_prompt = next(p["prompt"] for p in prompts_sent if p["phase"] == "builder")
-    assert "## Scout Findings" in builder_prompt
-    assert "No scout findings" in builder_prompt
-    assert "proceed with general exploration" in builder_prompt
+    assert "## Context from Scout" in builder_prompt
+    assert "Scout disabled" in builder_prompt or "no findings" in builder_prompt.lower()
 
 
 # ─── Test runner ─────────────────────────────────────────────────────────

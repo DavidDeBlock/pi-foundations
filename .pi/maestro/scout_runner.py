@@ -163,7 +163,13 @@ def _run_scout_phase(
     )
     status = phase_run.status
     details = phase_run.details or ""
-    raw_output = phase_run.details or ""
+    # ``phase_run.output`` is the raw LLM output (preserved by issue
+    # #45's ``PhaseRun.output`` field). We need the verbatim text to
+    # parse the ``### PHASE_OUTPUT: success`` block — ``details`` is
+    # the synthesised "scout approved" / "scout rejected: ..." string
+    # produced by the verdict extractor, which does not contain the
+    # JSON payload the scout emitted.
+    raw_output = phase_run.output or phase_run.details or ""
     session_log_path = str(phase_run.session_log) if phase_run.session_log else None
 
     if status != "success":

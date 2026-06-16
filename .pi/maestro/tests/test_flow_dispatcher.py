@@ -233,10 +233,11 @@ def test_missing_parent_prd_yields_none(tmp_path: Path):
         parent_body=None,  # defensive — won't be called
     )
 
-    with patch.object(flow_engine, "load_flow", return_value=_make_synthetic_flow()), \
+    with patch.object(flow_engine, "load_flow", return_value=_make_synthetic_flow(scout_enabled=False)), \
          patch.object(flow_engine, "MemoryStore") as MockStore, \
          patch.object(flow_engine, "prefetch_context") as mock_pref, \
-         patch.object(flow_engine, "ProjectsRegistry") as MockReg:
+         patch.object(flow_engine, "ProjectsRegistry") as MockReg, \
+         patch.object(flow_dispatcher, "_run_scout_phase") as mock_scout:
         from context_prefetch import PrefetchedContext
         mock_pref.return_value = PrefetchedContext(git_sha="abc")
         def factory(issue_num, memory_dir=None):
@@ -246,6 +247,8 @@ def test_missing_parent_prd_yields_none(tmp_path: Path):
         reg_instance = MagicMock()
         reg_instance.get_by_path.return_value = None
         MockReg.return_value = reg_instance
+        # Scout disabled at the flow level — the helper must not be called.
+        mock_scout.return_value = None
 
         flow = _make_flow_value(scout_enabled=False)
         fc = flow_dispatcher.build_flow_context(flow, 42, gh)
@@ -253,6 +256,8 @@ def test_missing_parent_prd_yields_none(tmp_path: Path):
     assert fc.parent_prd is None
     # And the parent fetch was never attempted
     assert all(call.args[0] != 99 for call in gh.fetch_issue.call_args_list)
+    # Scout was not invoked (flow has scout_enabled=False)
+    mock_scout.assert_not_called()
 
 
 # ─── Test: corrupt working memory ───────────────────────────────────────
@@ -267,10 +272,11 @@ def test_corrupt_working_memory_yields_fresh_view(tmp_path: Path):
 
     gh = _make_github_mock(issue_body="No parent here.")
 
-    with patch.object(flow_engine, "load_flow", return_value=_make_synthetic_flow()), \
+    with patch.object(flow_engine, "load_flow", return_value=_make_synthetic_flow(scout_enabled=False)), \
          patch.object(flow_engine, "MemoryStore") as MockStore, \
          patch.object(flow_engine, "prefetch_context") as mock_pref, \
-         patch.object(flow_engine, "ProjectsRegistry") as MockReg:
+         patch.object(flow_engine, "ProjectsRegistry") as MockReg, \
+         patch.object(flow_dispatcher, "_run_scout_phase") as mock_scout:
         from context_prefetch import PrefetchedContext
         mock_pref.return_value = PrefetchedContext(git_sha="abc")
         # Use the REAL MemoryStore (which backs up the corrupt file)
@@ -280,6 +286,8 @@ def test_corrupt_working_memory_yields_fresh_view(tmp_path: Path):
         reg_instance = MagicMock()
         reg_instance.get_by_path.return_value = None
         MockReg.return_value = reg_instance
+        # Scout disabled at the flow level
+        mock_scout.return_value = None
 
         flow = _make_flow_value(scout_enabled=False)
         fc = flow_dispatcher.build_flow_context(flow, 42, gh)
@@ -305,10 +313,11 @@ def test_missing_projects_registry_yields_none_repo_context(tmp_path: Path):
     # No registry file in tmp_path → ProjectsRegistry.get_by_path returns None
     gh = _make_github_mock(issue_body="No parent here.")
 
-    with patch.object(flow_engine, "load_flow", return_value=_make_synthetic_flow()), \
+    with patch.object(flow_engine, "load_flow", return_value=_make_synthetic_flow(scout_enabled=False)), \
          patch.object(flow_engine, "MemoryStore") as MockStore, \
          patch.object(flow_engine, "prefetch_context") as mock_pref, \
-         patch.object(flow_engine, "ProjectsRegistry") as MockReg:
+         patch.object(flow_engine, "ProjectsRegistry") as MockReg, \
+         patch.object(flow_dispatcher, "_run_scout_phase") as mock_scout:
         from context_prefetch import PrefetchedContext
         mock_pref.return_value = PrefetchedContext(git_sha="abc")
         def factory(issue_num, memory_dir=None):
@@ -317,6 +326,8 @@ def test_missing_projects_registry_yields_none_repo_context(tmp_path: Path):
         reg_instance = MagicMock()
         reg_instance.get_by_path.return_value = None  # no entry for this repo
         MockReg.return_value = reg_instance
+        # Scout disabled at the flow level
+        mock_scout.return_value = None
 
         flow = _make_flow_value(scout_enabled=False)
         fc = flow_dispatcher.build_flow_context(flow, 42, gh)
@@ -426,10 +437,11 @@ def test_issue_metadata_failure_does_not_raise(tmp_path: Path):
     """When gh.fetch_issue raises, the dispatcher still returns a valid FlowContext."""
     gh = _make_github_mock(fetch_fails=True)
 
-    with patch.object(flow_engine, "load_flow", return_value=_make_synthetic_flow()), \
+    with patch.object(flow_engine, "load_flow", return_value=_make_synthetic_flow(scout_enabled=False)), \
          patch.object(flow_engine, "MemoryStore") as MockStore, \
          patch.object(flow_engine, "prefetch_context") as mock_pref, \
-         patch.object(flow_engine, "ProjectsRegistry") as MockReg:
+         patch.object(flow_engine, "ProjectsRegistry") as MockReg, \
+         patch.object(flow_dispatcher, "_run_scout_phase") as mock_scout:
         from context_prefetch import PrefetchedContext
         mock_pref.return_value = PrefetchedContext(git_sha="abc")
         def factory(issue_num, memory_dir=None):
@@ -438,6 +450,8 @@ def test_issue_metadata_failure_does_not_raise(tmp_path: Path):
         reg_instance = MagicMock()
         reg_instance.get_by_path.return_value = None
         MockReg.return_value = reg_instance
+        # Scout disabled at the flow level
+        mock_scout.return_value = None
 
         flow = _make_flow_value(scout_enabled=False)
         # No exception
@@ -458,10 +472,11 @@ def test_flow_context_returned_is_frozen(tmp_path: Path):
     """The FlowContext returned by build_flow_context is frozen (immutable)."""
     gh = _make_github_mock()
 
-    with patch.object(flow_engine, "load_flow", return_value=_make_synthetic_flow()), \
+    with patch.object(flow_engine, "load_flow", return_value=_make_synthetic_flow(scout_enabled=False)), \
          patch.object(flow_engine, "MemoryStore") as MockStore, \
          patch.object(flow_engine, "prefetch_context") as mock_pref, \
-         patch.object(flow_engine, "ProjectsRegistry") as MockReg:
+         patch.object(flow_engine, "ProjectsRegistry") as MockReg, \
+         patch.object(flow_dispatcher, "_run_scout_phase") as mock_scout:
         from context_prefetch import PrefetchedContext
         mock_pref.return_value = PrefetchedContext(git_sha="abc")
         def factory(issue_num, memory_dir=None):
@@ -470,6 +485,8 @@ def test_flow_context_returned_is_frozen(tmp_path: Path):
         reg_instance = MagicMock()
         reg_instance.get_by_path.return_value = None
         MockReg.return_value = reg_instance
+        # Scout disabled at the flow level
+        mock_scout.return_value = None
 
         flow = _make_flow_value(scout_enabled=False)
         fc = flow_dispatcher.build_flow_context(flow, 42, gh)

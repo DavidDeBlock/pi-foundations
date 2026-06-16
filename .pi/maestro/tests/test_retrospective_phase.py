@@ -25,7 +25,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 # Add lib + maestro dir to path so the imports work.
 MAESTRO_DIR = Path(__file__).parent.parent.resolve()
@@ -33,6 +33,9 @@ sys.path.insert(0, str(MAESTRO_DIR))
 sys.path.insert(0, str(MAESTRO_DIR / "lib"))
 
 from flow_engine import (  # noqa: E402
+    Flow,
+    FlowContext,
+    PhaseState,
     get_next_step,
 )
 from phase_runner import (  # noqa: E402
@@ -49,6 +52,9 @@ from learnings import (  # noqa: E402
     format_learning_entry,
     parse_retrospective_output,
 )
+from flow_logger import ListLogger  # noqa: E402
+from terminal import Terminal  # noqa: E402
+from working_memory import WorkingMemory  # noqa: E402
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────
@@ -163,20 +169,51 @@ def test_retrospective_failure_routes_to_finish_not_diagnostic():
     must convert it to a synthetic success result (the phase is
     non-blocking) — the flow can then transition to ``finish`` normally.
     """
-    flow = _flow_with_retro()
-    context: dict = {"phase_outputs": {}}
+    flow_config = _flow_with_retro()
+    # Build the typed inputs the post-deepening ``run_phase`` signature
+    # requires (issue #31). The retrospective phase is ``is_optional``,
+    # so its non-blocking handler converts raised exceptions to a
+    # synthetic success.
+    flow = Flow(
+        name=flow_config["name"],
+        description="",
+        scout_enabled=False,
+        evidence_policy=dict(flow_config.get("evidence_policy") or {}),
+        phases=dict(flow_config.get("phases") or {}),
+        transitions=tuple(flow_config.get("transitions") or ()),
+    )
+    from context_prefetch import PrefetchedContext
+    working_memory = WorkingMemory(issue=42, created_at="2026-01-01T00:00:00Z")
+    context = FlowContext(
+        flow=flow,
+        issue_num=42,
+        issue_title="",
+        issue_body="",
+        comments_count=0,
+        created_at="2026-01-01",
+        parent_prd=None,
+        working_memory=working_memory,
+        prefetched=PrefetchedContext(git_sha="abc"),
+        repo_context=None,
+        scout_findings=None,
+    )
+    state = PhaseState(current_phase="retrospective")
+    term = Terminal(verbose=False)
+    gh = MagicMock()  # GithubClient is unused inside run_phase
+    log = ListLogger()
 
     # Patch the inner runner to always raise. run_phase's wrapper
     # should catch and convert to success.
     # Issue #44: _run_phase_inner moved from flow_engine to phase_runner
     # during the deepening extraction — patch the new owner.
     with patch("phase_runner._run_phase_inner", side_effect=RuntimeError("boom")):
-        result, _ = run_phase("retrospective", flow, 42, context)
+        phase_run = run_phase("retrospective", flow, context, state, term, gh, log)
 
-    # The non-blocking handler converts the exception to a success
-    assert result["status"] == "success"
-    assert "non-blocking" in result["details"].lower() or "non-fatal" in result["details"].lower()
-    assert "RuntimeError" in result["details"] or "boom" in result["details"]
+    # The non-blocking handler converts the exception to a synthetic
+    # success — the :class:`PhaseRun` carries status + details.
+    assert phase_run.status == "success"
+    assert "non-blocking" in phase_run.details.lower() or "non-fatal" in phase_run.details.lower()
+    assert "RuntimeError" in phase_run.details or "boom" in phase_run.details
 
 
 def test_retrospective_writes_to_learnings_file():

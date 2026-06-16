@@ -75,7 +75,7 @@ from typing import Optional
 # Add lib to path (matches the convention used across the repo)
 sys.path.insert(0, str(Path(__file__).parent / "lib"))
 
-from context_prefetch import PrefetchedContext  # noqa: E402
+from context_prefetch import PrefetchedContext, prefetch_context  # noqa: E402
 from evidence import EvidenceStore, EvidenceType  # noqa: E402
 import flow_logger as _flow_logger  # noqa: E402
 from flow_logger import FlowEvent, FlowLogger  # noqa: E402
@@ -312,6 +312,13 @@ class PhaseRun:
 
     A single phase can run multiple times (retries). Per-attempt is
     the source of truth; rolled-up views are derived by callers.
+
+    ``output`` is the raw LLM output (verbatim text from the RPC
+    layer, before verdict extraction). Some phase-specific helpers
+    (e.g. :func:`scout_runner._run_scout_phase`) need the raw output
+    to parse structured blocks like ``### PHASE_OUTPUT: success``.
+    Most callers can ignore it — the structured verdict is
+    available via ``result`` / ``status`` / ``details`` already.
     """
     name: str
     attempt: int
@@ -322,6 +329,7 @@ class PhaseRun:
     cache_read: int | None
     session_log: "Path | None"
     details: str
+    output: Optional[str] = None
 
 
 @dataclass(frozen=True)

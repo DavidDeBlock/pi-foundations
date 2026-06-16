@@ -366,6 +366,41 @@ def test_check_with_empty_required_list():
         _cleanup(d)
 
 
+def test_evidence_survives_across_flow_restart():
+    """Evidence written in one flow run should be readable by the next.
+
+    Property of the evidence store (not the flow engine). A fresh
+    ``EvidenceStore`` opened against the same directory should see
+    the previously-written markers; tampering on disk between
+    "restarts" should be detected as unverified.
+    """
+    d = _make_dir()
+    try:
+        # First "flow run" writes evidence
+        store1 = EvidenceStore(123, evidence_dir=d)
+        store1.write(make_tested_marker(123, "x", 0, 10, 10))
+        store1.write(make_reviewed_marker(123, 0, 1, "claude-sonnet"))
+
+        # Simulate flow restart by creating a fresh EvidenceStore
+        store2 = EvidenceStore(123, evidence_dir=d)
+        ok, missing = store2.check([EvidenceType.TESTED, EvidenceType.REVIEWED])
+        assert ok is True
+        assert missing == []
+
+        # Tamper on disk → close phase sees unverified
+        path = store2.path_for(EvidenceType.TESTED)
+        data = json.loads(path.read_text())
+        data["data"]["tests_passed"] = 5  # lie
+        path.write_text(json.dumps(data, indent=2))
+
+        store3 = EvidenceStore(123, evidence_dir=d)
+        ok, missing = store3.check([EvidenceType.TESTED, EvidenceType.REVIEWED])
+        assert ok is False
+        assert EvidenceType.TESTED in missing  # tampered → treated as missing
+    finally:
+        _cleanup(d)
+
+
 def test_evidence_type_enum_values():
     """The enum values must be the strings the CLI accepts."""
     assert EvidenceType.TESTED.value == "tested"

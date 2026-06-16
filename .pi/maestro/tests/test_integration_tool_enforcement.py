@@ -20,12 +20,21 @@ The three control cases:
   3. **Builder** runs with the full tool set. The contract guarantees the spawn
      options will allow every common tool.
 
+Updated for the post-deepening ``run_phase`` signature
+(issue #31): now takes typed inputs (``Flow``, ``FlowContext``,
+``PhaseState``, ``Terminal``, ``GithubClient``, ``FlowLogger``)
+instead of the legacy ``(phase_name, flow_config, issue_num,
+context)`` tuple. The contract under test is unchanged — only the
+plumbing is.
+
 Run with: python3 tests/test_integration_tool_enforcement.py
+       or python3 -m pytest tests/test_integration_tool_enforcement.py
 """
 
 import sys
+import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 # Add lib + parent dir to path
 TEST_DIR = Path(__file__).parent
@@ -36,23 +45,66 @@ sys.path.insert(0, str(MAESTRO_DIR))
 import flow_engine  # noqa: E402
 import phase_runner  # noqa: E402  # Issue #44: run_phase moved to phase_runner
 import prompt_assembler  # noqa: E402  # Issue #44: load_prompt's new home
+from flow_engine import Flow, FlowContext, PhaseState  # noqa: E402
+from flow_logger import ListLogger  # noqa: E402
 from prompt_loader import LoadedPrompt  # noqa: E402
+from terminal import Terminal  # noqa: E402
+from working_memory import WorkingMemory  # noqa: E402
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────
 
-def _run_phase_and_capture_tools(phase_name: str, expected_tools: list[str]) -> dict:
-    """Run flow_engine.run_phase with the RPC layer mocked.
 
-    Returns the kwargs that were passed to ``run_rpc_with_session_log`` so
-    we can inspect the ``tools`` field directly.
+def _make_typed_inputs(phase_name: str, expected_tools: list[str]) -> tuple:
+    """Build the typed inputs the new ``run_phase`` signature requires.
+
+    Returns ``(flow, context, state, term, gh, log)`` — the 6
+    post-phase-name arguments to ``run_phase``.
     """
     phase_cfg = {
         "skill": f"/skill:{phase_name}",
         "retries": 1,
         "timeout_seconds": 60,
     }
-    flow_config = {"name": "test-flow", "phases": {phase_name: phase_cfg}}
+    flow = Flow(
+        name="test-flow",
+        description="",
+        scout_enabled=False,
+        evidence_policy={},
+        phases={phase_name: phase_cfg},
+        transitions=(),
+    )
+    working_memory = WorkingMemory(
+        issue=1, created_at="2026-01-01T00:00:00Z",
+    )
+    from context_prefetch import PrefetchedContext
+    context = FlowContext(
+        flow=flow,
+        issue_num=1,
+        issue_title="",
+        issue_body="",
+        comments_count=0,
+        created_at="2026-01-01",
+        parent_prd=None,
+        working_memory=working_memory,
+        prefetched=PrefetchedContext(git_sha="abc"),
+        repo_context=None,
+        scout_findings=None,
+    )
+    state = PhaseState(current_phase=phase_name)
+    term = Terminal(verbose=False)
+    gh = MagicMock()  # GithubClient is unused inside run_phase
+    log = ListLogger()
+    return flow, context, state, term, gh, log
+
+
+def _run_phase_and_capture_tools(phase_name: str, expected_tools: list[str]) -> dict:
+    """Run ``phase_runner.run_phase`` with the RPC layer mocked.
+
+    Returns the kwargs that were passed to ``run_rpc_with_session_log`` so
+    we can inspect the ``tools`` field directly.
+    """
+    flow, context, state, term, gh, log = _make_typed_inputs(phase_name, expected_tools)
 
     mock_loaded = LoadedPrompt(
         name=phase_name,
@@ -74,9 +126,8 @@ def _run_phase_and_capture_tools(phase_name: str, expected_tools: list[str]) -> 
             "session_log": None,
             "result": {"status": "approved", "issues": [], "verdict": ""},
         }
-        # Issue #44: run_phase moved from flow_engine to phase_runner
-        # during the extraction — call the new owner.
-        phase_runner.run_phase(phase_name, flow_config, 1, {"prompt": "test"})
+        # Issue #31: ``run_phase`` takes 7 args now (post-deepening).
+        phase_runner.run_phase(phase_name, flow, context, state, term, gh, log)
 
     mock_rpc.assert_called_once()
     _, kwargs = mock_rpc.call_args
