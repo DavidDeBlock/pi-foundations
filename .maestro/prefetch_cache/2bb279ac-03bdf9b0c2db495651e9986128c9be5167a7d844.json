@@ -1,0 +1,44 @@
+{
+  "git_sha": "03bdf9b0c2db495651e9986128c9be5167a7d844",
+  "test_command": "vitest run --config vitest.config.ts",
+  "build_command": "",
+  "lint_command": "tsc --noEmit --project tsconfig.scripts.json",
+  "package_manager": "npm/pnpm/bun",
+  "dependencies": {
+    "@playwright/test": "^1.60.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.15.3",
+    "ts-morph": "^25.0.1",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.1"
+  },
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts",
+    "lint": "tsc --noEmit --project tsconfig.scripts.json",
+    "script": "tsx scripts/"
+  },
+  "test_files": [
+    "scripts/scanner.test.ts",
+    "scripts/ts-parser.test.ts",
+    "scripts/format.test.ts",
+    "scripts/verify-structure.test.ts",
+    "scripts/parse-doc-file.test.ts",
+    "scripts/index.test.ts",
+    "scripts/cli-runner.test.ts",
+    "scripts/docs-foundation.test.ts",
+    "scripts/scan-inventory.test.ts",
+    "scripts/synthesize/domain-model.test.ts",
+    "scripts/extract/exports.test.ts",
+    "scripts/tree/api-routes.test.ts",
+    "projects/ZaakOs/node_modules/.pnpm/zod@3.25.76/node_modules/zod/src/v3/tests/firstparty.test.ts",
+    "projects/ZaakOs/node_modules/.pnpm/zod@3.25.76/node_modules/zod/src/v3/tests/object.test.ts",
+    "projects/ZaakOs/node_modules/.pnpm/zod@3.25.76/node_modules/zod/src/v3/tests/base.test.ts",
+    "projects/ZaakOs/node_modules/.pnpm/zod@3.25.76/node_modules/zod/src/v3/tests/string.test.ts",
+    "projects/ZaakOs/node_modules/.pnpm/zod@3.25.76/node_modules/zod/src/v3/tests/preprocess.test.ts",
+    "projects/ZaakOs/node_modules/.pnpm/zod@3.25.76/node_modules/zod/src/v3/tests/partials.test.ts",
+    "projects/ZaakOs/node_modules/.pnpm/zod@3.25.76/node_modules/zod/src/v3/tests/transformer.test.ts",
+    "projects/ZaakOs/node_modules/.pnpm/zod@3.25.76/node_modules/zod/src/v3/tests/recursive.test.ts"
+  ],
+  "convention_hints": []
+}

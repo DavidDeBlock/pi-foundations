@@ -62,8 +62,10 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional, Protocol, runtime_checkable
@@ -101,8 +103,14 @@ DEFAULT_FLOWS_DIR: Path = Path(__file__).resolve().parent.parent / "flows"
 MENU_OPTIONS: list[tuple[str, str]] = [
     ("single", "Start single issue"),
     ("batch", "Start batch"),
+    ("autonomous", "Run autonomous"),
+    ("show_config", "Show config"),
+    ("edit_config", "Edit config"),
     ("quit", "Quit"),
 ]
+
+#: Default polling interval in seconds for the autonomous loop.
+DEFAULT_POLL_INTERVAL: int = 30
 
 
 # ─── Value objects ───────────────────────────────────────────────────────
@@ -126,6 +134,76 @@ class BatchSpec:
     issue_num: int
     issue_title: str
     flow_name: str
+
+
+@dataclass(frozen=True)
+class LabelRule:
+    """A single label-to-flow mapping from ``label_rules`` in config."""
+
+    label: str
+    flow: str
+
+
+def load_label_rules(config_path: Optional[Path] = None) -> list[LabelRule]:
+    """Read the ``label_rules`` array from ``.maestro/config.json``.
+
+    Each entry must be a dict with ``"label"`` (str) and ``"flow"`` (str).
+    Entries missing either key are silently skipped; malformed entries
+    produce a warning on stderr.
+
+    Returns:
+        A list of :class:`LabelRule`. Empty if the config is missing,
+        has no ``label_rules`` key, or the array is empty/invalid.
+    """
+    if config_path is None:
+        config_path = Path(__file__).resolve().parent.parent / "config.json"
+    if not config_path.exists():
+        return []
+    try:
+        with open(config_path) as f:
+            cfg = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    raw = cfg.get("label_rules") if isinstance(cfg, dict) else None
+    if not isinstance(raw, list):
+        return []
+
+    rules: list[LabelRule] = []
+    for entry in raw:
+        if isinstance(entry, dict):
+            label = entry.get("label")
+            flow = entry.get("flow")
+            if isinstance(label, str) and label.strip() and isinstance(flow, str) and flow.strip():
+                rules.append(LabelRule(label=label.strip(), flow=flow.strip()))
+            else:
+                print(
+                    f"[maestro] WARNING: skipping malformed label_rules entry: {entry}",
+                    file=sys.stderr,
+                )
+        else:
+            print(
+                f"[maestro] WARNING: skipping non-dict label_rules entry: {entry}",
+                file=sys.stderr,
+            )
+    return rules
+
+
+def load_config(config_path: Optional[Path] = None) -> dict[str, Any]:
+    """Load the full ``config.json`` as a plain dict.
+
+    Returns an empty dict if the file is missing or malformed.
+    """
+    if config_path is None:
+        config_path = Path(__file__).resolve().parent.parent / "config.json"
+    if not config_path.exists():
+        return {}
+    try:
+        with open(config_path) as f:
+            cfg = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return cfg if isinstance(cfg, dict) else {}
 
 
 @dataclass(frozen=True)
@@ -832,6 +910,18 @@ def run_action_menu(
                     repo_root=repo_root,
                     spawn_fn=spawn_fn,
                 )
+            elif choice == "autonomous":
+                _run_autonomous(
+                    io=io,
+                    gh_client_factory=gh_client_factory,
+                    default_flow=default_flow,
+                    spawn_fn=spawn_fn,
+                    repo_root=repo_root,
+                )
+            elif choice == "show_config":
+                _show_config(io=io)
+            elif choice == "edit_config":
+                _edit_config(io=io)
             # Unknown keys are silently ignored — the operator
             # can correct on the next iteration. We do not log
             # them because InquirerPy's select prompt already
@@ -1037,3 +1127,237 @@ def _run_batch_flow(
             err = f"  #{r.issue_num} ({r.flow_name}): {r.error}"
             console.print(f"  [red]✗[/red]{err}")
             io.notify(err, kind="error")
+
+
+# ─── Autonomous loop (label-driven polling) ──────────────────────────────
+
+
+def _run_autonomous(
+    *,
+    io: MenuIO,
+    gh_client_factory: Callable[[], GithubClient],
+    default_flow: str,
+    spawn_fn: Optional[Callable[[int, str], SpawnResult]] = None,
+    repo_root: Optional[Path] = None,
+    config_path: Optional[Path] = None,
+) -> None:
+    """Handle the \"Run autonomous\" sub-flow.
+
+    Loads ``label_rules`` from config. If empty, shows an error and
+    returns to the menu. Otherwise enters a polling loop that fetches
+    open issues matching any rule's label and starts each match with
+    its configured flow. Already-started issues (tracked by issue #)
+    are skipped. The loop runs until interrupted with Ctrl-C.
+    """
+    rules = load_label_rules(config_path=config_path)
+    if not rules:
+        io.notify(
+            "No label_rules configured in config.json. "
+            "Add a 'label_rules' array to .maestro/config.json first, "
+            "or choose 'Edit config' from the menu.",
+            kind="warning",
+        )
+        return
+
+    # Read polling interval from config (default 30s)
+    cfg = load_config(config_path=config_path)
+    poll_interval: int = cfg.get("poll_interval", DEFAULT_POLL_INTERVAL)
+    if not isinstance(poll_interval, int) or poll_interval < 1:
+        poll_interval = DEFAULT_POLL_INTERVAL
+
+    io.notify(
+        f"Autonomous mode: polling every {poll_interval}s for "
+        f"{len(rules)} rule(s). Press Ctrl-C to stop.",
+        kind="info",
+    )
+
+    started_issues: set[int] = set()
+
+    # Collect all labels we need to query
+    label_set = list({rule.label for rule in rules})
+
+    try:
+        while True:
+            gh = gh_client_factory()
+            issues = gh.fetch_issues_by_labels(label_set)
+
+            if not issues:
+                time.sleep(poll_interval)
+                continue
+
+            # Match each issue to its first applicable rule
+            for issue in issues:
+                if issue.number in started_issues:
+                    continue
+
+                # Find the first rule whose label matches this issue
+                matched_rule: Optional[LabelRule] = None
+                for rule in rules:
+                    if rule.label in issue.labels:
+                        matched_rule = rule
+                        break
+
+                if matched_rule is None:
+                    continue
+
+                spec = BatchSpec(
+                    issue_num=issue.number,
+                    issue_title=issue.title,
+                    flow_name=matched_rule.flow,
+                )
+                result = run_single(
+                    spec,
+                    default_flow=default_flow,
+                    spawn_fn=spawn_fn,
+                    repo_root=repo_root,
+                )
+
+                if result.started:
+                    started_issues.add(issue.number)
+                    io.notify(
+                        f"Started '{result.flow_name}' on #{issue.number} "
+                        f"(matched rule: {matched_rule.label} → {matched_rule.flow})",
+                        kind="success",
+                    )
+                else:
+                    # Still mark as started so we don't retry
+                    # the same issue on every poll cycle.
+                    started_issues.add(issue.number)
+                    io.notify(
+                        f"Failed to start #{issue.number}: {result.error}",
+                        kind="error",
+                    )
+
+            time.sleep(poll_interval)
+    except (KeyboardInterrupt, EOFError):
+        io.notify(
+            f"\nAutonomous loop stopped. "
+            f"{len(started_issues)} issue(s) started.",
+            kind="info",
+        )
+
+
+# ─── Show config ────────────────────────────────────────────────────────
+
+
+def _show_config(
+    *,
+    io: MenuIO,
+    config_path: Optional[Path] = None,
+) -> None:
+    """Handle the \"Show config\" sub-flow.
+
+    Displays the current ``label_rules`` array and other relevant
+    config keys in a readable format using rich tables.
+    """
+    cfg = load_config(config_path=config_path)
+    console = Console()
+
+    if not cfg:
+        io.notify("No config.json found or file is empty/invalid.", kind="warning")
+        return
+
+    # Build a table of the full config
+    table = Table(title="Maestro Config", show_lines=False, header_style="bold")
+    table.add_column("Key", style="cyan", no_wrap=True)
+    table.add_column("Value", style="white")
+
+    for key, value in cfg.items():
+        if isinstance(value, (list, dict)):
+            display = json.dumps(value, indent=2)
+        else:
+            display = str(value)
+        table.add_row(key, display)
+
+    console.print(table)
+
+    # Also show label_rules parsed as LabelRule objects
+    rules = load_label_rules(config_path=config_path)
+    if rules:
+        rule_table = Table(title="Label Rules", show_lines=False, header_style="bold")
+        rule_table.add_column("Label", style="green", no_wrap=True)
+        rule_table.add_column("Flow", style="magenta", no_wrap=True)
+        for rule in rules:
+            rule_table.add_row(rule.label, rule.flow)
+        console.print(rule_table)
+    else:
+        io.notify(
+            "No label_rules configured. Add them via 'Edit config'.",
+            kind="info",
+        )
+
+
+# ─── Edit config ────────────────────────────────────────────────────────
+
+
+def _edit_config(
+    *,
+    io: MenuIO,
+    config_path: Optional[Path] = None,
+) -> None:
+    """Handle the \"Edit config\" sub-flow.
+
+    Opens ``config.json`` in ``$EDITOR`` (fallback: ``vi``) and waits
+    for the editor to close. After editing, re-reads the file to check
+    for JSON validity.
+    """
+    if config_path is None:
+        config_path = Path(__file__).resolve().parent.parent / "config.json"
+
+    # Ensure the file exists (create a minimal one if missing)
+    if not config_path.exists():
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(config_path, "w") as f:
+                json.dump({"label_rules": []}, f, indent=2)
+        except OSError as e:
+            io.notify(f"Could not create config file: {e}", kind="error")
+            return
+
+    editor = os.environ.get("EDITOR", "vi")
+    io.notify(
+        f"Opening config in '{editor}'... (press Ctrl-C to cancel)",
+        kind="info",
+    )
+
+    try:
+        proc = subprocess.run(
+            [editor, str(config_path)],
+            # Do NOT redirect stdin/stdout/stderr — the editor needs
+            # the terminal directly. We wait for it to finish.
+        )
+    except FileNotFoundError:
+        io.notify(
+            f"Editor '{editor}' not found in PATH. "
+            f"Set $EDITOR or install 'vi'.",
+            kind="error",
+        )
+        return
+    except (KeyboardInterrupt, EOFError):
+        io.notify("\nEdit cancelled.", kind="info")
+        return
+
+    if proc.returncode != 0:
+        io.notify(
+            f"Editor exited with code {proc.returncode}. Config may be unchanged.",
+            kind="warning",
+        )
+        return
+
+    # Validate the saved JSON
+    try:
+        with open(config_path) as f:
+            json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        io.notify(
+            f"Config file has invalid JSON after editing: {e}",
+            kind="error",
+        )
+        return
+
+    # Show what was loaded
+    rules = load_label_rules(config_path=config_path)
+    if rules:
+        io.notify(f"Config saved. {len(rules)} label rule(s) active.", kind="success")
+    else:
+        io.notify("Config saved. No label_rules found (empty or missing).", kind="info")
