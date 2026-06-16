@@ -288,7 +288,7 @@ class TestSmokeAgainstRealRepo:
         report = wdc.DodReport()
         wdc.check_all_prompts_migrated(report)
         wdc.check_prompt_loader_exists(report)
-        wdc.check_build_prompt_returns_tuple(report)
+        wdc.check_build_prompt_returns_prepared_prompt(report)
         wdc.check_run_phase_passes_tools(report)
         wdc.check_rpc_client_accepts_tools(report)
         wdc.check_builder_reviewer_flow(report)

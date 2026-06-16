@@ -9,7 +9,10 @@ checklist (parent PRD #272, slice issues #273, #274, #275):
      `tools:`.
   2. `lib/prompt_loader.py` exists with `load_prompt()` and the
      ``LoadedPrompt`` dataclass.
-  3. `flow_engine.py:build_prompt()` returns ``(prompt, tools)`` tuple.
+  3. `prompt_assembler.py:build_prompt()` returns :class:`PreparedPrompt`
+     value object (deepening PRD issue #32; the prompt builder moved
+     out of ``flow_engine.py`` and its return type changed from a
+     loose tuple to a typed value object).
   4. `flow_engine.py:run_phase()` passes `tools` to `rpc_client.run_rpc()`.
   5. `lib/rpc_client.py:run_rpc()` accepts `tools: list[str] | None`.
   6. `flows/builder-reviewer.json` updated to include scout + working
@@ -217,30 +220,65 @@ def check_prompt_loader_exists(report: DodReport) -> None:
     report.add_check("lib/prompt_loader.py with load_prompt() + LoadedPrompt", ok, evidence)
 
 
-def check_build_prompt_returns_tuple(report: DodReport) -> None:
-    """#3 — flow_engine.build_prompt returns (prompt, tools)."""
-    text = _read_text(FLOW_ENGINE)
+def check_build_prompt_returns_prepared_prompt(report: DodReport) -> None:
+    """#3 — prompt_assembler.build_prompt returns PreparedPrompt.
+
+    Per deepening PRD issue #32, the prompt builder moved to
+    :mod:`prompt_assembler` and its return type changed from a
+    loose ``(text, tools)`` tuple to a :class:`PreparedPrompt`
+    value object. The new function is in ``prompt_assembler.py``,
+    not ``flow_engine.py`` — the check looks at the new module.
+    """
+    from pathlib import Path as _P
+    assembler_path = MAESTRO_DIR / "prompt_assembler.py"
+    if not assembler_path.exists():
+        report.add_check(
+            "prompt_assembler.py exists with build_prompt() -> PreparedPrompt",
+            False,
+            f"{assembler_path} not found",
+        )
+        return
+
+    text = _read_text(assembler_path)
+    # PreparedPrompt is a frozen dataclass with the required fields
+    has_class = bool(re.search(
+        r"@dataclass(?:\(frozen=True\))?\s*\nclass\s+PreparedPrompt", text
+    )) or bool(re.search(
+        r"@dataclass\(frozen=True\)\s*\nclass\s+PreparedPrompt", text
+    ))
+    has_fields = all(
+        re.search(rf"^\s*{field}\s*[:=]", text, re.MULTILINE)
+        for field in ("text", "tools", "model_override", "provider_override", "template_loaded")
+    )
+    # build_prompt returns PreparedPrompt (not a tuple)
     sig_match = re.search(
-        r"def\s+build_prompt\([^)]*\)\s*->\s*Tuple\[str,\s*list\[str\]\]", text
-    ) or re.search(
-        r"def\s+build_prompt\([^)]*\)\s*->\s*tuple\[str,\s*list\[str\]\]", text
+        r"def\s+build_prompt\([^)]*\)\s*->\s*PreparedPrompt", text
     )
-    return_match = re.search(r"return\s+prompt,\s+loaded\.tools", text)
-    ok = bool(sig_match and return_match)
+    return_match = re.search(r"return\s+PreparedPrompt\(", text)
+    ok = bool(has_class and has_fields and sig_match and return_match)
     evidence = (
-        f"signature has Tuple[str, list[str]]: {bool(sig_match)}, "
-        f"returns (prompt, loaded.tools): {bool(return_match)}"
+        f"PreparedPrompt dataclass with 5 fields: {bool(has_class and has_fields)}, "
+        f"build_prompt -> PreparedPrompt: {bool(sig_match and return_match)}"
     )
-    report.add_check("build_prompt() returns (prompt, tools) tuple", ok, evidence)
+    report.add_check(
+        "prompt_assembler.build_prompt() returns PreparedPrompt", ok, evidence
+    )
 
 
 def check_run_phase_passes_tools(report: DodReport) -> None:
-    """#4 — flow_engine.run_phase passes tools to the RPC layer.
+    """#4 — run_phase passes tools to the RPC layer.
 
     The actual entry point is :func:`rpc_client.run_rpc_with_session_log`
     (a thin wrapper around ``run_rpc`` that attaches the session log path).
+
+    Per deepening PRD issue #31, the per-phase function lives in
+    :mod:`phase_runner` now — ``flow_engine`` only has the phase
+    loop. The check looks at both modules because the legacy check
+    target (``flow_engine.py``) may still carry a stale
+    ``run_phase`` re-export via the PEP 562 ``__getattr__`` shim.
     """
-    text = _read_text(FLOW_ENGINE)
+    phase_runner_path = MAESTRO_DIR / "phase_runner.py"
+    text = _read_text(phase_runner_path) if phase_runner_path.exists() else ""
     rpc_call_match = re.search(
         r"run_rpc_with_session_log\([^)]*tools\s*=\s*tools", text, re.DOTALL
     )
@@ -540,7 +578,7 @@ def main() -> int:
     report = DodReport()
     check_all_prompts_migrated(report)
     check_prompt_loader_exists(report)
-    check_build_prompt_returns_tuple(report)
+    check_build_prompt_returns_prepared_prompt(report)
     check_run_phase_passes_tools(report)
     check_rpc_client_accepts_tools(report)
     check_builder_reviewer_flow(report)

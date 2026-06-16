@@ -9,16 +9,23 @@ Handles:
 - GitHub comment gating (first rejection + final success)
 - Terminal tree layout output
 
-Note on module split (deepening PRD issue #31):
+Note on module split (deepening PRD issue #31 + #32):
 - The per-phase function (``run_phase``) and its inner helpers
   (``_run_phase_inner``, ``_build_session_dir``,
   ``_extract_phase_tokens``, ``_populate_retrospective_context``,
   ``_persist_retrospective_result``, the close-phase
   ``run_close_phase`` / ``_close_phase_result``, the evidence
   policy helpers) now live in :mod:`phase_runner`.
+- The prompt builder (:func:`~prompt_assembler.build_prompt`) and
+  its debug helper (:func:`~prompt_assembler._print_prompt_debug`)
+  live in :mod:`prompt_assembler` (issue #32). The return type
+  changed from a loose tuple to the typed
+  :class:`~prompt_assembler.PreparedPrompt` value object.
 - This module keeps the phase loop (:func:`run_flow_on_issue`),
-  the prompt builder (:func:`build_prompt`), the diagnostic pass
-  (:func:`run_diagnostic`), and the value-object dataclasses.
+  the diagnostic pass (:func:`run_diagnostic`), and the
+  value-object dataclasses (``Flow``, ``FlowContext``,
+  ``PhaseConfig``, ``PhaseState``, ``PhaseRun``, ``FlowOutcome``,
+  ``Transition``).
 - ``phase_runner.run_phase`` is imported lazily inside
   :func:`run_flow_on_issue` and :func:`_run_scout_phase` to avoid
   a circular import (phase_runner imports value objects from
@@ -40,7 +47,6 @@ from terminal import Terminal
 from github_client import GithubClient
 from session_reader import parse_session_log
 import flow_logger as _flow_logger  # noqa: E402  (StderrLogger for token events)
-from prompt_loader import load_prompt, PERMISSIVE_FALLBACK
 from working_memory import MemoryStore, WorkingMemory
 from context_prefetch import (
     prefetch_context,
@@ -92,31 +98,12 @@ def _resolve_log(log: Optional["FlowLogger"]) -> "FlowLogger":
 # moved to :mod:`phase_runner` (deepening PRD issue #31). The close
 # phase is dispatched from inside :func:`phase_runner.run_phase`, so
 # keeping the evidence-policy code with the runner is the right home.
-
-
-def _maybe_get_working_memory(issue_num: int, context: dict) -> dict:
-    """Return a working-memory view for inclusion in the prompt.
-
-    Prefers ``context["working_memory"]`` if already populated by
-    ``run_flow_on_issue`` (which loads it once per flow and refreshes it
-    after each phase). Falls back to a fresh load from disk on cache miss
-    so phases don't lose context if the in-memory dict is stale.
-    """
-    wm = context.get("working_memory")
-    if isinstance(wm, dict):
-        return wm
-    try:
-        return MemoryStore(issue_num).load().to_dict()
-    except Exception:
-        return {"issue": issue_num}
-
-
-def _maybe_get_prefetched_context(context: dict) -> str:
-    """Return the prefetched-context markdown for inclusion in the prompt."""
-    pc = context.get("prefetched_context_md")
-    if isinstance(pc, str) and pc:
-        return pc
-    return ""
+#
+# NOTE: the working-memory / prefetched accessors
+# (``_maybe_get_working_memory``, ``_maybe_get_prefetched_context``)
+# moved to :mod:`prompt_assembler` (deepening PRD issue #32) alongside
+# ``build_prompt`` — they were only called by the prompt builder and
+# the typed-``FlowContext`` flavour lives in the new module.
 
 
 def _format_repo_context(repo_entry: dict) -> dict:
@@ -375,180 +362,14 @@ def get_next_step(transitions: list, current_phase: str, status: str) -> Optiona
                 return t[key]
     return None
 
-
-def _print_prompt_debug(
-    phase_name: str,
-    issue_num: int,
-    template_exists: bool,
-    variables: dict,
-    prompt: str,
-    extra_context: str,
-    log: Optional["FlowLogger"] = None,
-):
-    """Print debug info about the built prompt via the FlowLogger port.
-
-    Each [DEBUG] line from the pre-refactor implementation maps to a
-    single ``phase_start`` event with ``phase=phase_name``. The
-    StderrLogger renders the same first-line prefix and emits the
-    full message verbatim, so terminal output stays stable. The
-    separator lines (``=========``) get their own events so the
-    framing is preserved line-for-line.
-    """
-    _log = _resolve_log(log)
-    _ts = _flow_logger.now_iso()
-
-    def _emit(line: str) -> None:
-        _log.emit(_flow_logger.FlowEvent(
-            kind="phase_start",
-            message=line,
-            timestamp=_ts,
-            phase=phase_name,
-        ))
-
-    _emit("")
-    _emit("=" * 60)
-    _emit(f"[DEBUG] Phase: {phase_name} | Issue: #{issue_num}")
-    _emit(f"[DEBUG] Template loaded: {'YES' if template_exists else 'NO (fallback)'}")
-
-    # Show variable values (truncated for readability)
-    for key, value in variables.items():
-        display = value[:200] + "..." if len(value) > 200 else value
-        _emit(f"[DEBUG]   {key} = '{display}'")
-
-    # Show extra context (diagnostic or previous_output)
-    if extra_context:
-        display = extra_context[:300] + "..." if len(extra_context) > 300 else extra_context
-        _emit(f"[DEBUG]   Context preview: '{display}'")
-
-    # Prompt stats
-    lines = prompt.split('\n')
-    _emit(f"[DEBUG] Prompt: {len(prompt)} chars, {lines.__len__()} lines")
-    if len(lines) > 0:
-        _emit(f"[DEBUG] First line: '{lines[0].strip()[:100]}'")
-    _emit("=" * 60)
-
-
-def build_prompt(phase_name: str, phase_config: dict, flow_config: dict, issue_num: int, context: dict, log: Optional["FlowLogger"] = None) -> Tuple[str, list[str]]:
-    """Build a prompt for the given phase and return its tool allowlist.
-
-    Loads the prompt from ``prompts/<phase_name>.md`` (preferred) or
-    ``prompts/<phase_name>.tmpl`` (legacy, with deprecation warning) via
-    :func:`prompt_loader.load_prompt`. Variable substitution (``{issue_number}``,
-    ``{issue_body}``, etc.) is applied to the loaded body. The resolved tool
-    list is returned alongside the prompt text so callers can forward it to
-    the RPC layer.
-
-    Returns:
-        Tuple of ``(prompt_text, tools_list)``.
-    """
-    skill = phase_config.get("skill", "")
-
-    _log = _resolve_log(log)
-    _ts = _flow_logger.now_iso()
-
-    # Determine prompt source
-    if not skill:
-        # No phase prefix — this is a config-time warning, not a
-        # per-attempt phase event. ``phase_start`` is still the
-        # closest matching kind in the closed enum.
-        _log.emit(_flow_logger.FlowEvent(
-            kind="phase_start",
-            message=f"[WARN] Phase '{phase_name}' has no 'skill' configured in flow config.",
-            timestamp=_ts,
-            phase=phase_name,
-        ))
-
-    prompt_dir = Path(__file__).parent / "prompts"
-    explicit_tools = phase_config.get("tools")
-
-    try:
-        loaded = load_prompt(prompt_dir, phase_name, explicit_tools)
-    except ValueError as exc:
-        # Malformed frontmatter — surface the error but keep the flow alive
-        # by falling back to a minimal default prompt + permissive tools.
-        _log.emit(_flow_logger.FlowEvent(
-            kind="phase_start",
-            message=f"[ERROR] {exc}",
-            timestamp=_ts,
-            phase=phase_name,
-        ))
-        prompt = f"## Phase: {phase_name}\n## Issue: #{issue_num}\n\n[prompt loader error — see stderr]\n"
-        return prompt, list(PERMISSIVE_FALLBACK)
-
-    if loaded.deprecation_warning:
-        _log.emit(_flow_logger.FlowEvent(
-            kind="phase_start",
-            message=f"[DEPRECATION] {loaded.deprecation_warning}",
-            timestamp=_ts,
-            phase=phase_name,
-        ))
-
-    prompt = loaded.body
-
-    # Inject variables from context
-    issue_body = context.get("prompt", f"## Issue #{issue_num}\n\nPlease execute this phase.")
-    working_memory = _maybe_get_working_memory(issue_num, context)
-    prefetched_md = _maybe_get_prefetched_context(context)
-    scout_findings_value = context.get("scout_findings_md")
-    if scout_findings_value is None:
-        # Backward-compatible default when scout is not enabled for this flow
-        scout_findings_value = "(Scout disabled for this flow.)"
-    variables = {
-        "{issue_number}": str(issue_num),
-        "{diagnostic_insights}": context.get("diagnostic_insights", ""),
-        "{previous_output}": context.get("previous_output", ""),
-        "{prd_body}": context.get("prd_body", ""),
-        "{issue_body}": issue_body,
-        "{prefetched_context}": prefetched_md,
-        "{working_memory_json}": json.dumps(working_memory, indent=2, ensure_ascii=False),
-        "{scout_findings}": scout_findings_value,
-        # Retrospective-specific variables. Defaults are safe — the
-        # prompt can substitute them in any phase without crashing.
-        "{flow_name}": context.get("flow_name", flow_config.get("name", "unknown")),
-        "{final_status}": context.get("final_status", "unknown"),
-        "{repo_path}": context.get("repo_path", str(Path.cwd())),
-        "{evidence_summary}": context.get("evidence_summary", "(no evidence summary)"),
-        "{learnings_excerpt}": context.get("learnings_excerpt", "(no previous learnings)"),
-        # Wave 2 — Repo Onboarding. Renders the ``## Repo Context``
-        # section of the builder prompt. Empty dict when the repo
-        # hasn't been onboarded (or the registry is unavailable).
-        "{repo_context}": json.dumps(
-            context.get("repo_context", {}),
-            indent=2,
-            ensure_ascii=False,
-        ),
-    }
-    for key, value in variables.items():
-        prompt = prompt.replace(key, value)
-
-    # Inject local command or skill directive
-    if phase_config.get("is_local"):
-        cmd = phase_config.get("command", "")
-        prompt += f"\n\n**LOCAL COMMAND TO RUN:** `{cmd}`"
-        _log.emit(_flow_logger.FlowEvent(
-            kind="phase_start",
-            message=f"Running local command: {cmd}",
-            timestamp=_flow_logger.now_iso(),
-            phase=phase_name,
-        ))
-    elif skill:
-        prompt += f"\n\n**SKILL TO USE:** `{skill}`"
-        _log.emit(_flow_logger.FlowEvent(
-            kind="phase_start",
-            message=f"Invoking skill: {skill}",
-            timestamp=_flow_logger.now_iso(),
-            phase=phase_name,
-        ))
-
-    # DEBUG: Show what was built
-    extra = context.get("diagnostic_insights", "") or context.get("previous_output", "")
-    if context.get("prd_body"):
-        extra = f"PRD ({len(context['prd_body'])} chars) | {extra[:200]}"
-    _print_prompt_debug(
-        phase_name, issue_num, loaded.source_format != "default", variables, prompt, extra, log=_log
-    )
-
-    return prompt, loaded.tools
+# NOTE: the prompt builder (``build_prompt``) and its debug helper
+# (``_print_prompt_debug``) moved to :mod:`prompt_assembler` (deepening
+# PRD issue #32). The new return type is a :class:`PreparedPrompt`
+# value object instead of a loose ``(text, tools)`` tuple, and the
+# function takes typed ``PhaseConfig`` / ``Flow`` / ``FlowContext`` /
+# ``PhaseState`` objects. Import it from ``prompt_assembler``
+# directly; ``flow_engine`` no longer re-exports it (the function is
+# no longer part of this module's public surface).
 
 
 def run_diagnostic(term: Terminal, flow_config: dict, issue_num: int, failure_context: dict, log: Optional["FlowLogger"] = None) -> dict:

@@ -45,20 +45,30 @@ What lives here:
 
 What stays in ``flow_engine.py``:
 
-- :func:`build_prompt` (separate slice, issue #32)
 - :func:`run_diagnostic` (separate slice, issue #33)
 - The phase loop itself (:func:`run_flow_on_issue`)
 - The value-object dataclasses (:class:`Flow`, :class:`FlowContext`,
   :class:`PhaseState`, :class:`PhaseRun`, :class:`FlowOutcome`,
   :class:`PhaseConfig`, :class:`Transition`).
 
+What lives in :mod:`prompt_assembler` (deepening PRD issue #32):
+
+- :class:`PreparedPrompt` — the typed return value replacing the
+  loose ``(text, tools)`` tuple.
+- :func:`build_prompt` — the prompt builder. Takes typed
+  ``PhaseConfig`` / ``Flow`` / ``FlowContext`` / ``PhaseState``
+  objects plus an ``extra_context: dict`` for the
+  retro-specific and pre-formatted-markdown variables that don't
+  have a home on the typed objects.
+
 Circular-import handling: ``phase_runner.py`` does
-``from flow_engine import build_prompt, Flow, FlowContext, ...`` at
-the top — that direction is safe (flow_engine never imports from
-phase_runner at module load time). ``flow_engine.py`` uses a
-deferred import (``from phase_runner import run_phase``) inside
-:func:`run_flow_on_issue` and :func:`_run_scout_phase` to call back
-into the phase runner. This breaks the cycle cleanly.
+``from flow_engine import Flow, FlowContext, ...`` and
+``from prompt_assembler import build_prompt, PreparedPrompt`` at
+the top — that direction is safe (flow_engine and prompt_assembler
+never import from phase_runner at module load time). ``flow_engine.py``
+uses a deferred import (``from phase_runner import run_phase``)
+inside :func:`run_flow_on_issue` and :func:`_run_scout_phase` to
+call back into the phase runner. This breaks the cycle cleanly.
 """
 
 from __future__ import annotations
@@ -81,10 +91,12 @@ from flow_logger import FlowEvent, FlowLogger  # noqa: E402
 from flow_engine import (  # noqa: E402
     Flow,
     FlowContext,
+    PhaseConfig,
     PhaseRun,
     PhaseState,
-    build_prompt,
+    _flow_from_config,
 )
+from prompt_assembler import PreparedPrompt, build_prompt  # noqa: E402
 from github_client import GithubClient  # noqa: E402
 from rpc_client import run_rpc_with_session_log  # noqa: E402
 from terminal import Terminal  # noqa: E402
@@ -681,7 +693,42 @@ def _run_phase_inner(
                 phase="retrospective",
             ))
 
-    prompt, tools = build_prompt(phase_name, phase_config, flow_config, issue_num, context, log=_log)
+    # ── Build typed inputs for the new ``build_prompt`` (issue #32) ──
+    # The prompt builder now takes ``PhaseConfig`` / ``Flow`` /
+    # ``FlowContext`` / ``PhaseState`` value objects and returns a
+    # :class:`PreparedPrompt`. The inner runner still holds the
+    # legacy dict forms, so the conversion happens here.
+    _flow_obj = _flow_from_config(flow_config)
+    _phase_config_obj = _build_phase_config_from_dict(phase_config, phase_name)
+    _flow_context_obj = _build_flow_context_from_dict(context, _flow_obj, issue_num)
+    _state_obj = _build_phase_state_from_dict(context, phase_name)
+    _extra_ctx = _extra_context_from_dict(context)
+
+    prepared: PreparedPrompt = build_prompt(
+        phase_name=phase_name,
+        phase_config=_phase_config_obj,
+        flow=_flow_obj,
+        issue_num=issue_num,
+        context=_flow_context_obj,
+        state=_state_obj,
+        log=_log,
+        extra_context=_extra_ctx,
+    )
+    prompt = prepared.text
+    tools = list(prepared.tools)
+    # Future per-phase model / provider override wiring would read
+    # from ``prepared.model_override`` / ``prepared.provider_override``
+    # (currently always None — the slots are reserved for a future
+    # slice). For now, fall back to the phase_config dict so the
+    # behaviour is identical to the pre-#32 code.
+    if prepared.model_override is not None:
+        model = prepared.model_override
+    else:
+        model = phase_config.get("model")
+    if prepared.provider_override is not None:
+        provider = prepared.provider_override
+    else:
+        provider = phase_config.get("provider")
 
     _log.emit(FlowEvent(
         kind="phase_start",
@@ -691,8 +738,6 @@ def _run_phase_inner(
     ))
 
     timeout = phase_config.get("timeout_seconds", 1800)
-    model = phase_config.get("model")
-    provider = phase_config.get("provider")
 
     # Build session directory for this run (opt-in via MAESTRO_LOG_SESSIONS)
     flow_name = flow_config.get("name", "unknown")
@@ -900,6 +945,145 @@ def _context_to_dict(context: FlowContext) -> dict:
         except Exception:
             pass
     return ctx
+
+
+# ─── dict → typed-object conversion helpers ──────────────────────────
+#
+# Per deepening PRD issue #32, :func:`prompt_assembler.build_prompt`
+# takes typed ``PhaseConfig`` / ``Flow`` / ``FlowContext`` /
+# ``PhaseState`` inputs. The inner runner still receives the legacy
+# ``flow_config: dict`` / ``context: dict`` shapes from
+# :func:`run_phase`'s legacy shim, so the conversion happens here in
+# :func:`_run_phase_inner` (right before the ``build_prompt`` call).
+# These helpers do that conversion. They're the inverse of
+# :func:`_flow_to_dict` / :func:`_context_to_dict` above.
+
+#: Keys that the typed :class:`FlowContext` already covers. They're
+#: consumed by :func:`prompt_assembler.build_prompt` via attribute
+#: access on ``context``, NOT via ``extra_context`` — the dict is the
+#: source of truth, but :func:`build_prompt` reads the typed form.
+_EXTRA_CONTEXT_KEYS = (
+    # Retrospective-specific
+    "flow_name",
+    "final_status",
+    "repo_path",
+    "evidence_summary",
+    "learnings_excerpt",
+    # Pre-formatted markdown caches (match the pre-#32 dict behaviour
+    # where the dispatcher populated ``prefetched_context_md`` and
+    # ``scout_findings_md`` to avoid re-formatting in build_prompt).
+    "prefetched_context_md",
+    "scout_findings_md",
+)
+
+
+def _build_phase_config_from_dict(phase_config: dict, phase_name: str) -> PhaseConfig:
+    """Build a :class:`PhaseConfig` value object from a phase dict.
+
+    The inner runner reads ``phase_config: dict`` (a parsed JSON
+    section of the flow config). :func:`build_prompt` wants the
+    typed form. The :class:`PhaseConfig` is ``frozen=True`` so the
+    conversion is a one-shot snapshot.
+    """
+    raw_tools = phase_config.get("tools") or []
+    return PhaseConfig(
+        name=phase_name,
+        skill=str(phase_config.get("skill", "") or ""),
+        timeout_seconds=int(phase_config.get("timeout_seconds", 1800) or 1800),
+        retries=int(phase_config.get("retries", 1) or 1),
+        is_local=bool(phase_config.get("is_local", False)),
+        is_optional=bool(phase_config.get("is_optional", False)),
+        model=phase_config.get("model"),
+        provider=phase_config.get("provider"),
+        command=phase_config.get("command"),
+        tools=tuple(raw_tools),
+    )
+
+
+def _build_flow_context_from_dict(
+    context: dict, flow: Flow, issue_num: int,
+) -> FlowContext:
+    """Build a :class:`FlowContext` from the legacy context dict.
+
+    The dispatcher populated the dict with keys
+    (``prompt``, ``prd_body``, ``working_memory``,
+    ``prefetched_context``, ``repo_context``, ``scout_findings_md``).
+    The typed :class:`FlowContext` holds the same data — this
+    helper re-packs it. ``WorkingMemory`` and ``PrefetchedContext``
+    are reconstructed from their dict / object forms when present.
+    """
+    body = context.get("prompt") or f"## Issue #{issue_num}\n\nPlease execute this phase."
+
+    # parent_prd: prefer the explicit ``prd_body`` key (the dict
+    # shape). Strip the ``## Issue #N\n\n`` prefix the dispatcher
+    # prepends — the typed FlowContext stores the raw body.
+    prd = context.get("prd_body")
+    issue_body = body
+    prefix = f"## Issue #{issue_num}\n\n"
+    if body.startswith(prefix):
+        issue_body = body[len(prefix):]
+
+    # working_memory
+    wm = None
+    wm_dict = context.get("working_memory")
+    if isinstance(wm_dict, dict) and wm_dict:
+        try:
+            from working_memory import WorkingMemory
+            wm_dict = dict(wm_dict)
+            wm_dict.setdefault("issue", issue_num)
+            wm = WorkingMemory.from_dict(wm_dict)
+        except Exception:
+            wm = None
+
+    # prefetched
+    prefetched = context.get("prefetched_context")
+    if prefetched is None and "prefetched" in context:
+        prefetched = context.get("prefetched")
+
+    # repo_context
+    repo_ctx = context.get("repo_context")
+    repo_ctx = dict(repo_ctx) if isinstance(repo_ctx, dict) else None
+
+    return FlowContext(
+        flow=flow,
+        issue_num=issue_num,
+        issue_body=issue_body,
+        issue_title="",
+        parent_prd=prd,
+        working_memory=wm,
+        prefetched=prefetched,
+        repo_context=repo_ctx,
+        scout_findings=None,  # formatted scout_findings_md stays in extra_context
+    )
+
+
+def _build_phase_state_from_dict(context: dict, phase_name: str) -> PhaseState:
+    """Build a :class:`PhaseState` from the per-iteration context keys.
+
+    The flow loop mutates ``context["previous_output"]``,
+    ``context["diagnostic_insights"]`` and ``context["phase_outputs"]``
+    between iterations. The typed :class:`PhaseState` is the
+    canonical form; this helper re-packs it.
+    """
+    return PhaseState(
+        current_phase=phase_name,
+        phase_attempt=int(context.get("phase_attempt", 1) or 1),
+        previous_output=str(context.get("previous_output", "") or ""),
+        diagnostic_insights=str(context.get("diagnostic_insights", "") or ""),
+        phase_outputs=dict(context.get("phase_outputs") or {}),
+    )
+
+
+def _extra_context_from_dict(context: dict) -> dict:
+    """Pick the keys :func:`build_prompt` reads from ``extra_context``.
+
+    Retro-specific (``flow_name``, ``final_status``, ``repo_path``,
+    ``evidence_summary``, ``learnings_excerpt``) and pre-formatted
+    markdown caches (``prefetched_context_md``, ``scout_findings_md``)
+    don't have a home on the typed objects, so :func:`build_prompt`
+    reads them from this dict.
+    """
+    return {k: context[k] for k in _EXTRA_CONTEXT_KEYS if k in context}
 
 
 # ─── Public entry point ─────────────────────────────────────────────────

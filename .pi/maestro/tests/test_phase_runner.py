@@ -76,9 +76,29 @@ from flow_engine import (  # noqa: E402
     WorkingMemory,
 )
 from flow_logger import ListLogger  # noqa: E402
+from prompt_assembler import PreparedPrompt  # noqa: E402
 
 
 # ─── Shared fixtures ────────────────────────────────────────────────────
+
+
+def _stub_prompt(text: str = "prompt", tools: tuple = ()) -> PreparedPrompt:
+    """Build a minimal :class:`PreparedPrompt` for patched return values.
+
+    Per deepening PRD issue #32, :func:`prompt_assembler.build_prompt`
+    returns a :class:`PreparedPrompt` (frozen dataclass) instead of a
+    ``(text, tools)`` tuple. The tests that patch ``build_prompt`` now
+    need a stub that mimics that shape — this helper provides one
+    with the fields :func:`_run_phase_inner` actually reads
+    (``.text`` and ``.tools``).
+    """
+    return PreparedPrompt(
+        text=text,
+        tools=tools,
+        model_override=None,
+        provider_override=None,
+        template_loaded=True,
+    )
 
 
 def _make_term_and_gh() -> tuple:
@@ -189,7 +209,7 @@ def test_run_phase_returns_phaserun_for_approved_verdict():
             "result": {"status": "approved"},
         }
         with patch.object(phase_runner, "run_rpc_with_session_log", return_value=fake_rpc), \
-             patch.object(phase_runner, "build_prompt", return_value=("prompt", [])), \
+             patch.object(phase_runner, "build_prompt", return_value=_stub_prompt()), \
              patch.object(phase_runner, "_build_session_dir", return_value=None):
             phase_run = run_phase("builder", flow, ctx, state, term, gh, log=log)
 
@@ -226,7 +246,7 @@ def test_run_phase_returns_phaserun_for_rejected_verdict():
         },
     }
     with patch.object(phase_runner, "run_rpc_with_session_log", return_value=fake_rpc), \
-         patch.object(phase_runner, "build_prompt", return_value=("prompt", [])), \
+         patch.object(phase_runner, "build_prompt", return_value=_stub_prompt()), \
          patch.object(phase_runner, "_build_session_dir", return_value=None):
         phase_run = run_phase("builder", flow, ctx, state, term, gh, log=log)
 
@@ -257,7 +277,7 @@ def test_run_phase_is_optional_exception_becomes_skipped_style_success():
     log = ListLogger()
 
     with patch.object(phase_runner, "_run_phase_inner", side_effect=RuntimeError("LLM exploded")), \
-         patch.object(phase_runner, "build_prompt", return_value=("prompt", [])):
+         patch.object(phase_runner, "build_prompt", return_value=_stub_prompt()):
         phase_run = run_phase("retrospective", flow, ctx, state, term, gh, log=log)
 
     # Non-fatal downgrade: exception → synthetic success
@@ -296,7 +316,7 @@ def test_run_phase_is_optional_error_return_becomes_success():
         "/tmp/session.jsonl",
     ))
     with patch.object(phase_runner, "_run_phase_inner", fake_inner), \
-         patch.object(phase_runner, "build_prompt", return_value=("prompt", [])):
+         patch.object(phase_runner, "build_prompt", return_value=_stub_prompt()):
         phase_run = run_phase("retrospective", flow, ctx, state, term, gh, log=log)
 
     assert phase_run.status == "success"
@@ -432,7 +452,7 @@ def test_run_phase_tokens_none_when_log_missing():
         "result": {"status": "approved"},
     }
     with patch.object(phase_runner, "run_rpc_with_session_log", return_value=fake_rpc), \
-         patch.object(phase_runner, "build_prompt", return_value=("prompt", [])), \
+         patch.object(phase_runner, "build_prompt", return_value=_stub_prompt()), \
          patch.object(phase_runner, "_build_session_dir", return_value=None):
         phase_run = run_phase("builder", flow, ctx, state, term, gh, log=log)
 
@@ -464,7 +484,7 @@ def test_run_phase_tokens_none_when_log_has_no_usage():
             "result": {"status": "approved"},
         }
         with patch.object(phase_runner, "run_rpc_with_session_log", return_value=fake_rpc), \
-             patch.object(phase_runner, "build_prompt", return_value=("prompt", [])), \
+             patch.object(phase_runner, "build_prompt", return_value=_stub_prompt()), \
              patch.object(phase_runner, "_build_session_dir", return_value=None):
             phase_run = run_phase("builder", flow, ctx, state, term, gh, log=log)
 
@@ -523,7 +543,7 @@ def test_run_phase_populates_tokens_from_session_log():
             "result": {"status": "approved"},
         }
         with patch.object(phase_runner, "run_rpc_with_session_log", return_value=fake_rpc), \
-             patch.object(phase_runner, "build_prompt", return_value=("prompt", [])), \
+             patch.object(phase_runner, "build_prompt", return_value=_stub_prompt()), \
              patch.object(phase_runner, "_build_session_dir", return_value=None):
             phase_run = run_phase("builder", flow, ctx, state, term, gh, log=log)
 

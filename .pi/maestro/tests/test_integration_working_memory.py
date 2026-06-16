@@ -152,14 +152,44 @@ def test_prefetched_context_injected_into_builder_prompt():
         finally:
             os.chdir(str(original_cwd))
 
-        # Now import build_prompt and call it
-        from flow_engine import build_prompt
+        # Now import build_prompt and call it.
+        # Per deepening PRD issue #32, build_prompt lives in
+        # ``prompt_assembler`` and returns a :class:`PreparedPrompt`
+        # value object (not a tuple). It also takes typed objects
+        # (``PhaseConfig`` / ``Flow`` / ``FlowContext`` / ``PhaseState``)
+        # — we build those from the dicts here, mirroring what
+        # :func:`phase_runner._run_phase_inner` does.
+        from prompt_assembler import build_prompt
+        from phase_runner import (
+            _build_phase_config_from_dict,
+            _build_flow_context_from_dict,
+            _build_phase_state_from_dict,
+            _extra_context_from_dict,
+        )
+        from flow_engine import _flow_from_config
         prompts_dir = _make_tmpdir()
         try:
             _write_minimal_prompt(prompts_dir, "builder")
 
             phase_config = {"skill": "/skill:builder"}
             flow_config = {"phases": {"builder": phase_config}}
+
+            # build_prompt reads templates from a hard-coded prompts
+            # directory next to ``prompt_assembler``. The test wrote
+            # a minimal ``builder.md`` to a temp dir, so for the
+            # duration of this test we swap the on-disk file in and
+            # out. The real prompts are preserved by backup.
+            import prompt_assembler
+            real_prompts_path = prompt_assembler.Path(
+                prompt_assembler.__file__
+            ).parent / "prompts" / "builder.md"
+            test_prompts_path = prompts_dir / "builder.md"
+            backup_existed = real_prompts_path.exists()
+            backup_path = real_prompts_path.with_suffix(".md.bak")
+            from shutil import copy2
+            if backup_existed:
+                copy2(real_prompts_path, backup_path)
+            copy2(test_prompts_path, real_prompts_path)
 
             context = {
                 "prompt": "## Issue #42\n\nImplement the thing.",
@@ -171,13 +201,29 @@ def test_prefetched_context_injected_into_builder_prompt():
                 },
             }
 
-            prompt, _tools = build_prompt(
-                phase_name="builder",
-                phase_config=phase_config,
-                flow_config=flow_config,
-                issue_num=42,
-                context=context,
-            )
+            try:
+                flow = _flow_from_config(flow_config)
+                pc = _build_phase_config_from_dict(phase_config, "builder")
+                fc = _build_flow_context_from_dict(context, flow, 42)
+                st = _build_phase_state_from_dict(context, "builder")
+                ec = _extra_context_from_dict(context)
+                prepared = build_prompt(
+                    phase_name="builder",
+                    phase_config=pc,
+                    flow=flow,
+                    issue_num=42,
+                    context=fc,
+                    state=st,
+                    extra_context=ec,
+                )
+                prompt = prepared.text
+                _tools = list(prepared.tools)
+            finally:
+                if backup_existed:
+                    copy2(backup_path, real_prompts_path)
+                    backup_path.unlink()
+                else:
+                    real_prompts_path.unlink()
 
             # The {prefetched_context} placeholder should be replaced
             assert "{prefetched_context}" not in prompt, (
