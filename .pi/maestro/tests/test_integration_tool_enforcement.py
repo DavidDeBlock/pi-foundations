@@ -34,6 +34,8 @@ sys.path.insert(0, str(MAESTRO_DIR / "lib"))
 sys.path.insert(0, str(MAESTRO_DIR))
 
 import flow_engine  # noqa: E402
+import phase_runner  # noqa: E402  # Issue #44: run_phase moved to phase_runner
+import prompt_assembler  # noqa: E402  # Issue #44: load_prompt's new home
 from prompt_loader import LoadedPrompt  # noqa: E402
 
 
@@ -60,8 +62,11 @@ def _run_phase_and_capture_tools(phase_name: str, expected_tools: list[str]) -> 
         source_format="md",
     )
 
-    with patch("flow_engine.load_prompt", return_value=mock_loaded), \
-         patch("flow_engine.run_rpc_with_session_log") as mock_rpc, \
+    # Issue #44: re-point mocks to the new module owners from the
+    # deepening extraction — load_prompt lives in prompt_assembler,
+    # run_rpc_with_session_log is imported into phase_runner.
+    with patch("prompt_assembler.load_prompt", return_value=mock_loaded), \
+         patch("phase_runner.run_rpc_with_session_log") as mock_rpc, \
          patch("flow_engine.parse_session_log", return_value={}):
         mock_rpc.return_value = {
             "success": True,
@@ -69,7 +74,9 @@ def _run_phase_and_capture_tools(phase_name: str, expected_tools: list[str]) -> 
             "session_log": None,
             "result": {"status": "approved", "issues": [], "verdict": ""},
         }
-        flow_engine.run_phase(phase_name, flow_config, 1, {"prompt": "test"})
+        # Issue #44: run_phase moved from flow_engine to phase_runner
+        # during the extraction — call the new owner.
+        phase_runner.run_phase(phase_name, flow_config, 1, {"prompt": "test"})
 
     mock_rpc.assert_called_once()
     _, kwargs = mock_rpc.call_args

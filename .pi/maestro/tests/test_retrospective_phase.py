@@ -168,7 +168,9 @@ def test_retrospective_failure_routes_to_finish_not_diagnostic():
 
     # Patch the inner runner to always raise. run_phase's wrapper
     # should catch and convert to success.
-    with patch("flow_engine._run_phase_inner", side_effect=RuntimeError("boom")):
+    # Issue #44: _run_phase_inner moved from flow_engine to phase_runner
+    # during the deepening extraction — patch the new owner.
+    with patch("phase_runner._run_phase_inner", side_effect=RuntimeError("boom")):
         result, _ = run_phase("retrospective", flow, 42, context)
 
     # The non-blocking handler converts the exception to a success

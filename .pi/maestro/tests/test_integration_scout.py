@@ -139,10 +139,15 @@ def _run_flow_with_canned_rpc(rpc_responses: list, scout_enabled: bool = True) -
 
     tmpdir = _make_tmpdir()
     try:
+        # Issue #44: re-point mocks to the new module owners from the
+        # deepening extraction — ``run_rpc_with_session_log`` is imported
+        # at module level in phase_runner (not flow_engine), so the old
+        # patch path is a no-op. ``MemoryStore`` and ``parse_session_log``
+        # are still imported into flow_engine, so those patches stay.
         with patch.object(flow_engine, "prefetch_context") as mock_pref, \
              patch("flow_engine.MemoryStore") as MockStore, \
              patch.object(flow_engine, "load_flow", return_value=flow), \
-             patch("flow_engine.run_rpc_with_session_log", side_effect=fake_rpc), \
+             patch("phase_runner.run_rpc_with_session_log", side_effect=fake_rpc), \
              patch("flow_engine.parse_session_log", return_value={}):
             # Mock the prefetch
             from context_prefetch import PrefetchedContext

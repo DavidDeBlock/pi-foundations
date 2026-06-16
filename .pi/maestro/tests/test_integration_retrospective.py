@@ -95,7 +95,9 @@ def test_end_to_end_flow_with_retrospective():
     """The full flow — write learnings via the persistence helper, then
     verify the file is on disk and parseable.
     """
-    from flow_engine import _persist_retrospective_result
+    # Issue #44: _persist_retrospective_result moved from flow_engine to
+    # phase_runner during the deepening extraction — update the import.
+    from phase_runner import _persist_retrospective_result
 
     repo = _make_dir()
     try:
@@ -141,7 +143,9 @@ def test_retrospective_persists_across_flow_restart():
     persistence helper twice with the same repo, then reading the file
     back.
     """
-    from flow_engine import _persist_retrospective_result
+    # Issue #44: _persist_retrospective_result moved from flow_engine to
+    # phase_runner during the deepening extraction — update the import.
+    from phase_runner import _persist_retrospective_result
 
     repo = _make_dir()
     try:
