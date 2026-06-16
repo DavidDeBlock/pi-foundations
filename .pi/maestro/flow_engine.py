@@ -75,11 +75,7 @@ from typing import Optional
 # Add lib to path (matches the convention used across the repo)
 sys.path.insert(0, str(Path(__file__).parent / "lib"))
 
-from context_prefetch import (  # noqa: E402
-    PrefetchedContext,
-    format_prefetched_context,
-    prefetch_context,
-)
+from context_prefetch import PrefetchedContext  # noqa: E402
 from evidence import EvidenceStore, EvidenceType  # noqa: E402
 import flow_logger as _flow_logger  # noqa: E402
 from flow_logger import FlowEvent, FlowLogger  # noqa: E402
@@ -88,7 +84,6 @@ from projects_registry import (  # noqa: E402
     REGISTRY_FILENAME as PROJECTS_REGISTRY_FILENAME,
     ProjectsRegistry,
 )
-from scout_findings import format_scout_findings_markdown  # noqa: E402
 from session_reader import parse_session_log  # noqa: E402
 from terminal import Terminal  # noqa: E402
 from working_memory import MemoryStore, WorkingMemory  # noqa: E402
@@ -555,66 +550,6 @@ def get_next_step(transitions: list, current_phase: str, status: str) -> Optiona
     return None
 
 
-def _build_legacy_context(
-    flow_context: "FlowContext",
-    initial_context: Optional[dict] = None,
-) -> dict:
-    """Build the legacy dict context the prompt builder + close
-    phase gate consume.
-
-    The :func:`phase_runner.run_phase` typed entry point accepts a
-    :class:`FlowContext` and a :class:`PhaseState` directly, so the
-    dict is no longer required to drive the inner runner. It is,
-    however, still useful for the prompt builder (which reads a few
-    fields off the dict) and as a record of what the flow consumed
-    at the time of dispatch. This helper rebuilds the dict the
-    pre-issue-#34 code path used, so the prompt builder doesn't
-    have to know about the new typed inputs.
-    """
-    body = flow_context.issue_body
-    issue_num = flow_context.issue_num
-    context = {"prompt": f"## Issue #{issue_num}\n\n{body}"}
-    if flow_context.parent_prd:
-        context["prd_body"] = flow_context.parent_prd
-    if initial_context:
-        context.update(initial_context)
-
-    context["working_memory"] = flow_context.working_memory.to_dict()
-    context["prefetched_context_md"] = format_prefetched_context(flow_context.prefetched)
-    context["prefetched_context"] = flow_context.prefetched
-    if flow_context.repo_context:
-        context["repo_context"] = flow_context.repo_context
-    # Match the pre-extraction behaviour: set ``scout_findings_md``
-    # IFF scout was attempted for this flow. When scout is disabled
-    # the key is left unset, and the prompt builder falls back to
-    # ``"(Scout disabled for this flow.)"``. When scout ran and
-    # failed, ``flow_context.scout_findings`` is ``None`` but the
-    # key IS set, so the prompt gets the
-    # ``"## Scout Findings" + no-findings`` message — that is the
-    # signal the integration tests rely on.
-    flow_config = {
-        "scout_enabled": flow_context.flow.scout_enabled,
-        "phases": flow_context.flow.phases,
-    }
-    if _scout_enabled(flow_config):
-        context["scout_findings_md"] = format_scout_findings_markdown(
-            flow_context.scout_findings
-        )
-
-    # The dispatcher persisted git_sha/repo_path on the
-    # WorkingMemory reference it returned; the dict snapshot above
-    # was taken before the post-scout refresh in
-    # :func:`build_flow_context`. Reload here so the prompt builder
-    # sees the post-scout memory if scout ran.
-    if _scout_enabled(flow_config):
-        try:
-            context["working_memory"] = MemoryStore(issue_num).load().to_dict()
-        except Exception:
-            pass
-
-    return context
-
-
 # ─── The deep module: run_flow ──────────────────────────────────────────
 
 
@@ -1067,8 +1002,6 @@ __all__ = [
     "PhaseRun",
     "PhaseState",
     "Transition",
-    "_build_legacy_context",
-    "_close_phase_result",
     "_extract_parent_issue",
     "_flow_from_config",
     "_format_repo_context",

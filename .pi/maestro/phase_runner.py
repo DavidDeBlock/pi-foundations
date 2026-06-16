@@ -15,18 +15,29 @@ dispatches transitions or recurses. It is a pure per-phase function.
 
 What lives here:
 
-- :func:`run_phase` — the public entry. Wraps the inner runner in the
-  ``is_optional`` try/except, packages the verdict + duration + tokens
-  + session log into a :class:`PhaseRun`.
-- :func:`_run_phase_inner` — the per-phase body. Handles the close-
-  phase special case, the ``is_local`` subprocess dispatch, the
-  retrospective pre-run context population, prompt building, RPC,
-  verdict extraction, and the retrospective post-run persistence.
+- :func:`run_phase` — the public entry. Wraps the inner runner in
+  the ``is_optional`` try/except, packages the verdict + duration +
+  tokens + session log into a :class:`PhaseRun`. Takes typed
+  ``Flow`` / ``FlowContext`` / ``PhaseState`` inputs end-to-end
+  (issue #43 — the interop helpers that used to translate between
+  typed values and dict shapes are gone; the dict form now lives
+  only inside :func:`_run_phase_inner` as private bookkeeping).
+- :func:`_run_phase_inner` — the per-phase body. Takes typed
+  inputs, builds a local dict (``_ctx``) for its bookkeeping
+  (retro-specific vars, per-iteration mutations), and propagates
+  the mutations back to the typed :class:`PhaseState` via
+  :func:`_sync_state` at the close-phase early return and at the
+  end of the function. Handles the close-phase special case, the
+  ``is_local`` subprocess dispatch, the retrospective pre-run
+  context population, prompt building, RPC, verdict extraction,
+  and the retrospective post-run persistence.
 - :func:`_build_session_dir` — the session-log-path builder (moved
   verbatim from ``flow_engine.py``). Also used by :mod:`diagnostic`
   for diagnostic-phase session logs (issue #33).
 - :func:`_extract_phase_tokens` — session-log → ``{tokens_in,
   tokens_out, cache_read}`` reader.
+- :func:`_sync_state` — copies the per-iteration mutations from
+  the local ``_ctx`` dict back to the typed :class:`PhaseState`.
 - :func:`_populate_retrospective_context` — fills the retro
   prompt-vars before the LLM call.
 - :func:`_persist_retrospective_result` — writes the
@@ -96,7 +107,6 @@ from flow_engine import (  # noqa: E402
     PhaseRun,
     PhaseState,
     _close_phase_result,
-    _flow_from_config,
     get_evidence_policy,
 )
 from prompt_assembler import PreparedPrompt, build_prompt  # noqa: E402
@@ -529,19 +539,83 @@ def _persist_retrospective_result(
 
 def _run_phase_inner(
     phase_name: str,
-    flow_config: dict,
-    issue_num: int,
-    context: dict,
+    flow: Flow,
+    context: FlowContext,
+    state: PhaseState,
     log: Optional[FlowLogger] = None,
 ) -> Tuple[dict, Optional[str]]:
     """Inner phase runner — the original ``run_phase`` body.
 
+    Takes typed inputs (Flow, FlowContext, PhaseState). The inner
+    runner builds a local dict (``_ctx``) for its bookkeeping
+    (per-iteration state, retro-specific variables) and a per-phase
+    config dict (from ``flow.phases[phase_name]``); both are
+    internal to this function and are not a public surface.
+
     Split out so :func:`run_phase` can wrap it in a non-blocking
-    try/except for ``is_optional`` phases (retrospective). All callers
-    should use :func:`run_phase`, not this private helper.
+    try/except for ``is_optional`` phases (retrospective). All
+    callers should use :func:`run_phase`, not this private helper.
     """
-    phase_config = flow_config["phases"][phase_name]
     _log = _resolve_log(log)
+    issue_num = context.issue_num
+
+    # Per-phase config dict (a slice of ``flow.phases``). Used for
+    # ``is_local`` checks, the subprocess command field, timeout,
+    # retries, and model/provider overrides. The typed
+    # :class:`PhaseConfig` derived from this dict is what
+    # :func:`build_prompt` consumes; built below at the prompt-build
+    # site.
+    phase_config = flow.phases.get(phase_name) or {}
+
+    # Inner-runner bookkeeping dict (built once from typed inputs).
+    # The legacy "context" dict the inner runner mutates for
+    # per-iteration state (``phase_outputs``,
+    # ``diagnostic_insights``, ``previous_output``) and
+    # retro-specific variables. It is local to this function and is
+    # not exported. ``_sync_state`` copies the relevant keys back to
+    # the typed :class:`PhaseState` at the bottom of the function.
+    _ctx: dict = {
+        "phase_attempt": state.phase_attempt,
+        "previous_output": state.previous_output,
+        "diagnostic_insights": state.diagnostic_insights,
+        "phase_outputs": dict(state.phase_outputs) if state.phase_outputs else {},
+    }
+    if context.working_memory is not None:
+        try:
+            _ctx["working_memory"] = context.working_memory.to_dict()
+        except Exception:
+            pass
+    if context.prefetched is not None:
+        _ctx["prefetched_context"] = context.prefetched
+        try:
+            from context_prefetch import format_prefetched_context
+            _ctx["prefetched_context_md"] = format_prefetched_context(
+                context.prefetched
+            )
+        except Exception:
+            pass
+    if context.repo_context:
+        _ctx["repo_context"] = dict(context.repo_context)
+    if context.parent_prd:
+        _ctx["prd_body"] = context.parent_prd
+    if context.scout_findings is not None:
+        try:
+            from scout_findings import format_scout_findings_markdown
+            _ctx["scout_findings_md"] = format_scout_findings_markdown(
+                context.scout_findings
+            )
+        except Exception:
+            pass
+
+    # Full flow_config dict (only :func:`run_close_phase` and
+    # :func:`_populate_retrospective_context` consume the dict form;
+    # ``build_prompt`` takes the typed ``Flow`` directly). Built
+    # locally from the typed :class:`Flow`.
+    flow_config = {
+        "name": flow.name,
+        "phases": dict(flow.phases),
+        "evidence_policy": dict(flow.evidence_policy),
+    }
 
     # Local command phases run directly via subprocess (no LLM)
     if phase_config.get("is_local"):
@@ -553,9 +627,11 @@ def _run_phase_inner(
         # backstops but is not invoked.
         if phase_name == "close":
             result = run_close_phase(flow_config, issue_num, log=_log)
-            # Cache the close-phase result in context for downstream
-            # phases (e.g. retrospective) to read.
-            context.setdefault("phase_outputs", {})["close"] = result
+            # Cache the close-phase result in ``_ctx`` for downstream
+            # phases (e.g. retrospective) to read, and propagate the
+            # mutation back to the typed :class:`PhaseState`.
+            _ctx.setdefault("phase_outputs", {})["close"] = result
+            _sync_state(state, _ctx)
             return result, None
 
         cmd = phase_config.get("command", "").replace("{issue_number}", str(issue_num))
@@ -601,23 +677,53 @@ def _run_phase_inner(
             ))
 
     # ── Build typed inputs for the new ``build_prompt`` (issue #32) ──
-    # The prompt builder now takes ``PhaseConfig`` / ``Flow`` /
-    # ``FlowContext`` / ``PhaseState`` value objects and returns a
-    # :class:`PreparedPrompt`. The inner runner still holds the
-    # legacy dict forms, so the conversion happens here.
-    _flow_obj = _flow_from_config(flow_config)
-    _phase_config_obj = _build_phase_config_from_dict(phase_config, phase_name)
-    _flow_context_obj = _build_flow_context_from_dict(context, _flow_obj, issue_num)
-    _state_obj = _build_phase_state_from_dict(context, phase_name)
-    _extra_ctx = _extra_context_from_dict(context)
+    # The prompt builder takes ``PhaseConfig`` / ``Flow`` /
+    # ``FlowContext`` / ``PhaseState`` value objects (the typed
+    # contract from earlier in this deepening PRD). The inner
+    # runner already has all four in scope — derive
+    # :class:`PhaseConfig` from the per-phase ``phase_config`` dict
+    # slice and pass the typed objects through directly.
+    raw_tools = phase_config.get("tools") or []
+    _phase_config_obj = PhaseConfig(
+        name=phase_name,
+        skill=str(phase_config.get("skill", "") or ""),
+        timeout_seconds=int(phase_config.get("timeout_seconds", 1800) or 1800),
+        retries=int(phase_config.get("retries", 1) or 1),
+        is_local=bool(phase_config.get("is_local", False)),
+        is_optional=bool(phase_config.get("is_optional", False)),
+        model=phase_config.get("model"),
+        provider=phase_config.get("provider"),
+        command=phase_config.get("command"),
+        tools=tuple(raw_tools),
+    )
+
+    # The ``extra_context`` dict carries the keys
+    # :func:`build_prompt` reads that don't have a home on the typed
+    # objects: retro-specific vars (``flow_name``, ``final_status``,
+    # ``repo_path``, ``evidence_summary``, ``learnings_excerpt``)
+    # and pre-formatted markdown caches (``prefetched_context_md``,
+    # ``scout_findings_md``). We pick them out of the local
+    # ``_ctx`` dict built above; the retro populator writes the
+    # retro-specific ones when ``phase_name == "retrospective"``.
+    _extra_ctx = {
+        k: _ctx[k] for k in (
+            "prefetched_context_md",
+            "scout_findings_md",
+            "flow_name",
+            "final_status",
+            "repo_path",
+            "evidence_summary",
+            "learnings_excerpt",
+        ) if k in _ctx
+    }
 
     prepared: PreparedPrompt = build_prompt(
         phase_name=phase_name,
         phase_config=_phase_config_obj,
-        flow=_flow_obj,
+        flow=flow,
         issue_num=issue_num,
-        context=_flow_context_obj,
-        state=_state_obj,
+        context=context,
+        state=state,
         log=_log,
         extra_context=_extra_ctx,
     )
@@ -691,11 +797,11 @@ def _run_phase_inner(
         # `finish`.
         if phase_name == "retrospective":
             try:
-                repo_path_for_retro = Path(context.get("repo_path", Path.cwd()))
-                flow_status_value = str(context.get("final_status") or "error")
+                repo_path_for_retro = Path(_ctx.get("repo_path", Path.cwd()))
+                flow_status_value = str(_ctx.get("final_status") or "error")
                 _persist_retrospective_result(
                     issue_num=issue_num,
-                    flow_name=str(context.get("flow_name", flow_config.get("name", "unknown"))),
+                    flow_name=str(_ctx.get("flow_name", flow_config.get("name", "unknown"))),
                     rpc_output=rpc_result.get("output", "") or "",
                     flow_status=flow_status_value,
                     repo_path=repo_path_for_retro,
@@ -763,11 +869,11 @@ def _run_phase_inner(
     # ── Retrospective post-run persistence ──────────────────────────
     if phase_name == "retrospective":
         try:
-            repo_path_for_retro = Path(context.get("repo_path", Path.cwd()))
-            flow_status_value = str(context.get("final_status") or final_status)
+            repo_path_for_retro = Path(_ctx.get("repo_path", Path.cwd()))
+            flow_status_value = str(_ctx.get("final_status") or final_status)
             _persist_retrospective_result(
                 issue_num=issue_num,
-                flow_name=str(context.get("flow_name", flow_config.get("name", "unknown"))),
+                flow_name=str(_ctx.get("flow_name", flow_config.get("name", "unknown"))),
                 rpc_output=rpc_result.get("output", "") or "",
                 flow_status=flow_status_value,
                 repo_path=repo_path_for_retro,
@@ -785,212 +891,12 @@ def _run_phase_inner(
                 phase="retrospective",
             ))
 
+    _sync_state(state, _ctx)
     return {
         "status": final_status,
         "details": details,
         "output": rpc_result["output"]
     }, session_log_path
-
-
-# ─── Flow ↔ dict conversion helpers ─────────────────────────────────────
-#
-# ``run_phase`` takes typed ``Flow`` / ``FlowContext`` / ``PhaseState``
-# values, but the inner helpers (``build_prompt``, ``run_close_phase``,
-# ``_run_phase_inner``) still work with the legacy dict form. These
-# two helpers reconstruct the dicts from the typed values. They are
-# the "seam" between the new typed contract and the not-yet-refactored
-# inner body.
-
-
-def _flow_to_dict(flow: Flow) -> dict:
-    """Build the legacy ``flow_config`` dict from a :class:`Flow`.
-
-    Used to feed the inner runner, which still expects the old dict
-    shape. Only the keys the inner runner actually reads are
-    populated (``name``, ``phases``, ``evidence_policy``).
-    """
-    return {
-        "name": flow.name,
-        "phases": dict(flow.phases),
-        "evidence_policy": dict(flow.evidence_policy),
-    }
-
-
-def _context_to_dict(context: FlowContext) -> dict:
-    """Build the legacy ``context`` dict from a :class:`FlowContext`.
-
-    The inner runner expects a context dict with a long list of
-    optional keys (prompt, prd_body, working_memory,
-    prefetched_context_md, repo_context, scout_findings_md,
-    phase_outputs, …). The :class:`FlowContext` value object holds
-    the same data in typed form; this helper unwraps it.
-    """
-    body = context.issue_body or ""
-    ctx: dict = {"prompt": f"## Issue #{context.issue_num}\n\n{body}"}
-    if context.parent_prd:
-        ctx["prd_body"] = context.parent_prd
-    if context.working_memory is not None:
-        try:
-            ctx["working_memory"] = context.working_memory.to_dict()
-        except Exception:
-            pass
-    if context.prefetched is not None:
-        try:
-            from context_prefetch import format_prefetched_context
-            ctx["prefetched_context_md"] = format_prefetched_context(context.prefetched)
-            ctx["prefetched_context"] = context.prefetched
-        except Exception:
-            pass
-    if context.repo_context:
-        ctx["repo_context"] = dict(context.repo_context)
-    if context.scout_findings is not None:
-        try:
-            from scout_findings import format_scout_findings_markdown
-            ctx["scout_findings_md"] = format_scout_findings_markdown(
-                context.scout_findings
-            )
-        except Exception:
-            pass
-    return ctx
-
-
-# ─── dict → typed-object conversion helpers ──────────────────────────
-#
-# Per deepening PRD issue #32, :func:`prompt_assembler.build_prompt`
-# takes typed ``PhaseConfig`` / ``Flow`` / ``FlowContext`` /
-# ``PhaseState`` inputs. The inner runner still receives the legacy
-# ``flow_config: dict`` / ``context: dict`` shapes from
-# :func:`run_phase`'s legacy shim, so the conversion happens here in
-# :func:`_run_phase_inner` (right before the ``build_prompt`` call).
-# These helpers do that conversion. They're the inverse of
-# :func:`_flow_to_dict` / :func:`_context_to_dict` above.
-
-#: Keys that the typed :class:`FlowContext` already covers. They're
-#: consumed by :func:`prompt_assembler.build_prompt` via attribute
-#: access on ``context``, NOT via ``extra_context`` — the dict is the
-#: source of truth, but :func:`build_prompt` reads the typed form.
-_EXTRA_CONTEXT_KEYS = (
-    # Retrospective-specific
-    "flow_name",
-    "final_status",
-    "repo_path",
-    "evidence_summary",
-    "learnings_excerpt",
-    # Pre-formatted markdown caches (match the pre-#32 dict behaviour
-    # where the dispatcher populated ``prefetched_context_md`` and
-    # ``scout_findings_md`` to avoid re-formatting in build_prompt).
-    "prefetched_context_md",
-    "scout_findings_md",
-)
-
-
-def _build_phase_config_from_dict(phase_config: dict, phase_name: str) -> PhaseConfig:
-    """Build a :class:`PhaseConfig` value object from a phase dict.
-
-    The inner runner reads ``phase_config: dict`` (a parsed JSON
-    section of the flow config). :func:`build_prompt` wants the
-    typed form. The :class:`PhaseConfig` is ``frozen=True`` so the
-    conversion is a one-shot snapshot.
-    """
-    raw_tools = phase_config.get("tools") or []
-    return PhaseConfig(
-        name=phase_name,
-        skill=str(phase_config.get("skill", "") or ""),
-        timeout_seconds=int(phase_config.get("timeout_seconds", 1800) or 1800),
-        retries=int(phase_config.get("retries", 1) or 1),
-        is_local=bool(phase_config.get("is_local", False)),
-        is_optional=bool(phase_config.get("is_optional", False)),
-        model=phase_config.get("model"),
-        provider=phase_config.get("provider"),
-        command=phase_config.get("command"),
-        tools=tuple(raw_tools),
-    )
-
-
-def _build_flow_context_from_dict(
-    context: dict, flow: Flow, issue_num: int,
-) -> FlowContext:
-    """Build a :class:`FlowContext` from the legacy context dict.
-
-    The dispatcher populated the dict with keys
-    (``prompt``, ``prd_body``, ``working_memory``,
-    ``prefetched_context``, ``repo_context``, ``scout_findings_md``).
-    The typed :class:`FlowContext` holds the same data — this
-    helper re-packs it. ``WorkingMemory`` and ``PrefetchedContext``
-    are reconstructed from their dict / object forms when present.
-    """
-    body = context.get("prompt") or f"## Issue #{issue_num}\n\nPlease execute this phase."
-
-    # parent_prd: prefer the explicit ``prd_body`` key (the dict
-    # shape). Strip the ``## Issue #N\n\n`` prefix the dispatcher
-    # prepends — the typed FlowContext stores the raw body.
-    prd = context.get("prd_body")
-    issue_body = body
-    prefix = f"## Issue #{issue_num}\n\n"
-    if body.startswith(prefix):
-        issue_body = body[len(prefix):]
-
-    # working_memory
-    wm = None
-    wm_dict = context.get("working_memory")
-    if isinstance(wm_dict, dict) and wm_dict:
-        try:
-            from working_memory import WorkingMemory
-            wm_dict = dict(wm_dict)
-            wm_dict.setdefault("issue", issue_num)
-            wm = WorkingMemory.from_dict(wm_dict)
-        except Exception:
-            wm = None
-
-    # prefetched
-    prefetched = context.get("prefetched_context")
-    if prefetched is None and "prefetched" in context:
-        prefetched = context.get("prefetched")
-
-    # repo_context
-    repo_ctx = context.get("repo_context")
-    repo_ctx = dict(repo_ctx) if isinstance(repo_ctx, dict) else None
-
-    return FlowContext(
-        flow=flow,
-        issue_num=issue_num,
-        issue_body=issue_body,
-        issue_title="",
-        parent_prd=prd,
-        working_memory=wm,
-        prefetched=prefetched,
-        repo_context=repo_ctx,
-        scout_findings=None,  # formatted scout_findings_md stays in extra_context
-    )
-
-
-def _build_phase_state_from_dict(context: dict, phase_name: str) -> PhaseState:
-    """Build a :class:`PhaseState` from the per-iteration context keys.
-
-    The flow loop mutates ``context["previous_output"]``,
-    ``context["diagnostic_insights"]`` and ``context["phase_outputs"]``
-    between iterations. The typed :class:`PhaseState` is the
-    canonical form; this helper re-packs it.
-    """
-    return PhaseState(
-        current_phase=phase_name,
-        phase_attempt=int(context.get("phase_attempt", 1) or 1),
-        previous_output=str(context.get("previous_output", "") or ""),
-        diagnostic_insights=str(context.get("diagnostic_insights", "") or ""),
-        phase_outputs=dict(context.get("phase_outputs") or {}),
-    )
-
-
-def _extra_context_from_dict(context: dict) -> dict:
-    """Pick the keys :func:`build_prompt` reads from ``extra_context``.
-
-    Retro-specific (``flow_name``, ``final_status``, ``repo_path``,
-    ``evidence_summary``, ``learnings_excerpt``) and pre-formatted
-    markdown caches (``prefetched_context_md``, ``scout_findings_md``)
-    don't have a home on the typed objects, so :func:`build_prompt`
-    reads them from this dict.
-    """
-    return {k: context[k] for k in _EXTRA_CONTEXT_KEYS if k in context}
 
 
 # ─── Public entry point ─────────────────────────────────────────────────
@@ -1040,18 +946,7 @@ def run_phase(
         string.
     """
     _log = _resolve_log(log)
-    flow_config = _flow_to_dict(flow)
-    ctx = _context_to_dict(context)
-
-    # Carry the per-iteration phase_outputs dict through to the inner
-    # helpers (e.g. retrospective reads the close phase's verdict from
-    # it). The runner mutates ``ctx["phase_outputs"]``; we read it
-    # back off the context dict after the inner call and update the
-    # typed :class:`PhaseState` to match.
-    if state.phase_outputs:
-        ctx["phase_outputs"] = dict(state.phase_outputs)
-
-    phase_config = flow_config["phases"][phase_name]
+    phase_config = flow.phases.get(phase_name) or {}
     is_optional = bool(phase_config.get("is_optional"))
     started = datetime.now()
 
@@ -1079,7 +974,7 @@ def run_phase(
     if is_optional:
         try:
             result, session_log = _run_phase_inner(
-                phase_name, flow_config, context.issue_num, ctx, log=_log,
+                phase_name, flow, context, state, log=_log,
             )
         except Exception as e:  # noqa: BLE001
             # Non-fatal: log and convert to a synthetic success result.
@@ -1095,8 +990,10 @@ def run_phase(
                 details=f"{phase_name} failed (non-blocking, logged): {err_msg}",
                 session_log_path=None,
             )
-            # Propagate the (possibly mutated) ctx back to the state.
-            _sync_state(state, ctx)
+            # The inner runner has already synced ``state`` before
+            # raising (close-phase early return + final return both
+            # call :func:`_sync_state`); on the exception path there
+            # is nothing to propagate.
             return phase_run
 
         # Belt and braces: the inner runner now also downgrades
@@ -1121,7 +1018,6 @@ def run_phase(
                 ),
                 session_log_path=session_log,
             )
-            _sync_state(state, ctx)
             return phase_run
 
         # Happy-path: package the result + tokens into a PhaseRun.
@@ -1131,11 +1027,10 @@ def run_phase(
             details=details,
             session_log_path=session_log,
         )
-        _sync_state(state, ctx)
         return phase_run
 
     result, session_log = _run_phase_inner(
-        phase_name, flow_config, context.issue_num, ctx, log=_log,
+        phase_name, flow, context, state, log=_log,
     )
     details = (result.get("details", "") if isinstance(result, dict) else "")
     phase_run = _build_phase_run(
@@ -1143,7 +1038,6 @@ def run_phase(
         details=details,
         session_log_path=session_log,
     )
-    _sync_state(state, ctx)
     return phase_run
 
 

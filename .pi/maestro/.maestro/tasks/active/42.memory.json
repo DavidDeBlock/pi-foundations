@@ -1,7 +1,7 @@
 {
   "issue": 42,
   "created_at": "2026-06-15T22:16:27.771871+00:00",
-  "updated_at": "2026-06-16T09:39:56.184214+00:00",
+  "updated_at": "2026-06-16T10:00:38.470667+00:00",
   "repo_path": "/home/david/projects/pi-foundations/.pi/maestro",
   "git_sha": "ae554fdab7bca85b8c9356c4787460f6ef1f3cf1",
   "scout": {
@@ -1358,6 +1358,138 @@
         "session_log": ""
       },
       "timestamp": "2026-06-16T09:39:56.184209+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T10:00:38.443815+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T10:00:38.445695+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T10:00:38.448737+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "reject",
+        "attempt": 2,
+        "details": "phase_b found issues",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T10:00:38.450601+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T10:00:38.452309+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T10:00:38.454037+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T10:00:38.457637+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "retro",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "downgraded from error",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T10:00:38.459594+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 1,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T10:00:38.462945+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_b",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T10:00:38.464905+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "reject",
+        "attempt": 1,
+        "details": "needs fix",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T10:00:38.468591+00:00"
+    },
+    {
+      "type": "unknown_phase",
+      "phase": "phase_a",
+      "data": {
+        "status": "success",
+        "attempt": 2,
+        "details": "all good",
+        "session_log": ""
+      },
+      "timestamp": "2026-06-16T10:00:38.470661+00:00"
     }
   ]
 }

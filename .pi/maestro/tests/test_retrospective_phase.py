@@ -33,11 +33,13 @@ sys.path.insert(0, str(MAESTRO_DIR))
 sys.path.insert(0, str(MAESTRO_DIR / "lib"))
 
 from flow_engine import (  # noqa: E402
+    get_next_step,
+)
+from phase_runner import (  # noqa: E402
     _format_evidence_summary,
     _format_learnings_excerpt,
     _persist_retrospective_result,
     _populate_retrospective_context,
-    get_next_step,
     run_phase,
 )
 from learnings import (  # noqa: E402

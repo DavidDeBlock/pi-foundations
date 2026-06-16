@@ -155,18 +155,19 @@ def test_prefetched_context_injected_into_builder_prompt():
         # Now import build_prompt and call it.
         # Per deepening PRD issue #32, build_prompt lives in
         # ``prompt_assembler`` and returns a :class:`PreparedPrompt`
-        # value object (not a tuple). It also takes typed objects
+        # value object (not a tuple). It takes typed objects
         # (``PhaseConfig`` / ``Flow`` / ``FlowContext`` / ``PhaseState``)
-        # — we build those from the dicts here, mirroring what
-        # :func:`phase_runner._run_phase_inner` does.
+        # — we construct those directly here (issue #43 deleted the
+        # ``_build_*_from_dict`` helpers in ``phase_runner`` that used
+        # to do this conversion).
         from prompt_assembler import build_prompt
-        from phase_runner import (
-            _build_phase_config_from_dict,
-            _build_flow_context_from_dict,
-            _build_phase_state_from_dict,
-            _extra_context_from_dict,
+        from flow_engine import (
+            Flow,
+            FlowContext,
+            PhaseConfig,
+            PhaseState,
+            _flow_from_config,
         )
-        from flow_engine import _flow_from_config
         prompts_dir = _make_tmpdir()
         try:
             _write_minimal_prompt(prompts_dir, "builder")
@@ -191,22 +192,61 @@ def test_prefetched_context_injected_into_builder_prompt():
                 copy2(real_prompts_path, backup_path)
             copy2(test_prompts_path, real_prompts_path)
 
-            context = {
-                "prompt": "## Issue #42\n\nImplement the thing.",
-                "prefetched_context_md": format_prefetched_context(ctx),
-                "working_memory": {
-                    "issue": 42,
-                    "builder": {"summary": "previous attempt"},
-                    "files_touched": ["a.py"],
-                },
+            # Construct the typed objects directly. The previous
+            # ``_build_*_from_dict`` shims in :mod:`phase_runner` used
+            # to do this conversion from a legacy ``context`` dict;
+            # now callers (including the tests) build the typed
+            # objects themselves.
+            wm_dict = {
+                "issue": 42,
+                "builder": {"summary": "previous attempt"},
+                "files_touched": ["a.py"],
             }
+            try:
+                wm = WorkingMemory.from_dict(wm_dict)
+            except Exception:
+                wm = None
 
             try:
                 flow = _flow_from_config(flow_config)
-                pc = _build_phase_config_from_dict(phase_config, "builder")
-                fc = _build_flow_context_from_dict(context, flow, 42)
-                st = _build_phase_state_from_dict(context, "builder")
-                ec = _extra_context_from_dict(context)
+                pc = PhaseConfig(
+                    name="builder",
+                    skill="/skill:builder",
+                    timeout_seconds=1800,
+                    retries=1,
+                    is_local=False,
+                    is_optional=False,
+                    model=None,
+                    provider=None,
+                    command=None,
+                    tools=(),
+                )
+                fc = FlowContext(
+                    flow=flow,
+                    issue_num=42,
+                    issue_body="Implement the thing.",
+                    issue_title="",
+                    parent_prd=None,
+                    working_memory=wm,
+                    prefetched=ctx,
+                    repo_context=None,
+                    scout_findings=None,
+                )
+                st = PhaseState(
+                    current_phase="builder",
+                    phase_attempt=1,
+                    previous_output="",
+                    diagnostic_insights="",
+                    phase_outputs={},
+                )
+                # extra_context: the dict :func:`build_prompt` reads
+                # for the pre-formatted markdown caches (and, for the
+                # retrospective phase, retro-specific vars). This
+                # test only exercises the prefetched cache, so the
+                # other keys are absent.
+                ec = {
+                    "prefetched_context_md": format_prefetched_context(ctx),
+                }
                 prepared = build_prompt(
                     phase_name="builder",
                     phase_config=pc,
