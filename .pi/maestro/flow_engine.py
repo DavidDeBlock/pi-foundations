@@ -8,6 +8,21 @@ Handles:
 - Session log parsing & inline metadata rendering
 - GitHub comment gating (first rejection + final success)
 - Terminal tree layout output
+
+Note on module split (deepening PRD issue #31):
+- The per-phase function (``run_phase``) and its inner helpers
+  (``_run_phase_inner``, ``_build_session_dir``,
+  ``_extract_phase_tokens``, ``_populate_retrospective_context``,
+  ``_persist_retrospective_result``, the close-phase
+  ``run_close_phase`` / ``_close_phase_result``, the evidence
+  policy helpers) now live in :mod:`phase_runner`.
+- This module keeps the phase loop (:func:`run_flow_on_issue`),
+  the prompt builder (:func:`build_prompt`), the diagnostic pass
+  (:func:`run_diagnostic`), and the value-object dataclasses.
+- ``phase_runner.run_phase`` is imported lazily inside
+  :func:`run_flow_on_issue` and :func:`_run_scout_phase` to avoid
+  a circular import (phase_runner imports value objects from
+  here at module load time).
 """
 
 import json
@@ -22,9 +37,8 @@ from typing import Optional, Tuple
 sys.path.insert(0, str(Path(__file__).parent / "lib"))
 
 from terminal import Terminal
-from rpc_client import run_rpc_with_session_log
 from github_client import GithubClient
-from session_reader import parse_session_log, extract_phase_usage
+from session_reader import parse_session_log
 import flow_logger as _flow_logger  # noqa: E402  (StderrLogger for token events)
 from prompt_loader import load_prompt, PERMISSIVE_FALLBACK
 from working_memory import MemoryStore, WorkingMemory
@@ -36,16 +50,6 @@ from context_prefetch import (
 from scout_findings import (
     parse_scout_findings_from_details,
     format_scout_findings_markdown,
-)
-from evidence import EvidenceStore, EvidenceType  # noqa: E402
-from learnings import (  # noqa: E402
-    LEARNINGS_FILENAME,
-    format_learning_entry,
-    format_amendment_entry,
-    parse_retrospective_output,
-    count_recurring_patterns,
-    append_to_learnings,
-    append_to_amendments,
 )
 from projects_registry import (  # noqa: E402
     REGISTRY_FILENAME as PROJECTS_REGISTRY_FILENAME,
@@ -83,145 +87,11 @@ def _resolve_log(log: Optional["FlowLogger"]) -> "FlowLogger":
     return log if log is not None else _flow_logger.StderrLogger()
 
 
-# ─── Evidence policy defaults ─────────────────────────────────────────────
-#
-# Per the evidence gates PRD, every flow has a default evidence policy of
-# ``warn_but_proceed`` with ``[tested, reviewed]`` required. PR flows can
-# override to ``block``; audit flows can override to ``ignore`` or empty.
-# The defaults are intentionally lenient to preserve backward compatibility
-# with existing flows (e.g. ``gap-check``, ``prd-audit``) that don't write
-# evidence.
-
-DEFAULT_EVIDENCE_POLICY: dict = {
-    "required_on_success": ["tested", "reviewed"],
-    "on_missing_evidence": "warn_but_proceed",
-}
-
-
-def get_evidence_policy(flow_config: dict) -> dict:
-    """Return the effective evidence policy for a flow.
-
-    Reads ``flow_config["evidence_policy"]`` and merges with
-    :data:`DEFAULT_EVIDENCE_POLICY`. Unrecognized keys are preserved
-    (forward-compat). Missing policy → defaults (no surprise, all flows
-    behave the same as before this slice shipped).
-    """
-    if not isinstance(flow_config, dict):
-        return dict(DEFAULT_EVIDENCE_POLICY)
-    raw = flow_config.get("evidence_policy")
-    if not isinstance(raw, dict):
-        return dict(DEFAULT_EVIDENCE_POLICY)
-    merged = dict(DEFAULT_EVIDENCE_POLICY)
-    merged.update(raw)
-    return merged
-
-
-def _close_phase_result(
-    flow_config: dict,
-    issue_num: int,
-    evidence_dir=None,
-    log: Optional["FlowLogger"] = None,
-) -> dict:
-    """Compute the close-phase result based on the flow's evidence policy.
-
-    Centralised here so the AC-specified policies (``block``,
-    ``warn_but_proceed``, ``ignore``) all live in one place. Used by
-    :func:`run_close_phase` and the flow-evidence tests.
-
-    Returns a dict with ``status`` and ``details`` (matches the contract
-    used by ``run_phase``). ``status`` is one of:
-        - ``"success"`` — evidence is present OR policy allowed proceeding
-        - ``"rejected"`` — evidence is missing AND policy is ``block``
-    """
-    from pathlib import Path
-
-    policy = get_evidence_policy(flow_config)
-    required = [EvidenceType(t) for t in policy.get("required_on_success", [])]
-    on_missing = policy.get("on_missing_evidence", "warn_but_proceed")
-
-    # Allow the test/CLI path to override the default EVIDENCE_DIR for
-    # isolation. The flow config doesn't carry a path — that's a session-
-    # level concern.
-    if evidence_dir is None:
-        store = EvidenceStore(issue_num)
-    else:
-        store = EvidenceStore(issue_num, evidence_dir=Path(evidence_dir))
-
-    ok, missing = store.check(required)
-    required_values = [t.value for t in required]
-
-    if ok:
-        return {
-            "status": "success",
-            "details": f"All evidence present: {required_values}",
-        }
-
-    missing_values = [
-        m.value if isinstance(m, EvidenceType) else str(m) for m in missing
-    ]
-
-    if on_missing == "block":
-        return {
-            "status": "reject",
-            "details": (
-                f"Missing evidence (block policy): {missing_values} "
-                f"(required: {required_values})"
-            ),
-        }
-    if on_missing == "warn_but_proceed":
-        # Use the structured FlowLogger port (issue #30). Each line
-        # is an ``evidence_warn`` event; the StderrLogger renders
-        # ``evidence_warn: <message>`` (no ``[phase]`` prefix — these
-        # warnings are not phase-scoped).
-        _log = _resolve_log(log)
-        _log.emit(_flow_logger.FlowEvent(
-            kind="evidence_warn",
-            message=f"Missing evidence for issue #{issue_num}: {missing_values}",
-            timestamp=_flow_logger.now_iso(),
-        ))
-        _log.emit(_flow_logger.FlowEvent(
-            kind="evidence_warn",
-            message="Proceeding without required evidence (warn_but_proceed policy)",
-            timestamp=_flow_logger.now_iso(),
-        ))
-        return {
-            "status": "success",
-            "details": (
-                f"Missing evidence (warned): {missing_values} "
-                f"(required: {required_values})"
-            ),
-        }
-    # on_missing == "ignore" or any other value → skip the check entirely
-    return {
-        "status": "success",
-        "details": f"Evidence check skipped (policy: {on_missing})",
-    }
-
-
-def run_close_phase(
-    flow_config: dict,
-    issue_num: int,
-    evidence_dir=None,
-    log: Optional["FlowLogger"] = None,
-) -> dict:
-    """Run the close phase: mechanically check evidence gates.
-
-    This is invoked from :func:`run_phase` when the phase is named
-    ``"close"`` and ``is_local: true``. It does NOT call an LLM — it's a
-    pure local-command phase whose behaviour is fully determined by the
-    flow's ``evidence_policy`` and the current state of the evidence
-    directory on disk.
-
-    The result dict uses the same shape as :func:`run_phase`'s return —
-    a status of ``"success"`` lets the flow continue, ``"reject"``
-    routes the flow to the next transition (typically ``diagnostic`` per
-    the builder-reviewer flow config). We use ``"reject"`` (not
-    ``"rejected"``) to match the existing flow engine status vocabulary
-    — see :func:`run_phase`'s ``on_reject`` / ``on_error`` transitions.
-    """
-    return _close_phase_result(
-        flow_config, issue_num, evidence_dir=evidence_dir, log=log
-    )
+# NOTE: the per-phase evidence-policy code (``DEFAULT_EVIDENCE_POLICY``,
+# ``get_evidence_policy``, ``_close_phase_result``, ``run_close_phase``)
+# moved to :mod:`phase_runner` (deepening PRD issue #31). The close
+# phase is dispatched from inside :func:`phase_runner.run_phase`, so
+# keeping the evidence-policy code with the runner is the right home.
 
 
 def _maybe_get_working_memory(issue_num: int, context: dict) -> dict:
@@ -347,6 +217,11 @@ def _run_scout_phase(
     This function is intentionally non-raising: a failing scout must never
     block the pipeline.
     """
+    # Deferred import: ``phase_runner`` imports the value objects from
+    # this module at load time, so we have to import it lazily here to
+    # avoid a circular import.
+    from phase_runner import run_phase as _phase_runner_run_phase
+
     scout_timeout = flow_config.get("scout_timeout_seconds", 240)
 
     _log = _resolve_log(log)
@@ -357,14 +232,26 @@ def _run_scout_phase(
         phase="scout",
     ))
 
-    result, session_log_path = run_phase("scout", flow_config, issue_num, context, log=_log)
+    # Build the typed inputs ``phase_runner.run_phase`` expects, then
+    # re-shape the returned ``PhaseRun`` back into the legacy
+    # ``(result_dict, session_log_path)`` tuple this helper historically
+    # returned. The re-shape is the only place the legacy
+    # ``result["output"]`` key is constructed (it carried the raw LLM
+    # text so the scout findings parser could read the
+    # ``### PHASE_OUTPUT`` block).
+    flow = _flow_from_config(flow_config)
+    flow_context = _build_scout_flow_context(flow, issue_num, context, memory_store)
+    state = PhaseState(current_phase="scout", phase_attempt=1)
+    term = Terminal(verbosity=0)
+    gh = GithubClient()
 
-    status = result.get("status", "error")
-    details = result.get("details", "") or ""
-    # The raw LLM output (which contains the PHASE_OUTPUT block) lives in
-    # ``result["output"]``. ``result["details"]`` is a summarized verdict,
-    # not the raw scout text.
-    raw_output = result.get("output", "") or ""
+    phase_run = _phase_runner_run_phase(
+        "scout", flow, flow_context, state, term, gh, log=_log,
+    )
+    status = phase_run.status
+    details = phase_run.details or ""
+    raw_output = phase_run.details or ""
+    session_log_path = str(phase_run.session_log) if phase_run.session_log else None
 
     if status != "success":
         # Non-fatal: log and proceed without findings
@@ -442,6 +329,41 @@ def _run_scout_phase(
         ))
 
     return findings
+
+
+def _build_scout_flow_context(
+    flow: "Flow",
+    issue_num: int,
+    context: dict,
+    memory_store: MemoryStore,
+) -> "FlowContext":
+    """Build a minimal :class:`FlowContext` for the scout phase.
+
+    The dispatcher already has the full :class:`FlowContext`; this
+    helper exists for ``_run_scout_phase`` (which only has the legacy
+    ``context`` dict + ``MemoryStore``) so the typed
+    :func:`phase_runner.run_phase` can be called. Every optional field
+    defaults to ``None``; ``issue_body`` is read from
+    ``context["prompt"]`` (the dispatcher sets that to
+    ``"## Issue #N\n\n<body>"``).
+    """
+    prompt_md = context.get("prompt", "") or ""
+    body = ""
+    if prompt_md.startswith(f"## Issue #{issue_num}"):
+        body = prompt_md.split("\n\n", 1)[-1] if "\n\n" in prompt_md else ""
+    parent_prd = context.get("prd_body")
+    try:
+        working_memory = memory_store.load()
+    except Exception:
+        working_memory = WorkingMemory(issue=issue_num, created_at=_flow_logger.now_iso())
+    return FlowContext(
+        flow=flow,
+        issue_num=issue_num,
+        issue_body=body,
+        issue_title="",
+        parent_prd=parent_prd,
+        working_memory=working_memory,
+    )
 
 
 def get_next_step(transitions: list, current_phase: str, status: str) -> Optional[str]:
@@ -627,735 +549,6 @@ def build_prompt(phase_name: str, phase_config: dict, flow_config: dict, issue_n
     )
 
     return prompt, loaded.tools
-
-
-def _build_session_dir(flow_name: str, issue_num: int, phase_name: str) -> Optional[str]:
-    """Create a session log file path for this flow/phase execution.
-
-    Phase 1+ layout (flat files):
-        <session_base>/<issue>/<flow>-<phase>-<ISO8601>.jsonl
-
-    Old layout (subdirectories) is no longer used - kept only for backward
-    compatibility with existing session directories on disk.
-
-    Reads session_dir from config.json. MAESTRO_SESSION_DIR env var overrides:
-    set to a path to use it, or "0"/empty to disable.
-
-    Config paths resolve relative to the project root (parent of maestro_dir).
-    Env var paths are used as-is (absolute or relative to cwd).
-
-    Returns:
-        Path to the .jsonl file (not a directory), e.g.:
-        ".pi/maestro/sessions/179/builder-reviewer-builder-2026-05-26T10:30:00.jsonl"
-    """
-    maestro_dir = Path(__file__).parent
-    project_root = maestro_dir.parent.parent  # .pi/maestro → .pi → project root
-
-    def _build_flat_path(base_session_dir: Path) -> str:
-        """Build a flat-file session path: <issue>/<flow>-<phase>-<ISO8601>.jsonl"""
-        safe_phase = phase_name.replace("/", "-")  # Handle skill paths like /skill:tdd
-        iso_ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        issue_dir = base_session_dir / str(issue_num)
-        os.makedirs(issue_dir, exist_ok=True)
-        jsonl_file = issue_dir / f"{flow_name}-{safe_phase}-{iso_ts}.jsonl"
-        return str(jsonl_file)
-
-    # Env var takes absolute precedence when explicitly set
-    if "MAESTRO_SESSION_DIR" in os.environ:
-        env_override = os.environ["MAESTRO_SESSION_DIR"]
-        if not env_override or env_override == "0":  # Disabled if empty or "0"
-            return None
-        base_session_dir = Path(env_override)
-        os.makedirs(base_session_dir, exist_ok=True)
-        return _build_flat_path(base_session_dir)
-
-    # Read session_dir from config.json
-    config_path = maestro_dir / "config.json"
-    base_session_dir: Optional[Path] = None
-
-    if config_path.exists():
-        try:
-            with open(config_path) as f:
-                cfg = json.load(f)
-                raw = cfg.get("session_dir", "") or ""
-                if not raw.strip():  # Empty means disabled
-                    return None
-
-                # Resolve relative to project root (parent of maestro_dir)
-                candidate = Path(raw)
-                if candidate.is_absolute():
-                    base_session_dir = candidate
-                else:
-                    base_session_dir = project_root / candidate
-        except (json.JSONDecodeError, IOError):
-            pass
-
-    if not base_session_dir:
-        return None
-
-    os.makedirs(base_session_dir, exist_ok=True)
-    return _build_flat_path(base_session_dir)
-
-
-def _extract_phase_tokens(session_log_path: Optional[object]) -> dict:
-    """Return ``{tokens_in, tokens_out, cache_read}`` from a session log.
-
-    Wraps :func:`lib.session_reader.extract_phase_usage` with the
-    field-mapping the runner uses:
-
-        - ``tokens_in``  = ``usage["input"] + usage["cacheWrite"]``
-          (the "real" input cost, including cache writes)
-        - ``tokens_out`` = ``usage["output"]``
-        - ``cache_read`` = ``usage["cacheRead"]``
-
-    All three default to ``None`` when the log is missing or has no
-    usage data. The local-command and close phases have no session
-    log — they return ``(None, None, None)`` here. The ``is_optional``
-    exception path also returns ``None``s (no log on hard failure).
-    """
-    if not session_log_path:
-        return {"tokens_in": None, "tokens_out": None, "cache_read": None}
-    usage = extract_phase_usage(session_log_path)
-    if not isinstance(usage, dict):
-        return {"tokens_in": None, "tokens_out": None, "cache_read": None}
-    try:
-        tokens_in = int(usage.get("input", 0)) + int(usage.get("cacheWrite", 0))
-        tokens_out = int(usage.get("output", 0))
-        cache_read = int(usage.get("cacheRead", 0))
-    except (TypeError, ValueError):
-        return {"tokens_in": None, "tokens_out": None, "cache_read": None}
-    return {"tokens_in": tokens_in, "tokens_out": tokens_out, "cache_read": cache_read}
-
-
-def run_phase(phase_name: str, flow_config: dict, issue_num: int, context: dict, log: Optional["FlowLogger"] = None) -> Tuple[dict, Optional[str]]:
-    """Execute a single phase and return its result.
-
-    Phases declared with ``is_optional: true`` (currently used by the
-    ``retrospective`` phase) are wrapped in try/except — a raised
-    exception is logged and converted to a synthetic success result so
-    the flow can never be broken by a failing retrospective. This is
-    intentional divergence from the rest of the engine (which lets
-    errors propagate to ``diagnostic``) because retrospective is the
-    LAST phase and a missed learning is recoverable on the next run.
-
-    See ``docs/35-prds/maestro-retrospective.md`` §"Why is retrospective
-    non-blocking?".
-
-    Token plumbing (per the deepening PRD): every result dict returned
-    from this function carries ``tokens_in``, ``tokens_out`` and
-    ``cache_read`` fields, populated from the session log via
-    :func:`_extract_phase_tokens`. All three default to ``None`` when
-    the log is missing or has no usage data.
-    """
-    phase_config = flow_config["phases"][phase_name]
-    is_optional = bool(phase_config.get("is_optional"))
-    _log = _resolve_log(log)
-
-    if is_optional:
-        try:
-            result, session_log = _run_phase_inner(phase_name, flow_config, issue_num, context, log=_log)
-        except Exception as e:  # noqa: BLE001
-            # Non-fatal: log and convert to a synthetic success result.
-            # We never raise out of an optional phase.
-            err_msg = f"{type(e).__name__}: {e}"
-            _log.emit(_flow_logger.FlowEvent(
-                kind="phase_end",
-                message=f"Failed (non-fatal): {err_msg}",
-                timestamp=_flow_logger.now_iso(),
-                phase=phase_name,
-            ))
-            result = {
-                "status": "success",
-                "details": f"{phase_name} failed (non-blocking, logged): {err_msg}",
-            }
-            result.update(_extract_phase_tokens(None))
-            return result, None
-
-        # Belt and braces: the inner runner now also downgrades
-        # verdict-extraction errors for the retrospective phase to a
-        # success, but other `is_optional` phases (added in the future)
-        # could still return `{"status": "error", ...}` from the
-        # extractor. Treat any error return from an optional phase as
-        # non-fatal too — log it loudly, but never break the flow.
-        if isinstance(result, dict) and result.get("status") == "error":
-            err_details = result.get("details", "unknown error")
-            _log.emit(_flow_logger.FlowEvent(
-                kind="phase_end",
-                message=f"Returned error (non-fatal, downgraded): {err_details}",
-                timestamp=_flow_logger.now_iso(),
-                phase=phase_name,
-            ))
-            result = {
-                "status": "success",
-                "details": (
-                    f"{phase_name} error downgraded to non-blocking success: "
-                    f"{err_details}"
-                ),
-            }
-            result.update(_extract_phase_tokens(session_log))
-            return result, session_log
-
-        # Happy-path: enrich the result with token fields
-        if isinstance(result, dict):
-            result.update(_extract_phase_tokens(session_log))
-        return result, session_log
-
-    result, session_log = _run_phase_inner(phase_name, flow_config, issue_num, context, log=_log)
-    if isinstance(result, dict):
-        result.update(_extract_phase_tokens(session_log))
-    return result, session_log
-
-
-def _run_phase_inner(phase_name: str, flow_config: dict, issue_num: int, context: dict, log: Optional["FlowLogger"] = None) -> Tuple[dict, Optional[str]]:
-    """Inner phase runner — the original ``run_phase`` body.
-
-    Split out so :func:`run_phase` can wrap it in a non-blocking
-    try/except for ``is_optional`` phases (retrospective). All callers
-    should use :func:`run_phase`, not this private helper.
-    """
-    phase_config = flow_config["phases"][phase_name]
-    _log = _resolve_log(log)
-
-    # Local command phases run directly via subprocess (no LLM)
-    if phase_config.get("is_local"):
-        # The ``close`` phase is special: it's the evidence gate. We
-        # dispatch to :func:`run_close_phase` instead of the generic
-        # subprocess handler so the flow's ``evidence_policy`` is applied
-        # (block / warn_but_proceed / ignore). The phase's ``command``
-        # field is kept for documentation / non-evidence backstops but is
-        # not invoked.
-        if phase_name == "close":
-            result = run_close_phase(flow_config, issue_num)
-            # Cache the close-phase result in context for downstream
-            # phases (e.g. retrospective) to read.
-            context.setdefault("phase_outputs", {})["close"] = result
-            return result, None
-
-        cmd = phase_config.get("command", "").replace("{issue_number}", str(issue_num))
-        _log.emit(_flow_logger.FlowEvent(
-            kind="phase_start",
-            message=f"Running local command: {cmd}",
-            timestamp=_flow_logger.now_iso(),
-            phase=phase_name,
-        ))
-
-        import subprocess
-        try:
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True,
-                timeout=phase_config.get("timeout_seconds", 60)
-            )
-            if result.returncode == 0:
-                return {"status": "success", "details": f"Local command succeeded: {cmd}"}, None
-            else:
-                err = (result.stderr or result.stdout)[:300]
-                return {"status": "reject", "details": f"Local command failed ({result.returncode}): {err}"}, None
-        except subprocess.TimeoutExpired:
-            return {"status": "error", "details": f"Local command timed out after {phase_config.get('timeout_seconds', 60)}s"}, None
-        except Exception as e:
-            return {"status": "error", "details": f"Local command error: {str(e)[:200]}"}, None
-
-    # ── Retrospective pre-run setup ─────────────────────────────────
-    # Populate context variables the retrospective prompt uses (flow
-    # name, final status, repo path, evidence summary, learnings tail).
-    # This is a no-op for non-retrospective phases.
-    if phase_name == "retrospective":
-        try:
-            _populate_retrospective_context(context, flow_config, issue_num)
-        except Exception as e:  # noqa: BLE001
-            # Best-effort — defaults in build_prompt are safe.
-            _log.emit(_flow_logger.FlowEvent(
-                kind="phase_end",
-                message=(
-                    f"Failed to populate context: "
-                    f"{type(e).__name__}: {e}"
-                ),
-                timestamp=_flow_logger.now_iso(),
-                phase="retrospective",
-            ))
-
-    prompt, tools = build_prompt(phase_name, phase_config, flow_config, issue_num, context, log=_log)
-
-    _log.emit(_flow_logger.FlowEvent(
-        kind="phase_start",
-        message=f"Running '{phase_name}' on issue #{issue_num}",
-        timestamp=_flow_logger.now_iso(),
-        phase=phase_name,
-    ))
-
-    timeout = phase_config.get("timeout_seconds", 1800)
-    model = phase_config.get("model")
-    provider = phase_config.get("provider")
-
-    # Build session directory for this run (opt-in via MAESTRO_LOG_SESSIONS)
-    flow_name = flow_config.get("name", "unknown")
-    session_dir = _build_session_dir(flow_name, issue_num, phase_name)
-    if session_dir:
-        _log.emit(_flow_logger.FlowEvent(
-            kind="phase_start",
-            message=f"Session dir: {session_dir}",
-            timestamp=_flow_logger.now_iso(),
-            phase=phase_name,
-        ))
-
-    rpc_result = run_rpc_with_session_log(
-        prompt, phase_name, timeout,
-        model=model, provider=provider,
-        session_dir=session_dir,
-        tools=tools,
-    )
-
-    session_log_path = rpc_result.get("session_log")
-
-    if not rpc_result["success"]:
-        return {
-            "status": "error",
-            "details": f"RPC failed: {rpc_result['output'][:200]}"
-        }, session_log_path
-
-    # Extract verdict from the result dict — single source of truth
-    status_data = rpc_result.get("result", {})
-    phase_status = status_data.get("status")
-
-    # Handle error state: verdict extraction failed (no verdict block in session log)
-    if phase_status == "error":
-        details_text = status_data.get(
-            "details",
-            "No verdict extracted from session log"
-        )
-
-        # Retrospective is special: the agent emits a `### PHASE_OUTPUT` block
-        # (not a ` ```verdict ` fence). The verdict_extractor fallback added
-        # in lib/verdict_extractor.py handles this, but if it still fails
-        # (e.g. the block was truncated in rpc_output, or the agent forgot
-        # the markers) we must NOT let the flow break — retrospective is
-        # declared `is_optional: true` and the transition routes every
-        # outcome to `finish`.
-        #
-        # Instead, we attempt the persistence step from the raw rpc_output
-        # (which contains the agent's full text including the PHASE_OUTPUT
-        # block when it exists) and return a synthetic success. The
-        # persistence helper itself is best-effort — it falls back to a
-        # minimal entry when the block can't be parsed, so the file
-        # `.maestro/learnings.md` still gets written with at least the
-        # issue number and outcome.
-        if phase_name == "retrospective":
-            try:
-                repo_path_for_retro = Path(context.get("repo_path", Path.cwd()))
-                flow_status_value = str(context.get("final_status") or "error")
-                _persist_retrospective_result(
-                    issue_num=issue_num,
-                    flow_name=str(context.get("flow_name", flow_config.get("name", "unknown"))),
-                    rpc_output=rpc_result.get("output", "") or "",
-                    flow_status=flow_status_value,
-                    repo_path=repo_path_for_retro,
-                    session_log_path=session_log_path,
-                )
-            except Exception as persist_err:  # noqa: BLE001
-                _log.emit(_flow_logger.FlowEvent(
-                    kind="phase_end",
-                    message=(
-                        f"Persistence on verdict-error path failed: "
-                        f"{type(persist_err).__name__}: {persist_err}"
-                    ),
-                    timestamp=_flow_logger.now_iso(),
-                    phase="retrospective",
-                ))
-            return (
-                {
-                    "status": "success",
-                    "details": (
-                        f"retrospective completed (non-blocking): verdict "
-                        f"extraction failed ({details_text[:120]}), but "
-                        f"persistence was attempted from raw output"
-                    ),
-                },
-                session_log_path,
-            )
-
-        return {
-            "status": "error",
-            "details": f"Verdict extraction failed: {details_text}"
-        }, session_log_path
-
-    # Binary verdict model: approved / rejected
-    if phase_status == "approved":
-        final_status = "success"
-        details = f"{phase_name} approved"
-    elif phase_status == "rejected":
-        final_status = "reject"
-        issues = status_data.get("issues", [])
-        verdict = status_data.get("verdict", "")
-
-        if issues:
-            details_parts = [f"{phase_name} rejected"]
-            for issue in issues[:5]:
-                details_parts.append(f"• {issue}")
-            details = "\n".join(details_parts)
-        elif verdict:
-            details = f"{phase_name} rejected: {verdict}"
-        else:
-            details = f"{phase_name} self-rejected (no details in result)"
-    elif phase_status == "no_gaps":
-        # Backward-compatible passthrough for existing flow configurations
-        final_status = "no_gaps"
-        details = status_data.get("message", f"No significant gaps found in {phase_name}")
-    else:
-        # Unknown or non-standard status — fail loudly rather than misclassify
-        return {
-            "status": "error",
-            "details": (
-                f"Unexpected verdict status '{phase_status}' from rpc_client. "
-                f"Expected one of: approved, rejected, no_gaps, error"
-            ),
-        }, session_log_path
-
-    # ── Retrospective post-run persistence ──────────────────────────
-    # If this is the retrospective phase, parse the LLM's PHASE_OUTPUT
-    # and append a structured entry to the repo's learnings.md. The
-    # ``_persist_retrospective_result`` helper is best-effort — any
-    # error is logged but does not affect the return value below.
-    if phase_name == "retrospective":
-        try:
-            repo_path_for_retro = Path(context.get("repo_path", Path.cwd()))
-            # The flow-level outcome: prefer the close phase's status,
-            # fall back to the retrospective's own status.
-            flow_status_value = str(context.get("final_status") or final_status)
-            _persist_retrospective_result(
-                issue_num=issue_num,
-                flow_name=str(context.get("flow_name", flow_config.get("name", "unknown"))),
-                rpc_output=rpc_result.get("output", "") or "",
-                flow_status=flow_status_value,
-                repo_path=repo_path_for_retro,
-                session_log_path=session_log_path,
-                log=_log,
-            )
-        except Exception as e:  # noqa: BLE001
-            _log.emit(_flow_logger.FlowEvent(
-                kind="phase_end",
-                message=(
-                    f"Persistence step failed: "
-                    f"{type(e).__name__}: {e}"
-                ),
-                timestamp=_flow_logger.now_iso(),
-                phase="retrospective",
-            ))
-
-    return {
-        "status": final_status,
-        "details": details,
-        "output": rpc_result["output"]
-    }, session_log_path
-
-
-# ─── Retrospective result handling ───────────────────────────────────────
-
-
-def _populate_retrospective_context(
-    context: dict,
-    flow_config: dict,
-    issue_num: int,
-) -> None:
-    """Fill in retrospective-specific context variables.
-
-    Populates ``flow_name``, ``final_status``, ``repo_path``,
-    ``evidence_summary``, and ``learnings_excerpt`` on the context dict
-    so the retrospective prompt has everything it needs. Idempotent —
-    safe to call from multiple places.
-
-    Sources:
-        - ``flow_name`` → ``flow_config["name"]``
-        - ``final_status`` → status of the last non-retrospective phase
-          (or "unknown" if not yet recorded)
-        - ``repo_path`` → ``context["working_memory"].repo_path`` if set,
-          else ``Path.cwd()``
-        - ``evidence_summary`` → scanned from the evidence dir, listing
-          verified markers by type
-        - ``learnings_excerpt`` → last 2000 chars of the repo's
-          ``.maestro/learnings.md`` (if present)
-    """
-    # flow_name
-    context.setdefault("flow_name", flow_config.get("name", "unknown"))
-
-    # final_status — read from the most recent phase_outputs entry.
-    # Close's status is the canonical "did the flow succeed" indicator
-    # for PR flows. If not present, fall back to the last entry.
-    phase_outputs = context.get("phase_outputs") or {}
-    if "close" in phase_outputs:
-        context.setdefault("final_status", phase_outputs["close"].get("status", "unknown"))
-    else:
-        last_status = "unknown"
-        for ph_status in phase_outputs.values():
-            if isinstance(ph_status, dict) and "status" in ph_status:
-                last_status = ph_status["status"]
-        context.setdefault("final_status", last_status)
-
-    # repo_path
-    wm = context.get("working_memory") or {}
-    if isinstance(wm, dict) and wm.get("repo_path"):
-        context.setdefault("repo_path", wm["repo_path"])
-    else:
-        context.setdefault("repo_path", str(Path.cwd()))
-
-    # evidence_summary — scan the evidence dir for the issue
-    context.setdefault("evidence_summary", _format_evidence_summary(issue_num))
-
-    # learnings_excerpt — tail of the repo's learnings.md
-    context.setdefault(
-        "learnings_excerpt",
-        _format_learnings_excerpt(Path(context["repo_path"])),
-    )
-
-
-def _format_evidence_summary(issue_num: int) -> str:
-    """Return a one-line summary of evidence markers for the issue.
-
-    Lists each evidence type as ``<type>=<verified|missing>``. Falls
-    back to a friendly default if the evidence dir doesn't exist or
-    any other I/O error occurs — retrospective must never crash on
-    evidence lookup.
-    """
-    try:
-        store = EvidenceStore(issue_num)
-    except Exception:
-        return "(evidence dir unavailable)"
-
-    lines: list[str] = []
-    for etype in EvidenceType:
-        try:
-            marker = store.read(etype)
-        except Exception:
-            marker = None
-        if marker is None:
-            lines.append(f"{etype.value}=missing")
-        elif marker.verified:
-            lines.append(f"{etype.value}=verified")
-        else:
-            lines.append(f"{etype.value}=unverified")
-
-    return ", ".join(lines) if lines else "(no evidence types configured)"
-
-
-def _format_learnings_excerpt(repo_path: Path, max_chars: int = 2000) -> str:
-    """Return the tail of the repo's learnings.md (or a default).
-
-    The retrospective prompt only needs enough history to detect
-    recurring patterns — the full file is not necessary, and would
-    blow up the token budget. 2000 chars gives roughly the last 5-10
-    entries, which is enough for the keyword-overlap detector.
-    """
-    path = Path(repo_path) / LEARNINGS_FILENAME
-    if not path.exists():
-        return "(no previous learnings)"
-
-    try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return "(unreadable learnings file)"
-
-    if len(text) <= max_chars:
-        return text
-    return "...[truncated]...\n" + text[-max_chars:]
-
-
-def _read_agent_text_from_session_log(session_log_path: "Path") -> str:
-    """Read a session .jsonl and concatenate the agent's text parts.
-
-    The session log records every JSON event the LLM runtime emitted.
-    For the persistence step we only care about the assistant's text
-    parts (the prose the LLM wrote back to the user). This helper
-    mirrors the same extraction that ``verdict_extractor`` uses —
-    walking the JSONL line by line, picking out the
-    ``message.content[].text`` parts from assistant-role events, and
-    joining them with newlines so the ``PHASE_OUTPUT`` block survives
-    if the agent emitted one.
-
-    Returns an empty string if the file is missing, unreadable, or
-    contains no assistant text. Never raises.
-    """
-    if not session_log_path or not Path(session_log_path).exists():
-        return ""
-    try:
-        texts: list[str] = []
-        with open(session_log_path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    event = json.loads(line)
-                except (json.JSONDecodeError, ValueError):
-                    continue
-                msg = event.get("message") if isinstance(event, dict) else None
-                if not isinstance(msg, dict) or msg.get("role") != "assistant":
-                    continue
-                content = msg.get("content", [])
-                if not isinstance(content, list):
-                    continue
-                for part in content:
-                    if (
-                        isinstance(part, dict)
-                        and part.get("type") == "text"
-                        and isinstance(part.get("text"), str)
-                    ):
-                        texts.append(part["text"])
-        return "\n".join(texts)
-    except Exception:
-        return ""
-
-
-def _persist_retrospective_result(
-    issue_num: int,
-    flow_name: str,
-    rpc_output: str,
-    flow_status: str,
-    repo_path: "Path",
-    session_log_path: "Optional[str]" = None,
-    log: Optional["FlowLogger"] = None,
-) -> None:
-    """Parse the retrospective PHASE_OUTPUT and persist to .maestro/learnings.md.
-
-    Called after the LLM-driven retrospective phase completes. The
-    function is best-effort: any I/O error is logged and swallowed
-    (retrospective is non-blocking — see :func:`run_phase`).
-
-    Steps:
-        1. Resolve the source text. ``rpc_output`` is the truncated
-           JSON-event stream from the RPC client (first 2000 chars) —
-           the ``### PHASE_OUTPUT: ...`` block lives in the agent's
-           prose, not in the event stream, so a bare ``rpc_output``
-           usually can't find it. When ``session_log_path`` is given,
-           we read the full session log and concatenate the agent's
-           text parts; that always contains the block when the agent
-           emitted one.
-        2. Parse the concatenated text for the ``PHASE_OUTPUT`` block
-           via :func:`learnings.parse_retrospective_output`.
-        3. Format and append a markdown entry to
-           ``<repo>/.maestro/learnings.md``.
-        4. If the entry contains a similar pattern ≥3 times across the
-           file, append an amendment proposal to
-           ``<repo>/.maestro/proposed-amendments.md``.
-
-    The function never raises. Retrospective failures are logged at
-    WARN level but the flow continues to ``finish``.
-    """
-    # Resolve the source text. ``rpc_output`` alone is rarely enough
-    # (it's the truncated event stream, not the agent's prose). When
-    # we have a session log path, read it and concatenate the agent
-    # text parts. Otherwise fall back to ``rpc_output``.
-    _log = _resolve_log(log)
-    _ts = _flow_logger.now_iso()
-    source_text = rpc_output or ""
-    if session_log_path:
-        try:
-            session_text = _read_agent_text_from_session_log(Path(session_log_path))
-            if session_text:
-                # Prefer the session-log-derived text; the event
-                # stream from rpc_output is noisy and not the agent's
-                # prose. If the session log is empty, keep rpc_output.
-                source_text = session_text
-        except Exception as e:  # noqa: BLE001
-            _log.emit(_flow_logger.FlowEvent(
-                kind="phase_end",
-                message=(
-                    f"Could not read session log "
-                    f"({session_log_path}): {type(e).__name__}: {e}; "
-                    f"falling back to rpc_output"
-                ),
-                timestamp=_ts,
-                phase="retrospective",
-            ))
-    parsed = parse_retrospective_output(source_text)
-    if "parse_error" in parsed:
-        # No PHASE_OUTPUT — emit a minimal entry so the file still gets
-        # the metadata (issue + outcome). The retrospective LLM is
-        # supposed to always emit a block; if it didn't, that's
-        # worth recording.
-        _log.emit(_flow_logger.FlowEvent(
-            kind="phase_end",
-            message=f"No PHASE_OUTPUT block found: {parsed['parse_error']}",
-            timestamp=_ts,
-            phase="retrospective",
-        ))
-        # Use an empty-but-valid payload so the entry still gets written
-        parsed = {
-            "outcome": flow_status,
-            "what_worked": [],
-            "what_failed": [],
-            "surprising": [],
-            "repo_specific_learnings": ["(retrospective LLM emitted no PHASE_OUTPUT)"],
-            "proposed_amendments": [],
-        }
-
-    try:
-        entry = format_learning_entry(issue_num, flow_status, parsed)
-        append_to_learnings(repo_path, entry)
-        _log.emit(_flow_logger.FlowEvent(
-            kind="phase_end",
-            message=(
-                f"Wrote learning entry for issue #{issue_num} "
-                f"to {repo_path / LEARNINGS_FILENAME}"
-            ),
-            timestamp=_ts,
-            phase="retrospective",
-        ))
-    except Exception as e:  # noqa: BLE001
-        _log.emit(_flow_logger.FlowEvent(
-            kind="phase_end",
-            message=(
-                f"Failed to write learnings file: "
-                f"{type(e).__name__}: {e}"
-            ),
-            timestamp=_ts,
-            phase="retrospective",
-        ))
-        return
-
-    # Check for recurring patterns and emit an amendment if ≥3 match.
-    what_failed = parsed.get("what_failed") or []
-    if isinstance(what_failed, list) and what_failed:
-        current_failure = "; ".join(str(x) for x in what_failed)
-        try:
-            occurrences = count_recurring_patterns(repo_path, current_failure)
-        except Exception:
-            occurrences = 0
-        if occurrences >= 3:
-            amendments = parsed.get("proposed_amendments") or []
-            if not isinstance(amendments, list) or not amendments:
-                # Synthesise a default amendment so the proposal is actionable
-                amendments = [{
-                    "title": f"Recurring pattern observed in {repo_path.name or 'repo'}",
-                    "root_cause": current_failure[:200],
-                    "proposed_fix": "Review learnings.md and tighten the relevant prompt.",
-                    "effort": "TBD",
-                }]
-            for amend in amendments:
-                if not isinstance(amend, dict):
-                    continue
-                try:
-                    amend_entry = format_amendment_entry(amend, occurrences)
-                    append_to_amendments(repo_path, amend_entry)
-                    _log.emit(_flow_logger.FlowEvent(
-                        kind="phase_end",
-                        message=(
-                            f"Proposed amendment: "
-                            f"{amend.get('title', '?')!r} "
-                            f"({repo_path / '.maestro' / 'proposed-amendments.md'})"
-                        ),
-                        timestamp=_ts,
-                        phase="retrospective",
-                    ))
-                except Exception as e:  # noqa: BLE001
-                    _log.emit(_flow_logger.FlowEvent(
-                        kind="phase_end",
-                        message=(
-                            f"Failed to write amendment: "
-                            f"{type(e).__name__}: {e}"
-                        ),
-                        timestamp=_ts,
-                        phase="retrospective",
-                    ))
-
 
 
 def run_diagnostic(term: Terminal, flow_config: dict, issue_num: int, failure_context: dict, log: Optional["FlowLogger"] = None) -> dict:
@@ -1591,6 +784,13 @@ def run_flow_on_issue(
         except Exception:
             pass
 
+    # The phase loop needs a :class:`MemoryStore` to persist per-phase
+    # results to working memory. The dispatcher created one internally;
+    # we recreate one here so the loop's ``update_phase`` calls
+    # (post-#31, the loop owns the persistence step rather than the
+    # phase runner) have a handle.
+    memory_store = MemoryStore(issue_num)
+
     # Main execution loop for this specific issue
     max_iterations = 50
     iteration_count = 0
@@ -1624,11 +824,59 @@ def run_flow_on_issue(
     run_start = time.monotonic()
     _log = _flow_logger.StderrLogger()
 
+    # Deferred import: ``phase_runner`` imports value objects from
+    # this module at load time, so a top-level import here would
+    # circular-import. The function is bound to a local name for
+    # readability.
+    from phase_runner import run_phase as _phase_runner_run_phase
+
     while iteration_count < max_iterations:
         iteration_count += 1
         next_step = None  # reset each iteration; escalation may set it before transition lookup
 
-        result, session_log_path = run_phase(current_phase, flow_config, issue_num, context, log=_log)
+        # ── Build the typed ``PhaseState`` for this iteration ──
+        # Carry forward any ``phase_outputs`` the previous iteration
+        # wrote (e.g. the close phase's verdict, read by retrospective).
+        # The :class:`PhaseState` is the ONE mutable value object —
+        # the phase runner mutates ``phase_outputs`` etc. in place and
+        # the loop reads them back.
+        _state = PhaseState(
+            current_phase=current_phase,
+            phase_attempt=phase_attempt_count,
+            previous_output=context.get("previous_output", ""),
+            diagnostic_insights=context.get("diagnostic_insights", ""),
+            phase_outputs=context.get("phase_outputs") or {},
+        )
+
+        phase_run = _phase_runner_run_phase(
+            current_phase, flow, flow_context, _state, term, gh_client, log=_log,
+        )
+
+        # Re-shape the typed ``PhaseRun`` back into the legacy
+        # ``(result_dict, session_log_path)`` tuple the rest of the
+        # loop consumes. This keeps the rest of the loop unchanged
+        # and lets the new ``PhaseRun`` be the canonical record
+        # appended to ``phase_runs`` below.
+        result = {
+            "status": phase_run.status,
+            "details": phase_run.details,
+            "output": phase_run.details,
+            "tokens_in": phase_run.tokens_in,
+            "tokens_out": phase_run.tokens_out,
+            "cache_read": phase_run.cache_read,
+        }
+        session_log_path = str(phase_run.session_log) if phase_run.session_log else None
+
+        # Propagate the per-iteration mutations back to the legacy
+        # context dict so the (still-dict-based) prompt builder reads
+        # the same state it would have in the pre-refactor code path.
+        # This is the "shim back" half of the typed ↔ dict bridge.
+        if _state.phase_outputs:
+            context["phase_outputs"] = dict(_state.phase_outputs)
+        if _state.diagnostic_insights:
+            context["diagnostic_insights"] = _state.diagnostic_insights
+        if _state.previous_output:
+            context["previous_output"] = _state.previous_output
 
         term._print_verbose(f"[PHASE] {current_phase} -> {result['status']}")
         # Mirror the verbose line as a structured ``phase_end`` event
@@ -1710,8 +958,13 @@ def run_flow_on_issue(
                     result.get("details", "Unknown error"),
                 )
             # Refresh the in-memory copy so the next phase sees the latest
-            # state without needing to hit disk again.
+            # state without needing to hit disk again. The legacy
+            # ``context`` dict (used by the dict-based prompt builder)
+            # and the typed :class:`FlowContext` (used by
+            # :func:`phase_runner.run_phase`) both need the same
+            # refresh.
             context["working_memory"] = memory.to_dict()
+            flow_context = replace(flow_context, working_memory=memory)
         except Exception as mem_err:
             # Memory persistence is best-effort — never crash the flow.
             term._print_verbose(f"[memory] Failed to update working memory: {mem_err}")
@@ -1730,17 +983,10 @@ def run_flow_on_issue(
         #     block — phases without a session log (close, local cmds)
         #     have no tokens to report.
         _event_ts = _flow_logger.now_iso()
-        _phase_run = PhaseRun(
-            name=current_phase,
-            attempt=phase_attempt_count,
-            status=result["status"],
-            duration_s=None,
-            tokens_in=result.get("tokens_in"),
-            tokens_out=result.get("tokens_out"),
-            cache_read=result.get("cache_read"),
-            session_log=Path(session_log_path) if session_log_path else None,
-            details=(result.get("details", "") or "")[:300],
-        )
+        # Use the typed ``PhaseRun`` returned by
+        # :func:`phase_runner.run_phase` directly — it already carries
+        # the canonical token / session_log / duration / details data.
+        _phase_run = phase_run
         phase_runs.append(_phase_run)
         if _phase_run.tokens_in is not None:
             total_tokens_in += _phase_run.tokens_in
@@ -1937,7 +1183,7 @@ def run_flow_on_issue(
 # ``ScoutFindings`` and ``FlowEvent`` are kept as strings so this file
 # does not gain a new import dependency in the no-behavior-change slice.
 
-from dataclasses import dataclass, field  # noqa: E402  (kept grouped with types)
+from dataclasses import dataclass, field, replace  # noqa: E402  (kept grouped with types)
 
 
 @dataclass(frozen=True)
@@ -2072,3 +1318,62 @@ class FlowOutcome:
     retro_learning: str | None
     total_tokens_in: int = 0
     total_tokens_out: int = 0
+
+
+# ─── Re-exports for backward compatibility ──────────────────────────
+#
+# Deepening PRD issue #31 moved the per-phase functions (and their
+# helpers) to :mod:`phase_runner`. To keep existing test files and
+# external callers working without changes, the symbols that USED to
+# live in this module are re-exported from ``phase_runner`` here.
+#
+# The re-export is implemented via a PEP 562 module-level
+# ``__getattr__`` (Python 3.7+). The first access to any moved
+# symbol triggers a deferred import of ``phase_runner`` — at which
+# point both modules are fully loaded, so there is no circular
+# import at module-load time. The resolved symbol is cached on
+# ``sys.modules['flow_engine'].__dict__`` so subsequent accesses
+# are O(1) and the ``from flow_engine import X`` idiom works.
+_MOVED_TO_PHASE_RUNNER = frozenset({
+    "DEFAULT_EVIDENCE_POLICY",
+    "get_evidence_policy",
+    "run_close_phase",
+    "run_phase",
+    "_build_session_dir",
+    "_extract_phase_tokens",
+    "_run_phase_inner",
+    "_populate_retrospective_context",
+    "_persist_retrospective_result",
+    "_format_evidence_summary",
+    "_format_learnings_excerpt",
+    "_read_agent_text_from_session_log",
+})
+
+
+def __getattr__(name: str):  # PEP 562 — module-level lazy attribute access
+    """Re-export symbols that moved to :mod:`phase_runner` (issue #31).
+
+    The first access to a moved symbol triggers a deferred import of
+    :mod:`phase_runner`. Both modules are fully loaded by then, so
+    there is no circular import. The symbol is cached in the module
+    globals so subsequent lookups are direct.
+    """
+    if name in _MOVED_TO_PHASE_RUNNER:
+        from phase_runner import (  # noqa: WPS433  (intentional deferred import)
+            DEFAULT_EVIDENCE_POLICY,
+            get_evidence_policy,
+            run_close_phase,
+            run_phase,
+            _build_session_dir,
+            _extract_phase_tokens,
+            _run_phase_inner,
+            _populate_retrospective_context,
+            _persist_retrospective_result,
+            _format_evidence_summary,
+            _format_learnings_excerpt,
+            _read_agent_text_from_session_log,
+        )
+        value = locals()[name]
+        globals()[name] = value  # cache for subsequent direct access
+        return value
+    raise AttributeError(f"module 'flow_engine' has no attribute {name!r}")
