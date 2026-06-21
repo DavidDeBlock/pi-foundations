@@ -13,6 +13,7 @@
 //!   mtga-logs decks --all            # include netdecks
 //!   mtga-logs deck <ID>              # show one deck's cards (uses card DB if synced)
 //!   mtga-logs matches                # game results with deck used
+//!   mtga-logs web [--all] [-o FILE]  # write self-contained HTML pages (decks + matches) to FILE
 //!
 //! Card database (independent of any log file):
 //!   mtga-logs sync-cards             # download Scryfall default-cards into a local SQLite DB
@@ -27,6 +28,7 @@
 //!     the GetPlayerCardsV3 endpoint in August 2021 and never replaced it).
 
 mod cards;
+mod web;
 
 use std::collections::HashMap;
 use std::env;
@@ -80,6 +82,7 @@ fn main() {
         Command::Decks { all } => run_decks(&events, *all),
         Command::DeckDetail { id } => run_deck_detail(&events, id),
         Command::Matches => run_matches(&events),
+        Command::Web { all, output } => run_web(&events, &config.path, *all, output.as_deref()),
         Command::SyncCards { .. } => unreachable!("handled above"),
     }
 }
@@ -130,6 +133,112 @@ fn run_sync_cards(force: bool, info_only: bool) {
     }
 }
 
+fn run_web(events: &[GameEvent], log_path: &std::path::Path, all: bool, output: Option<&std::path::Path>) {
+    let card_db = if cards::db_path().exists() {
+        cards::open_db(&cards::db_path()).ok()
+    } else {
+        None
+    };
+    if card_db.is_none() {
+        eprintln!("(card database not found — cards will show as grpId)");
+    } else {
+        eprintln!("(using card database at {})", cards::db_path().display());
+    }
+
+    let generated_at = Utc::now().format("%Y-%m-%d %H:%M UTC").to_string();
+    let log_path_str = log_path.display().to_string();
+
+    match output {
+        Some(path) => {
+            // Write two files: <base> (decks) and <base>-matches (matches),
+            // each linking to the other.
+            let decks_opts = web::RenderOptions {
+                include_netdecks: all,
+                log_path: log_path_str.clone(),
+                generated_at: generated_at.clone(),
+                sections: web::Sections::Decks,
+                sibling_link: Some(web::SiblingLink {
+                    label: "View recent matches →",
+                    href: sibling_filename(path, true),
+                }),
+            };
+            let matches_opts = web::RenderOptions {
+                include_netdecks: all,
+                log_path: log_path_str,
+                generated_at,
+                sections: web::Sections::Matches,
+                sibling_link: Some(web::SiblingLink {
+                    label: "← Back to decks",
+                    href: sibling_filename(path, false),
+                }),
+            };
+
+            let decks_html = web::render(events, card_db.as_ref(), &decks_opts);
+            let matches_html = web::render(events, card_db.as_ref(), &matches_opts);
+
+            let matches_path = matches_path_for(path);
+            if let Err(e) = fs::write(path, &decks_html) {
+                eprintln!("error writing {}: {}", path.display(), e);
+                process::exit(1);
+            }
+            if let Err(e) = fs::write(&matches_path, &matches_html) {
+                eprintln!("error writing {}: {}", matches_path.display(), e);
+                process::exit(1);
+            }
+            eprintln!(
+                "wrote {} ({} KB) and {} ({} KB)",
+                path.display(),
+                decks_html.len() / 1024,
+                matches_path.display(),
+                matches_html.len() / 1024,
+            );
+        }
+        None => {
+            // Stdout: one combined page (backward compatible).
+            let opts = web::RenderOptions {
+                include_netdecks: all,
+                log_path: log_path_str,
+                generated_at,
+                sections: web::Sections::Both,
+                sibling_link: None,
+            };
+            print!("{}", web::render(events, card_db.as_ref(), &opts));
+        }
+    }
+}
+
+/// Derive the matches file path from the decks file path:
+///   /tmp/decks.html     → /tmp/decks-matches.html
+///   /tmp/decks          → /tmp/decks-matches.html
+fn matches_path_for(decks_path: &std::path::Path) -> std::path::PathBuf {
+    let parent = decks_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let stem = decks_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("decks");
+    parent.join(format!("{}-matches.html", stem))
+}
+
+/// Compute the href for the sibling link from a given path. Both files live in
+/// the same directory, so the href is just the sibling's filename.
+fn sibling_filename(path: &std::path::Path, this_is_decks: bool) -> String {
+    let filename = if this_is_decks {
+        // From decks, link to the matches sibling.
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("decks");
+        format!("{}-matches.html", stem)
+    } else {
+        // From matches, link back to the decks file.
+        path.file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("decks.html")
+            .to_string()
+    };
+    filename
+}
+
 fn print_usage() {
     eprintln!("Usage: mtga-logs [COMMAND] [PATH] [FLAGS]");
     eprintln!();
@@ -141,6 +250,7 @@ fn print_usage() {
     eprintln!("  decks --all            include netdecks");
     eprintln!("  deck <ID>              show one deck's cards");
     eprintln!("  matches                game results with deck used");
+    eprintln!("  web [--all] [-o FILE]  render self-contained HTML pages (decks + matches) to FILE (or stdout)");
     eprintln!("  sync-cards             download Scryfall card database (~520 MB)");
     eprintln!("  sync-cards --info      show card database status (no download)");
     eprintln!("  sync-cards --force     re-download even if up to date");
@@ -158,6 +268,7 @@ enum Command {
     Decks { all: bool },
     DeckDetail { id: String },
     Matches,
+    Web { all: bool, output: Option<PathBuf> },
     SyncCards { force: bool, info_only: bool },
 }
 
@@ -205,9 +316,34 @@ impl Config {
                 "--all" => {
                     command = match command {
                         Command::Events | Command::Decks { .. } => Command::Decks { all: true },
-                        _ => return Err("--all is only valid with the decks command".to_string()),
+                        Command::Web { .. } => {
+                            let (all, output) = match command {
+                                Command::Web { all, output } => (all, output),
+                                _ => unreachable!(),
+                            };
+                            let _ = all;
+                            Command::Web { all: true, output }
+                        }
+                        _ => return Err("--all is only valid with the decks or web command".to_string()),
                     };
                     i += 1;
+                }
+                "--output" | "-o" => {
+                    let v = args
+                        .get(i + 1)
+                        .ok_or_else(|| format!("{} requires a file path", arg))?;
+                    let path = PathBuf::from(v);
+                    command = match command {
+                        Command::Events | Command::Web { .. } => {
+                            let (all, _) = match &command {
+                                Command::Web { all, .. } => (*all, ()),
+                                _ => (false, ()),
+                            };
+                            Command::Web { all, output: Some(path) }
+                        }
+                        _ => return Err(format!("{} is only valid with the web command", arg)),
+                    };
+                    i += 2;
                 }
                 "--force" => {
                     command = match command {
@@ -245,6 +381,11 @@ impl Config {
                 "sync-cards" => {
                     ensure_events(&command, "sync-cards")?;
                     command = Command::SyncCards { force: false, info_only: false };
+                    i += 1;
+                }
+                "web" => {
+                    ensure_events(&command, "web")?;
+                    command = Command::Web { all: false, output: None };
                     i += 1;
                 }
                 "deck" => {
@@ -442,13 +583,13 @@ fn format_number(n: i64) -> String {
 // decks / deck
 // ============================================================================
 
-struct DeckSummary {
-    name: String,
-    format: String,
-    main_count: i64,
-    side_count: i64,
-    is_netdeck: bool,
-    last_seen: Option<DateTime<Utc>>,
+pub(crate) struct DeckSummary {
+    pub(crate) name: String,
+    pub(crate) format: String,
+    pub(crate) main_count: i64,
+    pub(crate) side_count: i64,
+    pub(crate) is_netdeck: bool,
+    pub(crate) last_seen: Option<DateTime<Utc>>,
 }
 
 fn attr_value(attrs: &Value, name: &str) -> Option<String> {
@@ -493,7 +634,7 @@ fn deck_summary_from_value(deck: &Value, fallback_last_seen: Option<DateTime<Utc
     }
 }
 
-fn collect_decks(events: &[GameEvent]) -> HashMap<String, DeckSummary> {
+pub(crate) fn collect_decks(events: &[GameEvent]) -> HashMap<String, DeckSummary> {
     // Use the most recent DeckCollection (events are in chronological order).
     let mut out: HashMap<String, DeckSummary> = HashMap::new();
     for event in events.iter().rev() {
@@ -560,7 +701,7 @@ fn run_decks(events: &[GameEvent], all: bool) {
     }
 }
 
-fn find_deck_value<'a>(events: &'a [GameEvent], id: &str) -> Option<Value> {
+pub(crate) fn find_deck_value<'a>(events: &'a [GameEvent], id: &str) -> Option<Value> {
     for event in events.iter().rev() {
         if let GameEvent::DeckCollection(e) = event {
             if let Some(deck) = e
@@ -686,15 +827,15 @@ fn truncate(s: &str, max: usize) -> String {
 // matches
 // ============================================================================
 
-struct MatchRecord {
-    timestamp: DateTime<Utc>,
-    deck_name: String,
-    event_name: String,
-    result: String,
-    reason: String,
+pub(crate) struct MatchRecord {
+    pub(crate) timestamp: DateTime<Utc>,
+    pub(crate) deck_name: String,
+    pub(crate) event_name: String,
+    pub(crate) result: String,
+    pub(crate) reason: String,
 }
 
-fn run_matches(events: &[GameEvent]) {
+pub(crate) fn collect_matches(events: &[GameEvent]) -> Vec<MatchRecord> {
     let decks = collect_decks(events);
     let mut records: Vec<MatchRecord> = Vec::new();
 
@@ -729,7 +870,6 @@ fn run_matches(events: &[GameEvent]) {
                 let Some(results) = game_info.get("results").and_then(Value::as_array) else {
                     continue;
                 };
-                // Pick the game-scope result for this game
                 let game_result = results.iter().find(|r| {
                     r.get("scope").and_then(Value::as_str) == Some("MatchScope_Game")
                 });
@@ -765,6 +905,11 @@ fn run_matches(events: &[GameEvent]) {
         }
     }
 
+    records
+}
+
+fn run_matches(events: &[GameEvent]) {
+    let records = collect_matches(events);
     if records.is_empty() {
         eprintln!("no game results found in log");
         return;

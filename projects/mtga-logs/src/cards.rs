@@ -356,6 +356,8 @@ fn import_json(json_path: &Path, info: &BulkInfo) -> Result<usize, String> {
 pub struct CardRow {
     pub name: String,
     pub mana_cost: Option<String>,
+    pub type_line: Option<String>,
+    pub colors: Option<String>,
     pub rarity: Option<String>,
     pub set_code: Option<String>,
     pub collector_number: Option<String>,
@@ -364,16 +366,18 @@ pub struct CardRow {
 /// Look up a single card by Arena grpId. Returns None if not in DB or DB missing.
 pub fn lookup(conn: &Connection, arena_id: i64) -> Option<CardRow> {
     conn.query_row(
-        "SELECT name, mana_cost, rarity, set_code, collector_number
+        "SELECT name, mana_cost, type_line, colors, rarity, set_code, collector_number
            FROM cards WHERE arena_id = ?1",
         params![arena_id],
         |r| {
             Ok(CardRow {
                 name: r.get(0)?,
                 mana_cost: r.get(1)?,
-                rarity: r.get(2)?,
-                set_code: r.get(3)?,
-                collector_number: r.get(4)?,
+                type_line: r.get(2)?,
+                colors: r.get(3)?,
+                rarity: r.get(4)?,
+                set_code: r.get(5)?,
+                collector_number: r.get(6)?,
             })
         },
     )

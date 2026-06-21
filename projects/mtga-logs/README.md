@@ -34,7 +34,58 @@ Binary lands at `target/release/mtga-logs`.
 
 # match history with deck used and W/L
 ./target/release/mtga-logs matches
+
+# render a self-contained HTML page of all your decks (and their cards)
+./target/release/mtga-logs web -o decks.html
+./target/release/mtga-logs web --all -o decks-with-netdecks.html  # include netdecks
 ```
+
+## Web view
+
+`web` generates self-contained HTML pages (no JavaScript, no external assets) you can open in any browser. When `-o FILE` is given, it produces two files that link to each other:
+
+- `FILE` (e.g. `decks.html`) — deck list with collapsible card tables
+- `FILE`-matches.html (e.g. `decks-matches.html`) — match history with W/L badges and a win-rate summary
+
+```bash
+./target/release/mtga-logs web -o /tmp/decks.html     # writes /tmp/decks.html and /tmp/decks-matches.html
+./target/release/mtga-logs web --all -o /tmp/decks.html  # 186 decks incl. netdecks, ~1.6 MB
+./target/release/mtga-logs web > decks.html           # stdout: single combined page (no nav links)
+```
+
+**Decks page** — each deck is a collapsible `<details>` block; cards in a table showing:
+
+- **Qty** — count in mainboard / sideboard
+- **Name** — from the Scryfall DB (or `grpId N` if DB not synced)
+- **Colors** — colored pips (W/U/B/R/G)
+- **Mana** — cost in `{W}{U}{B}` notation
+- **Type** — full type line (e.g. `Legendary Creature — Human Wizard`)
+- **Rarity** — color-coded (C/U/R/M)
+- **Set** + collector number
+
+User decks are open by default; netdecks are collapsed. The page warns at the top if the card database is missing.
+
+**Matches page** — table of every game result found in the log:
+
+- **Date** — when the game finished
+- **Result** — green Win / red Loss / gray ? badge
+- **Deck** — joined heuristically from the most recent preceding `DeckSubmission`
+- **Event** — `Ladder`, `Jump_In_2024`, etc.
+- **Reason** — `Game`, `Concede`, `Timeout`, ...
+
+A "8 GAMES · 5W–3L (62%)" summary sits at the top. Deck names show `(unknown)` for matches that started without a preceding `DeckSubmission` (some event entry flows).
+
+### Serving on the network
+
+Quick-and-dirty: regenerate, then serve with Python's built-in HTTP server (no install needed on Ubuntu):
+
+```bash
+mtga-logs web -o /tmp/decks.html
+cd /tmp && python3 -m http.server 8000 --bind 0.0.0.0
+# then open http://<server-ip>:8000/decks.html from any other device on the LAN
+```
+
+If the connection is refused, you may need `sudo ufw allow from 192.168.0.0/24 to any port 8000`.
 
 ## Card name database
 
