@@ -70,3 +70,6 @@ the logs can be found in /mnt/mtga-logs
 
 Create something simple that shows us the output of the logs. 
 
+
+
+Let's first focus on the card name lookup and use scryfall as a data source. I suggest we download the bulk data, put it in an SQL database, and make a robust download process or sync process for the bulk data. Let's start with that. 

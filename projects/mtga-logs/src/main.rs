@@ -11,17 +11,22 @@
 //!   mtga-logs inventory --history    # inventory across all snapshots in the log
 //!   mtga-logs decks                  # list user decks (excludes netdecks)
 //!   mtga-logs decks --all            # include netdecks
-//!   mtga-logs deck <ID>              # show one deck's cards
+//!   mtga-logs deck <ID>              # show one deck's cards (uses card DB if synced)
 //!   mtga-logs matches                # game results with deck used
+//!
+//! Card database (independent of any log file):
+//!   mtga-logs sync-cards             # download Scryfall default-cards into a local SQLite DB
+//!   mtga-logs sync-cards --info      # show DB status
+//!   mtga-logs sync-cards --force     # re-download even if up to date
 //!
 //! Data notes:
 //!   - `inventory` reads from DeckCollection.raw_start_hook.InventoryInfo,
 //!     because the parser router dispatches StartHook to DeckCollection first
 //!     and never emits Inventory events.
-//!   - Cards are shown as grpId numbers (Arena internal IDs). To map to names,
-//!     join with Scryfall bulk data: https://scryfall.com/docs/api/bulk-data
 //!   - Total cards owned in your collection is NOT in the log (Wizards removed
 //!     the GetPlayerCardsV3 endpoint in August 2021 and never replaced it).
+
+mod cards;
 
 use std::collections::HashMap;
 use std::env;
@@ -31,6 +36,7 @@ use std::process;
 
 use chrono::{DateTime, Utc};
 use manasight_parser::{parse_whole_log, scrub_raw_log, GameEvent};
+use rusqlite::Connection;
 use serde_json::Value;
 
 const DEFAULT_LOG: &str = "/mnt/mtga-logs/Player.log";
@@ -45,6 +51,12 @@ fn main() {
             process::exit(2);
         }
     };
+
+    // sync-cards doesn't need the log file — handle it before reading.
+    if let Command::SyncCards { force, info_only } = &config.command {
+        run_sync_cards(*force, *info_only);
+        return;
+    }
 
     let text = match fs::read_to_string(&config.path) {
         Ok(t) => t,
@@ -68,6 +80,53 @@ fn main() {
         Command::Decks { all } => run_decks(&events, *all),
         Command::DeckDetail { id } => run_deck_detail(&events, id),
         Command::Matches => run_matches(&events),
+        Command::SyncCards { .. } => unreachable!("handled above"),
+    }
+}
+
+fn run_sync_cards(force: bool, info_only: bool) {
+    if info_only {
+        match cards::status() {
+            Ok(s) => {
+                if !s.exists {
+                    println!("no card database at {}", s.db_path.display());
+                    println!("run `mtga-logs sync-cards` to download (~520 MB)");
+                } else {
+                    println!("card database: {}", s.db_path.display());
+                    println!("  Scryfall updated_at: {}", s.updated_at.as_deref().unwrap_or("?"));
+                    println!("  cards:               {}", s.card_count.map(|n| n.to_string()).unwrap_or_else(|| "?".into()));
+                    println!("  DB size:             {} MB", s.db_size.unwrap_or(0) / 1024 / 1024);
+                }
+            }
+            Err(e) => {
+                eprintln!("error: {}", e);
+                process::exit(1);
+            }
+        }
+        return;
+    }
+
+    match cards::sync(force) {
+        Ok(out) => {
+            match out.status {
+                cards::SyncStatus::UpToDate => {
+                    println!("card database already up to date ({} cards)", out.card_count.unwrap_or(0));
+                    println!("location: {}", out.db_path.display());
+                }
+                cards::SyncStatus::Updated => {
+                    println!(
+                        "synced {} cards (Scryfall updated_at: {})",
+                        out.card_count.unwrap_or(0),
+                        out.updated_at
+                    );
+                    println!("location: {}", out.db_path.display());
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("sync-cards failed: {}", e);
+            process::exit(1);
+        }
     }
 }
 
@@ -82,11 +141,15 @@ fn print_usage() {
     eprintln!("  decks --all            include netdecks");
     eprintln!("  deck <ID>              show one deck's cards");
     eprintln!("  matches                game results with deck used");
+    eprintln!("  sync-cards             download Scryfall card database (~520 MB)");
+    eprintln!("  sync-cards --info      show card database status (no download)");
+    eprintln!("  sync-cards --force     re-download even if up to date");
     eprintln!();
     eprintln!("Global flags:");
     eprintln!("  PATH                   Player.log file (default: {})", DEFAULT_LOG);
     eprintln!("  --limit N              (default mode) show only the last N events");
     eprintln!("  --scrub                redact PII before parsing");
+    eprintln!("  --force / --info       sync-cards flags (see above)");
 }
 
 enum Command {
@@ -95,6 +158,7 @@ enum Command {
     Decks { all: bool },
     DeckDetail { id: String },
     Matches,
+    SyncCards { force: bool, info_only: bool },
 }
 
 struct Config {
@@ -145,6 +209,24 @@ impl Config {
                     };
                     i += 1;
                 }
+                "--force" => {
+                    command = match command {
+                        Command::Events | Command::SyncCards { .. } => {
+                            Command::SyncCards { force: true, info_only: false }
+                        }
+                        _ => return Err("--force is only valid with the sync-cards command".to_string()),
+                    };
+                    i += 1;
+                }
+                "--info" => {
+                    command = match command {
+                        Command::Events | Command::SyncCards { .. } => {
+                            Command::SyncCards { force: false, info_only: true }
+                        }
+                        _ => return Err("--info is only valid with the sync-cards command".to_string()),
+                    };
+                    i += 1;
+                }
                 "inventory" => {
                     ensure_events(&command, "inventory")?;
                     command = Command::Inventory { history: false };
@@ -158,6 +240,11 @@ impl Config {
                 "matches" => {
                     ensure_events(&command, "matches")?;
                     command = Command::Matches;
+                    i += 1;
+                }
+                "sync-cards" => {
+                    ensure_events(&command, "sync-cards")?;
+                    command = Command::SyncCards { force: false, info_only: false };
                     i += 1;
                 }
                 "deck" => {
@@ -502,6 +589,18 @@ fn run_deck_detail(events: &[GameEvent], id: &str) {
     let summary = deck_summary_from_value(&deck, None);
     let description = deck.get("Description").and_then(Value::as_str).unwrap_or("");
 
+    // Try to open the card DB; if present, show names; otherwise print grpId
+    // and a one-time hint.
+    let card_db = cards::open_db(&cards::db_path()).ok();
+    if card_db.is_none() {
+        eprintln!(
+            "(card database not found at {} — names will show as grpId)",
+            cards::db_path().display()
+        );
+        eprintln!("(run `mtga-logs sync-cards` to download ~520 MB and enable names)");
+        eprintln!();
+    }
+
     println!("Deck:   {}", summary.name);
     println!("ID:     {}", id);
     println!("Format: {}", summary.format);
@@ -525,8 +624,8 @@ fn run_deck_detail(events: &[GameEvent], id: &str) {
         println!("Main deck ({} cards across {} entries):", total, main.len());
         for c in main {
             let qty = c.get("quantity").and_then(Value::as_i64).unwrap_or(1);
-            let id = c.get("cardId").and_then(Value::as_i64).unwrap_or(0);
-            println!("  {}x grpId {}", qty, id);
+            let arena_id = c.get("cardId").and_then(Value::as_i64).unwrap_or(0);
+            print_card_line("  ", qty, arena_id, card_db.as_ref());
         }
     } else {
         println!("Main deck: (none)");
@@ -540,11 +639,36 @@ fn run_deck_detail(events: &[GameEvent], id: &str) {
             println!("Sideboard ({} cards across {} entries):", total, s.len());
             for c in s {
                 let qty = c.get("quantity").and_then(Value::as_i64).unwrap_or(1);
-                let id = c.get("cardId").and_then(Value::as_i64).unwrap_or(0);
-                println!("  {}x grpId {}", qty, id);
+                let arena_id = c.get("cardId").and_then(Value::as_i64).unwrap_or(0);
+                print_card_line("  ", qty, arena_id, card_db.as_ref());
             }
         }
         None => println!("Sideboard: (none)"),
+    }
+}
+
+fn print_card_line(prefix: &str, qty: i64, arena_id: i64, card_db: Option<&Connection>) {
+    match card_db.and_then(|c| cards::lookup(c, arena_id)) {
+        Some(card) => {
+            let set = card.set_code.as_deref().unwrap_or("???");
+            let cn = card.collector_number.as_deref().unwrap_or("?");
+            let rarity = card.rarity.as_deref().unwrap_or("");
+            let suffix = if rarity.is_empty() {
+                format!(" [{} #{}]", set, cn)
+            } else {
+                format!(" [{} #{}, {}]", set, cn, rarity)
+            };
+            let mana = card.mana_cost.as_deref().unwrap_or("");
+            let mana_part = if mana.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", mana)
+            };
+            println!("{}{}x {}{}{}", prefix, qty, card.name, mana_part, suffix);
+        }
+        None => {
+            println!("{}{}x grpId {}", prefix, qty, arena_id);
+        }
     }
 }
 

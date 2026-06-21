@@ -29,12 +29,35 @@ Binary lands at `target/release/mtga-logs`.
 # include netdecks too
 ./target/release/mtga-logs decks --all
 
-# show one deck's full card list
+# show one deck's full card list (uses card DB if synced — see below)
 ./target/release/mtga-logs deck 65d90c69-392e-4a5e-b96c-bc2ecdd9f7b8
 
 # match history with deck used and W/L
 ./target/release/mtga-logs matches
 ```
+
+## Card name database
+
+`deck <ID>` shows card names instead of grpId numbers when a local Scryfall mirror is synced:
+
+```bash
+# one-time setup: downloads the Scryfall default-cards bulk file (~520 MB,
+# ~12 seconds at 40 MB/s, then ~5 seconds to import into SQLite)
+./target/release/mtga-logs sync-cards
+
+# subsequent runs are instant — only re-downloads when Scryfall publishes an update
+./target/release/mtga-logs sync-cards
+
+# show current DB status (no network call)
+./target/release/mtga-logs sync-cards --info
+
+# force a re-download (e.g. after a long time, or to recover from corruption)
+./target/release/mtga-logs sync-cards --force
+```
+
+Storage: `~/.local/share/mtga-logs/cards.db` (~5 MB SQLite) and `cards.json` (~520 MB cached JSON).
+
+The join key is **MTGA `grpId` = Scryfall `arena_id`**. Verified end-to-end with a real deck card (`grpId 75472` → "Riddlemaster Sphinx"). On this log, **99.4%** of your deck cards (5374/5404) resolve to a Scryfall card; the few misses are typically Alchemy rebalances or newly-released cards not yet indexed.
 
 ## Global flags
 
@@ -86,6 +109,24 @@ Budget Dino's                                  Standard         60     0  2026-0
 Selesnya Tokens (no SB)                        Standard         60     0  2026-06-21
 ```
 
+**`deck <ID>`** (with card DB synced)
+```
+Deck:   Mono White MK2
+ID:     1f87e561-3f62-4e5b-94ae-4c052bc97312
+Format: Standard
+Played: 2025-10-12 22:07:47 UTC
+
+Main deck (60 cards across 17 entries):
+  3x Leonin Vanguard {W} [fdn #499, uncommon]
+  2x Exemplar of Light {2}{W}{W} [fdn #11, rare]
+  23x Plains [anb #115, common]
+  4x Sheltered by Ghosts {1}{W} [dsk #30, uncommon]
+  3x Leyline of Hope {2}{W}{W} [dsk #18, rare]
+  ...
+
+Sideboard: (empty)
+```
+
 **`matches`**
 ```
 Match history (8 games):
@@ -100,7 +141,7 @@ Date               Deck                          Event           Result  Reason
 ## Notes
 
 - **Where inventory comes from:** the `manasight-parser` router dispatches `StartHook` responses to `DeckCollection` first, which claims every entry — so `Inventory` events are never emitted. We work around this by reading `DeckCollection.raw_start_hook.InventoryInfo` directly.
-- **Cards are grpIds, not names.** Arena uses internal numeric IDs. To map to card names, join with Scryfall bulk data: <https://scryfall.com/docs/api/bulk-data>.
+- **Card names** come from a locally-synced SQLite mirror of Scryfall's `default_cards` bulk data (see "Card name database" above). Without it, `deck <ID>` falls back to grpId numbers and prints a one-time hint to run `sync-cards`.
 - **Total collection size is unavailable** — Wizards removed the `GetPlayerCardsV3` endpoint in August 2021 and never replaced it. You can see your decks' contents but not your full collection.
 - **Match/deck join is heuristic:** for each `GameResult`, we use the most recent preceding `DeckSubmission` as the deck used. Matches started without a `DeckSubmission` (some event entry flows) show `(unknown)`.
 - **The `manasight-parser` crate is used with `default-features = false`** to skip the `tailer` (tokio + filesystem tailing) feature. We only use the synchronous `parse_whole_log` entry point.
