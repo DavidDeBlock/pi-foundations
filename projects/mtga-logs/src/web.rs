@@ -188,6 +188,20 @@ pub fn render(store_db: &Connection, card_db: Option<&Connection>, opts: &Render
         }
     }
 
+    // Cross-link nav: catalog and deck builder.
+    // Only show when this is the "file" output (not stdout).
+    if !matches.is_empty()
+        && matches!(opts.sections, Sections::Decks | Sections::Both)
+        && opts.sibling_link.is_some()
+    {
+        out.push_str(
+            "<nav class=\"page-nav\">\
+             <a class=\"forward\" href=\"cards.html\">Browse card catalog &rarr;</a>\
+             <a class=\"forward\" href=\"builder.html\">Open deck builder &rarr;</a>\
+             </nav>\n",
+        );
+    }
+
     // Summary stats + filter toggle (only on decks page).
     if !summaries.is_empty() && matches!(opts.sections, Sections::Decks | Sections::Both) {
         write!(
@@ -2033,4 +2047,1205 @@ mod tests {
         assert_eq!(by_cat["PlayLand"], (2, 2));
         assert_eq!(by_cat["Draw"], (1, 0));
     }
+
+    // ========================================================================
+    // Color identity helpers (used by deck builder)
+    // ========================================================================
+
+    /// Parse a Scryfall color_identity string ("WUBRG" letters) into a
+    /// sorted Vec of individual colors. Returns empty for colorless.
+    fn parse_color_identity(s: &str) -> Vec<char> {
+        let mut v: Vec<char> = s.chars().filter(|c| "WUBRG".contains(*c)).collect();
+        v.sort();
+        v.dedup();
+        v
+    }
+
+    #[test]
+    fn parse_color_identity_handles_inputs() {
+        assert_eq!(parse_color_identity(""), Vec::<char>::new());
+        assert_eq!(parse_color_identity("W"), vec!['W']);
+        assert_eq!(parse_color_identity("WG"), vec!['G', 'W']); // sorted
+        assert_eq!(parse_color_identity("WUBRG"), vec!['B', 'G', 'R', 'U', 'W']);
+        // Filter invalid chars.
+        assert_eq!(parse_color_identity("WXYZ"), vec!['W']);
+    }
+
+    /// Calculate a deck's color identity from a list of (grpId, qty) pairs
+    /// plus a lookup function that returns the card's color_identity string.
+    fn deck_color_identity<F>(cards: &[(i64, i64)], lookup: F) -> String
+    where F: Fn(i64) -> Option<String> {
+        let mut present: Vec<char> = Vec::new();
+        for (id, _) in cards {
+            if let Some(ci) = lookup(*id) {
+                for c in parse_color_identity(&ci) {
+                    if !present.contains(&c) { present.push(c); }
+                }
+            }
+        }
+        // Render in WUBRG order.
+        let order = ['W', 'U', 'B', 'R', 'G'];
+        order.iter().filter(|c| present.contains(c)).collect()
+    }
+
+    #[test]
+    fn deck_color_identity_aggregates_correctly() {
+        // Mono-white deck.
+        let mono_w = vec![(1, 4), (2, 4)];
+        let lookup = |id: i64| match id {
+            1 => Some("W".to_string()),
+            2 => Some("W".to_string()),
+            _ => None,
+        };
+        assert_eq!(deck_color_identity(&mono_w, lookup), "W");
+        // 4-color deck (no G).
+        let four_color = vec![(1, 4), (3, 4), (4, 4), (5, 4)];
+        let lookup = |id: i64| match id {
+            1 => Some("W".to_string()),
+            3 => Some("U".to_string()),
+            4 => Some("B".to_string()),
+            5 => Some("R".to_string()),
+            _ => None,
+        };
+        assert_eq!(deck_color_identity(&four_color, lookup), "WUBR");
+        // Colorless cards don't add colors.
+        let colorless = vec![(10, 4)];
+        let lookup = |_: i64| Some("".to_string());
+        assert_eq!(deck_color_identity(&colorless, lookup), "");
+    }
+
+    #[test]
+    fn type_bucketing_for_filter() {
+        // The catalog uses a coarse-grained "primary type" derived from
+        // type_line. We classify by the first dash-separated segment, with
+        // a few special cases.
+        fn primary_type(tl: &str) -> &'static str {
+            let lower = tl.to_lowercase();
+            if lower.contains("creature") { "Creature" }
+            else if lower.contains("planeswalker") { "Planeswalker" }
+            else if lower.contains("instant") { "Instant" }
+            else if lower.contains("sorcery") { "Sorcery" }
+            else if lower.contains("enchantment") { "Enchantment" }
+            else if lower.contains("artifact") { "Artifact" }
+            else if lower.contains("battle") { "Battle" }
+            else if lower.contains("land") { "Land" }
+            else { "Other" }
+        }
+        assert_eq!(primary_type("Creature — Human Soldier"), "Creature");
+        assert_eq!(primary_type("Legendary Planeswalker — Jace"), "Planeswalker");
+        assert_eq!(primary_type("Artifact Creature — Golem"), "Creature"); // creatures win
+        assert_eq!(primary_type("Basic Land — Plains"), "Land");
+        assert_eq!(primary_type("Enchantment — Aura"), "Enchantment");
+    }
 }
+
+// ============================================================================
+// Catalog page (cards.html)
+// ============================================================================
+
+/// Render the catalog HTML page. The actual card data is fetched at
+/// runtime by the browser from `cards-data.json` (also written by
+/// `mtga-logs web`).
+///
+/// `card_db_summary`: (count, updated_at) — used in the status banner.
+/// `decks_href` / `matches_href`: links back to the main pages.
+pub fn render_catalog(
+    card_db_summary: Option<(u64, String)>,
+    decks_href: &str,
+    matches_href: &str,
+) -> String {
+    let mut out = String::new();
+    let (count, updated_at) = match card_db_summary {
+        Some((n, u)) => (Some(n), Some(u)),
+        None => (None, None),
+    };
+    let updated_line = match (count, &updated_at) {
+        (Some(n), Some(u)) => format!(
+            "Card DB: {n} cards; bulk updated {u}.",
+        ),
+        _ => "Card DB not loaded.".to_string(),
+    };
+
+    out.push_str(r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MTG Arena Card Catalog</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+"#);
+    out.push_str(r#"<style>"#);
+    out.push_str(include_str!("web.css"));
+    out.push_str("</style>\n</head>\n<body>\n");
+    out.push_str(r#"<header class="page-header">
+  <h1>MTG Arena Card Catalog</h1>
+  <p class="subtitle">"#);
+    out.push_str(&esc(&updated_line));
+    out.push_str(r#"</p>
+  <nav class="page-nav">
+    <a class="back" href=""#);
+    out.push_str(&esc_attr(decks_href));
+    out.push_str(r#"">&larr; Back to decks</a>
+    <a class="forward" href=""#);
+    out.push_str(&esc_attr(matches_href));
+    out.push_str(r#"">Recent matches &rarr;</a>
+    <a class="forward" href="builder.html">Open deck builder &rarr;</a>
+  </nav>
+</header>
+<section class="filter-bar">
+  <div class="filter-row">
+    <input id="search" type="search" placeholder="Search by name..." autofocus
+           autocomplete="off" spellcheck="false">
+    <select id="type-filter" aria-label="Primary type">
+      <option value="">All types</option>
+      <option value="Creature">Creature</option>
+      <option value="Planeswalker">Planeswalker</option>
+      <option value="Instant">Instant</option>
+      <option value="Sorcery">Sorcery</option>
+      <option value="Enchantment">Enchantment</option>
+      <option value="Artifact">Artifact</option>
+      <option value="Battle">Battle</option>
+      <option value="Land">Land</option>
+    </select>
+    <select id="sort-by" aria-label="Sort by">
+      <option value="name">Sort: Name</option>
+      <option value="cmc">Sort: Mana cost</option>
+      <option value="rarity">Sort: Rarity</option>
+    </select>
+    <span id="count" class="count-pill">loading…</span>
+  </div>
+  <div class="filter-row colors">
+    <span class="filter-label">Color identity:</span>
+    <label class="color-toggle W"><input type="checkbox" data-color="W"> W</label>
+    <label class="color-toggle U"><input type="checkbox" data-color="U"> U</label>
+    <label class="color-toggle B"><input type="checkbox" data-color="B"> B</label>
+    <label class="color-toggle R"><input type="checkbox" data-color="R"> R</label>
+    <label class="color-toggle G"><input type="checkbox" data-color="G"> G</label>
+    <label class="color-toggle multi"><input type="checkbox" data-color="MULTI"> multicolor</label>
+    <label class="color-toggle colorless"><input type="checkbox" data-color="COLORLESS"> colorless</label>
+    <button type="button" id="clear-filters" class="btn-link">clear</button>
+  </div>
+</section>
+<section class="card-grid" id="grid">
+  <div class="empty">Loading card data...</div>
+</section>
+
+<dialog id="card-modal" class="card-modal">
+  <button class="modal-close" aria-label="Close">&times;</button>
+  <div class="modal-body"></div>
+</dialog>
+"#);
+    out.push_str(CATALOG_JS);
+    out.push_str("\n</body>\n</html>\n");
+    out
+}
+
+const CATALOG_JS: &str = r#"
+<script>
+'use strict';
+
+// Card data loaded asynchronously from `cards-data.json`. Indexed by
+// grpId (arena_id) for the "add to deck" feature.
+let CARDS = [];
+let BY_ID = new Map();
+const DATA_URL = 'cards-data.json';
+
+// Color identity buckets.
+// Each card has a sorted WUBRG string in `ci`. Multi = 2+ chars, colorless = "".
+function passesColorFilter(card, setColors) {
+  if (setColors.size === 0) return true;
+  const ci = card.ci || '';
+  const n = ci.length;
+  // Each toggle must match the card.
+  for (const c of setColors) {
+    if (c === 'COLORLESS') { if (n !== 0) return false; }
+    else if (c === 'MULTI') { if (n < 2) return false; }
+    else { if (!ci.includes(c)) return false; }
+  }
+  return true;
+}
+
+// Coarse primary type derived from type_line.
+function primaryType(tl) {
+  if (!tl) return 'Other';
+  const lower = tl.toLowerCase();
+  if (lower.includes('creature')) return 'Creature';
+  if (lower.includes('planeswalker')) return 'Planeswalker';
+  if (lower.includes('instant')) return 'Instant';
+  if (lower.includes('sorcery')) return 'Sorcery';
+  if (lower.includes('enchantment')) return 'Enchantment';
+  if (lower.includes('artifact')) return 'Artifact';
+  if (lower.includes('battle')) return 'Battle';
+  if (lower.includes('land')) return 'Land';
+  return 'Other';
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[c]);
+}
+
+function manaHtml(mana) {
+  if (!mana) return '';
+  // Convert "{2}{W}{U/P}" etc. into small icons. Pure symbol char -> <i>.
+  const SYMBOLS = {
+    'W': 'W', 'U': 'U', 'B': 'B', 'R': 'R', 'G': 'G',
+    'C': 'C', 'S': 'S', 'X': 'X', 'Y': 'Y', 'Z': 'Z',
+    'T': 'T', 'Q': 'Q', 'E': 'E', 'P': 'P', 'A': 'A',
+  };
+  return mana.replace(/\{([^}]+)\}/g, (_, sym) => {
+    const code = sym[0];
+    const cls = SYMBOLS[code] ? 'mana mana-' + code : 'mana mana-x';
+    return `<i class="${cls}">{${esc(sym)}}</i>`;
+  });
+}
+
+function rarityClass(r) {
+  switch ((r || '').toLowerCase()) {
+    case 'common': return 'r-common';
+    case 'uncommon': return 'r-uncommon';
+    case 'rare': return 'r-rare';
+    case 'mythic': return 'r-mythic';
+    default: return '';
+  }
+}
+
+function renderCard(c) {
+  const ci = (c.ci || '').split('').map(ch =>
+    `<i class="pip pip-${ch}" title="${ch}"></i>`).join('');
+  const img = c.u
+    ? `<img loading="lazy" src="${esc(c.u)}" alt="${esc(c.n)}" onerror="this.style.display='none'">`
+    : `<div class="no-img">no image</div>`;
+  return `<article class="card-cell" data-id="${c.i}">
+    <div class="card-cell-image">${img}</div>
+    <div class="card-cell-meta">
+      <div class="card-cell-name">${esc(c.n)}</div>
+      <div class="card-cell-cost">${manaHtml(c.m)}</div>
+      <div class="card-cell-type">${esc(c.t || '')}</div>
+      <div class="card-cell-bottom">
+        <span class="rarity ${rarityClass(c.r)}">${esc(c.r || '')}</span>
+        <span class="color-pips">${ci}</span>
+      </div>
+      <button class="add-to-deck" data-id="${c.i}" title="Add to a deck (uses localStorage)">+ deck</button>
+    </div>
+  </article>`;
+}
+
+const grid = document.getElementById('grid');
+const search = document.getElementById('search');
+const typeFilter = document.getElementById('type-filter');
+const sortBy = document.getElementById('sort-by');
+const countEl = document.getElementById('count');
+const clearBtn = document.getElementById('clear-filters');
+const colorToggles = Array.from(document.querySelectorAll('.color-toggle input'));
+const modal = document.getElementById('card-modal');
+const modalBody = modal.querySelector('.modal-body');
+const modalClose = modal.querySelector('.modal-close');
+
+let filtered = [];
+
+function getSelectedColors() {
+  const s = new Set();
+  for (const cb of colorToggles) if (cb.checked) s.add(cb.dataset.color);
+  return s;
+}
+
+function applyFilters() {
+  const q = search.value.trim().toLowerCase();
+  const t = typeFilter.value;
+  const colors = getSelectedColors();
+  const out = [];
+  for (const c of CARDS) {
+    if (q && !c.n.toLowerCase().includes(q)) continue;
+    if (t && primaryType(c.t) !== t) continue;
+    if (!passesColorFilter(c, colors)) continue;
+    out.push(c);
+  }
+  const sk = sortBy.value;
+  if (sk === 'name') {
+    out.sort((a, b) => a.n.localeCompare(b.n));
+  } else if (sk === 'cmc') {
+    out.sort((a, b) => (a.c || 0) - (b.c || 0) || a.n.localeCompare(b.n));
+  } else if (sk === 'rarity') {
+    const order = { common: 0, uncommon: 1, rare: 2, mythic: 3 };
+    out.sort((a, b) => (order[a.r] ?? 9) - (order[b.r] ?? 9) || a.n.localeCompare(b.n));
+  }
+  filtered = out;
+  countEl.textContent = `${out.length.toLocaleString()} of ${CARDS.length.toLocaleString()}`;
+  renderGrid();
+}
+
+let visibleCount = 0;
+const BATCH = 200;
+function renderGrid() {
+  // Render in batches so the page stays responsive on slow devices.
+  grid.innerHTML = '';
+  visibleCount = 0;
+  renderNext();
+}
+
+function renderNext() {
+  const end = Math.min(visibleCount + BATCH, filtered.length);
+  const frag = document.createDocumentFragment();
+  for (let i = visibleCount; i < end; i++) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = renderCard(filtered[i]);
+    frag.appendChild(tmp.firstElementChild);
+  }
+  grid.appendChild(frag);
+  visibleCount = end;
+  if (visibleCount < filtered.length) {
+    requestAnimationFrame(renderNext);
+  }
+}
+
+// Wire up filters with debouncing on text input.
+let searchTimer = null;
+search.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(applyFilters, 120);
+});
+typeFilter.addEventListener('change', applyFilters);
+sortBy.addEventListener('change', applyFilters);
+for (const cb of colorToggles) cb.addEventListener('change', applyFilters);
+clearBtn.addEventListener('click', () => {
+  search.value = '';
+  typeFilter.value = '';
+  for (const cb of colorToggles) cb.checked = false;
+  applyFilters();
+});
+
+// Modal: show card detail on click.
+grid.addEventListener('click', (e) => {
+  const addBtn = e.target.closest('.add-to-deck');
+  if (addBtn) {
+    e.stopPropagation();
+    const id = parseInt(addBtn.dataset.id, 10);
+    addToDeck(id);
+    return;
+  }
+  const cell = e.target.closest('.card-cell');
+  if (!cell) return;
+  const id = parseInt(cell.dataset.id, 10);
+  const c = BY_ID.get(id);
+  if (!c) return;
+  showModal(c);
+});
+
+function showModal(c) {
+  const ci = (c.ci || '').split('').map(ch =>
+    `<i class="pip pip-${ch}"></i>`).join('');
+  modalBody.innerHTML = `
+    <div class="modal-grid">
+      <div class="modal-image">
+        ${c.u ? `<img src="${esc(c.u)}" alt="${esc(c.n)}">` : '<div class="no-img">no image</div>'}
+      </div>
+      <div class="modal-info">
+        <h2>${esc(c.n)}</h2>
+        <div class="modal-cost">${manaHtml(c.m)}</div>
+        <div class="modal-type">${esc(c.t || '')}</div>
+        <div class="modal-meta">
+          <span class="rarity ${rarityClass(c.r)}">${esc(c.r || '')}</span>
+          <span class="color-pips">${ci}</span>
+          <span class="grp">grpId ${c.i}</span>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-primary add-to-deck" data-id="${c.i}">Add to deck…</button>
+        </div>
+      </div>
+    </div>`;
+  modal.showModal();
+}
+modalClose.addEventListener('click', () => modal.close());
+modal.addEventListener('click', (e) => {
+  if (e.target === modal) modal.close();
+});
+
+// "Add to deck" → store in localStorage. The deck builder reads the same
+// keys; users can paste cards into a deck from the catalog.
+function addToDeck(grpId) {
+  const card = BY_ID.get(grpId);
+  if (!card) return;
+  // Bump a counter; the builder page reads this on load.
+  const counter = parseInt(localStorage.getItem('mtgalogs_add_counter') || '0', 10) + 1;
+  localStorage.setItem('mtgalogs_add_counter', String(counter));
+  localStorage.setItem(`mtgalogs_add_${counter}`, JSON.stringify({
+    grpId: card.i, name: card.n, mana: card.m, type: card.t, ci: card.ci,
+    added_at: Date.now(),
+  }));
+  flashToast(`Added ${card.n} — open the deck builder to place it.`);
+}
+
+function flashToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.classList.add('visible'), 10);
+  setTimeout(() => {
+    t.classList.remove('visible');
+    setTimeout(() => t.remove(), 300);
+  }, 2200);
+}
+
+// Load card data, then apply filters.
+fetch(DATA_URL)
+  .then(r => r.json())
+  .then(d => {
+    CARDS = d.cards || [];
+    for (const c of CARDS) BY_ID.set(c.i, c);
+    applyFilters();
+  })
+  .catch(e => {
+    grid.innerHTML = `<div class="empty error">Failed to load ${DATA_URL}: ${esc(e.message)}</div>`;
+    countEl.textContent = 'error';
+  });
+</script>
+"#;
+
+// ============================================================================
+// Builder page (builder.html)
+// ============================================================================
+
+/// Render the deck builder HTML page. The page fetches
+/// `builder-data.json` on load for the initial user_decks state, then
+/// uses localStorage for ongoing edits. Export downloads a JSON file
+/// the user pipes through `mtga-logs deck-import`.
+///
+/// `existing_count`: number of user_decks currently in the DB (shown in
+/// the status banner).
+/// `card_count` / `card_updated_at`: shown in the banner if available.
+/// `decks_href` / `cards_href`: links back to the main pages.
+pub fn render_builder(
+    existing_count: usize,
+    card_count: Option<u64>,
+    card_updated_at: Option<&str>,
+    decks_href: &str,
+    cards_href: &str,
+) -> String {
+    let mut out = String::new();
+    let card_status = match card_count {
+        Some(n) => format!(
+            "Cards: {} loaded; bulk updated {}. Builder works offline; saves via `mtga-logs deck-import`.",
+            n.to_string(),
+            card_updated_at.unwrap_or("?"),
+        ),
+        None => "Card DB not loaded. Card names will show as grpId numbers.".to_string(),
+    };
+
+    out.push_str(r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MTG Arena Deck Builder</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+"#);
+    out.push_str(r#"<style>"#);
+    out.push_str(include_str!("web.css"));
+    out.push_str("</style>\n</head>\n<body class=\"builder-page\">\n");
+    out.push_str(r#"<header class="page-header builder-header">
+  <h1>Deck Builder</h1>
+  <p class="subtitle">"#);
+    out.push_str(&esc(&format!(
+        "Existing user decks: {existing_count}. {card_status}"
+    )));
+    out.push_str(r#"</p>
+  <nav class="page-nav">
+    <a class="back" href=""#);
+    out.push_str(&esc_attr(decks_href));
+    out.push_str(r#"">&larr; Back to decks</a>
+    <a class="forward" href=""#);
+    out.push_str(&esc_attr(cards_href));
+    out.push_str(r#"">Browse catalog &rarr;</a>
+  </nav>
+</header>
+<section class="builder-shell">
+  <aside class="builder-sidebar">
+    <div class="sidebar-actions">
+      <button id="new-deck" class="btn-primary">+ New deck</button>
+      <button id="import-snapshot" class="btn-link" title="Reload the deck list from the latest builder-data.json">↻ Reload from disk</button>
+    </div>
+    <div id="deck-list" class="deck-list" aria-label="Your decks"></div>
+  </aside>
+  <section class="builder-editor">
+    <header class="editor-header">
+      <input id="deck-name" type="text" placeholder="Deck name (e.g. Selesnya Tokens v2)" autocomplete="off">
+      <select id="deck-format" aria-label="Format">
+        <option value="">(no format)</option>
+        <option value="Standard">Standard</option>
+        <option value="Historic">Historic</option>
+        <option value="Explorer">Explorer</option>
+        <option value="Alchemy">Alchemy</option>
+        <option value="Timeless">Timeless</option>
+        <option value="Brawl">Brawl</option>
+        <option value="Draft">Draft</option>
+        <option value="Casual">Casual</option>
+      </select>
+      <button id="delete-deck" class="btn-danger" title="Delete this deck">Delete</button>
+    </header>
+    <div class="editor-notes">
+      <label for="deck-notes">Notes</label>
+      <textarea id="deck-notes" rows="2" placeholder="Optional notes..."></textarea>
+    </div>
+    <div class="editor-stats" id="deck-stats"></div>
+    <div class="editor-lists">
+      <div class="list-col mainboard">
+        <header>
+          <h3>Mainboard <span id="main-count" class="count-pill">0</span></h3>
+          <button class="move-all" data-from="side" data-to="main">&laquo; All from side</button>
+        </header>
+        <div id="mainboard-list" class="card-list"></div>
+      </div>
+      <div class="list-col sideboard">
+        <header>
+          <h3>Sideboard <span id="side-count" class="count-pill">0</span></h3>
+          <button class="move-all" data-from="main" data-to="side">All to side &raquo;</button>
+        </header>
+        <div id="sideboard-list" class="card-list"></div>
+      </div>
+    </div>
+    <footer class="editor-footer">
+      <button id="export-deck" class="btn-primary">Export as JSON…</button>
+      <span class="footer-hint">After exporting, run: <code>mtga-logs deck-import &lt;file.json&gt;</code></span>
+    </footer>
+  </section>
+  <aside class="builder-catalog">
+    <header>
+      <h3>Catalog</h3>
+      <span id="catalog-count" class="count-pill">loading…</span>
+    </header>
+    <input id="cat-search" type="search" placeholder="Search by name..." autocomplete="off" spellcheck="false">
+    <div class="filter-row colors">
+      <label class="color-toggle W"><input type="checkbox" data-color="W"> W</label>
+      <label class="color-toggle U"><input type="checkbox" data-color="U"> U</label>
+      <label class="color-toggle B"><input type="checkbox" data-color="B"> B</label>
+      <label class="color-toggle R"><input type="checkbox" data-color="R"> R</label>
+      <label class="color-toggle G"><input type="checkbox" data-color="G"> G</label>
+      <label class="color-toggle multi"><input type="checkbox" data-color="MULTI"> multicolor</label>
+      <label class="color-toggle colorless"><input type="checkbox" data-color="COLORLESS"> colorless</label>
+    </div>
+    <select id="cat-type" aria-label="Primary type">
+      <option value="">All types</option>
+      <option value="Creature">Creature</option>
+      <option value="Planeswalker">Planeswalker</option>
+      <option value="Instant">Instant</option>
+      <option value="Sorcery">Sorcery</option>
+      <option value="Enchantment">Enchantment</option>
+      <option value="Artifact">Artifact</option>
+      <option value="Battle">Battle</option>
+      <option value="Land">Land</option>
+    </select>
+    <div id="cat-grid" class="cat-grid"></div>
+    <p class="cat-hint">Click a card to add to mainboard. Shift-click adds to sideboard. Click "+ main" / "+ side" buttons for explicit placement.</p>
+  </aside>
+</section>
+
+<dialog id="add-dialog" class="add-dialog">
+  <form method="dialog" class="add-form">
+    <h3 id="add-card-name"></h3>
+    <p id="add-card-meta"></p>
+    <div class="add-actions">
+      <button value="main" class="btn-primary">Add to mainboard</button>
+      <button value="side" class="btn-secondary">Add to sideboard</button>
+      <button value="cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
+"#);
+    out.push_str(BUILDER_JS);
+    out.push_str("\n</body>\n</html>\n");
+    out
+}
+
+const BUILDER_JS: &str = r#"
+<script>
+'use strict';
+
+// ===== State =====
+let CARDS = [];
+let BY_ID = new Map();
+const DECKS = new Map();     // deck_id -> { name, format, notes, mainboard[], sideboard[], first_created, last_modified }
+let ACTIVE_DECK_ID = null;
+const STORAGE_KEY = 'mtgalogs_builder_decks_v1';
+
+// ===== Card-data fetch (shared with catalog) =====
+fetch('cards-data.json')
+  .then(r => r.json())
+  .then(d => {
+    CARDS = d.cards || [];
+    for (const c of CARDS) BY_ID.set(c.i, c);
+    document.getElementById('catalog-count').textContent = CARDS.length.toLocaleString();
+    applyCatalogFilter();
+    // Once cards are loaded, re-render the editor so card names appear.
+    // (Snapshot loads often happen before cards-data.json is fetched.)
+    renderDeckList();
+    renderEditor();
+    // Then drain any "added from catalog" entries.
+    drainCatalogAdds();
+  })
+  .catch(e => {
+    document.getElementById('catalog-count').textContent = 'error';
+    document.getElementById('cat-grid').innerHTML =
+      `<div class="empty error">Failed to load cards-data.json: ${esc(e.message)}</div>`;
+  });
+
+// Drain queued "add to deck" entries from the catalog page.
+function drainCatalogAdds() {
+  const counter = parseInt(localStorage.getItem('mtgalogs_add_counter') || '0', 10);
+  if (counter === 0) return;
+  for (let i = 1; i <= counter; i++) {
+    const raw = localStorage.getItem(`mtgalogs_add_${i}`);
+    if (!raw) continue;
+    try {
+      const card = JSON.parse(raw);
+      // Make sure we have a deck to drop the card into.
+      if (DECKS.size === 0) createDeck('Imported cards');
+      const last = Array.from(DECKS.keys()).pop();
+      ACTIVE_DECK_ID = last;
+      // Add to mainboard; user can move later.
+      const deck = DECKS.get(last);
+      const existing = deck.mainboard.find(c => c.grpId === card.grpId);
+      if (existing) existing.quantity++;
+      else deck.mainboard.push({ grpId: card.grpId, quantity: 1 });
+      deck.last_modified = Math.floor(Date.now() / 1000);
+    } catch (e) { /* ignore */ }
+    localStorage.removeItem(`mtgalogs_add_${i}`);
+  }
+  localStorage.removeItem('mtgalogs_add_counter');
+  saveAll();
+  renderDeckList();
+  renderEditor();
+}
+
+// ===== Persistence =====
+function saveAll() {
+  const obj = {};
+  for (const [k, v] of DECKS) obj[k] = v;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
+}
+
+function loadFromStorage() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return false;
+  try {
+    const obj = JSON.parse(raw);
+    DECKS.clear();
+    for (const k in obj) DECKS.set(k, obj[k]);
+    return true;
+  } catch (e) { return false; }
+}
+
+// Load snapshot from server-rendered builder-data.json.
+async function loadFromSnapshot() {
+  try {
+    const r = await fetch('builder-data.json?ts=' + Date.now());
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const had = DECKS.size > 0;
+    // Merge: snapshot wins for first load; subsequent reloads preserve
+    // local edits if they exist. We only load snapshot when storage is
+    // empty.
+    if (had) return;
+    for (const d of (data.user_decks || [])) {
+      const id = d.deck_id || ('user-' + Math.random().toString(16).slice(2, 10));
+      DECKS.set(id, {
+        name: d.name || '(unnamed)',
+        format: d.format || '',
+        notes: d.notes || '',
+        mainboard: d.mainboard || [],
+        sideboard: d.sideboard || [],
+        first_created: d.first_created || Math.floor(Date.now() / 1000),
+        last_modified: d.last_modified || Math.floor(Date.now() / 1000),
+      });
+    }
+    // Auto-select the most-recently-modified deck so the editor populates.
+    if (!ACTIVE_DECK_ID && DECKS.size > 0) {
+      const sorted = Array.from(DECKS.entries())
+        .sort((a, b) => (b[1].last_modified || 0) - (a[1].last_modified || 0));
+      ACTIVE_DECK_ID = sorted[0][0];
+    }
+    renderDeckList();
+    renderEditor();
+  } catch (e) {
+    console.warn('snapshot load:', e);
+  }
+}
+
+// ===== Helpers =====
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[c]);
+}
+
+function newDeckId() {
+  return 'user-' + Math.random().toString(16).slice(2, 10);
+}
+
+function primaryType(tl) {
+  if (!tl) return 'Other';
+  const lower = tl.toLowerCase();
+  if (lower.includes('creature')) return 'Creature';
+  if (lower.includes('planeswalker')) return 'Planeswalker';
+  if (lower.includes('instant')) return 'Instant';
+  if (lower.includes('sorcery')) return 'Sorcery';
+  if (lower.includes('enchantment')) return 'Enchantment';
+  if (lower.includes('artifact')) return 'Artifact';
+  if (lower.includes('battle')) return 'Battle';
+  if (lower.includes('land')) return 'Land';
+  return 'Other';
+}
+
+function manaHtml(mana) {
+  if (!mana) return '';
+  return mana.replace(/\{([^}]+)\}/g, (_, sym) => {
+    const code = sym[0];
+    return `<i class="mana mana-${code}">{${esc(sym)}}</i>`;
+  });
+}
+
+function rarityClass(r) {
+  switch ((r || '').toLowerCase()) {
+    case 'common': return 'r-common';
+    case 'uncommon': return 'r-uncommon';
+    case 'rare': return 'r-rare';
+    case 'mythic': return 'r-mythic';
+    default: return '';
+  }
+}
+
+// ===== Deck CRUD =====
+function createDeck(name) {
+  const id = newDeckId();
+  const now = Math.floor(Date.now() / 1000);
+  DECKS.set(id, {
+    name: name || 'Untitled deck',
+    format: '',
+    notes: '',
+    mainboard: [],
+    sideboard: [],
+    first_created: now,
+    last_modified: now,
+  });
+  ACTIVE_DECK_ID = id;
+  saveAll();
+  renderDeckList();
+  renderEditor();
+}
+
+function deleteActiveDeck() {
+  if (!ACTIVE_DECK_ID) return;
+  if (!confirm('Delete this deck?')) return;
+  DECKS.delete(ACTIVE_DECK_ID);
+  ACTIVE_DECK_ID = DECKS.keys().next().value || null;
+  saveAll();
+  renderDeckList();
+  renderEditor();
+}
+
+// ===== Render =====
+function renderDeckList() {
+  const list = document.getElementById('deck-list');
+  if (DECKS.size === 0) {
+    list.innerHTML = '<div class="empty">No decks yet. Click "+ New deck" to start.</div>';
+    return;
+  }
+  const sorted = Array.from(DECKS.entries())
+    .sort((a, b) => (b[1].last_modified || 0) - (a[1].last_modified || 0));
+  list.innerHTML = sorted.map(([id, d]) => {
+    const total = (d.mainboard || []).reduce((s, c) => s + c.quantity, 0) +
+                  (d.sideboard || []).reduce((s, c) => s + c.quantity, 0);
+    const cls = id === ACTIVE_DECK_ID ? 'active' : '';
+    return `<button class="deck-item ${cls}" data-id="${id}">
+      <span class="deck-item-name">${esc(d.name)}</span>
+      <span class="deck-item-meta">${total} cards${d.format ? ' &middot; ' + esc(d.format) : ''}</span>
+    </button>`;
+  }).join('');
+  list.querySelectorAll('.deck-item').forEach(el => {
+    el.addEventListener('click', () => {
+      ACTIVE_DECK_ID = el.dataset.id;
+      renderDeckList();
+      renderEditor();
+    });
+  });
+}
+
+function renderEditor() {
+  const deck = ACTIVE_DECK_ID ? DECKS.get(ACTIVE_DECK_ID) : null;
+  const nameEl = document.getElementById('deck-name');
+  const fmtEl = document.getElementById('deck-format');
+  const notesEl = document.getElementById('deck-notes');
+  if (!deck) {
+    nameEl.value = '';
+    nameEl.disabled = true;
+    fmtEl.value = '';
+    fmtEl.disabled = true;
+    notesEl.value = '';
+    notesEl.disabled = true;
+    document.getElementById('mainboard-list').innerHTML = '<div class="empty">No deck selected.</div>';
+    document.getElementById('sideboard-list').innerHTML = '';
+    document.getElementById('main-count').textContent = '0';
+    document.getElementById('side-count').textContent = '0';
+    document.getElementById('deck-stats').innerHTML = '';
+    document.getElementById('delete-deck').disabled = true;
+    document.getElementById('export-deck').disabled = true;
+    return;
+  }
+  nameEl.disabled = false;
+  fmtEl.disabled = false;
+  notesEl.disabled = false;
+  document.getElementById('delete-deck').disabled = false;
+  document.getElementById('export-deck').disabled = false;
+  if (document.activeElement !== nameEl) nameEl.value = deck.name || '';
+  if (document.activeElement !== fmtEl) fmtEl.value = deck.format || '';
+  if (document.activeElement !== notesEl) notesEl.value = deck.notes || '';
+  renderList('mainboard');
+  renderList('sideboard');
+  renderStats();
+}
+
+function renderList(which) {
+  const deck = DECKS.get(ACTIVE_DECK_ID);
+  const arr = deck[which];
+  const container = document.getElementById(`${which}-list`);
+  const total = arr.reduce((s, c) => s + c.quantity, 0);
+  document.getElementById(`${which === 'mainboard' ? 'main' : 'side'}-count`).textContent = total;
+  if (arr.length === 0) {
+    container.innerHTML = `<div class="empty">Click a card on the right to add to ${which}.</div>`;
+    return;
+  }
+  // Sort by name (resolved via card DB) then type.
+  const sorted = arr.slice().sort((a, b) => {
+    const ca = BY_ID.get(a.grpId); const cb = BY_ID.get(b.grpId);
+    const na = ca ? ca.n : '#' + a.grpId;
+    const nb = cb ? cb.n : '#' + b.grpId;
+    return na.localeCompare(nb);
+  });
+  container.innerHTML = sorted.map((c, idx) => {
+    const card = BY_ID.get(c.grpId);
+    const name = card ? card.n : `#${c.grpId}`;
+    const cost = card ? manaHtml(card.m) : '';
+    const type = card ? esc(card.t || '') : '';
+    const ci = card ? (card.ci || '').split('').map(ch =>
+      `<i class="pip pip-${ch}" title="${ch}"></i>`).join('') : '';
+    const r = card ? rarityClass(card.r) : '';
+    const arrIdx = arr.indexOf(c);
+    return `<div class="card-row" data-grp="${c.grpId}" data-arr-idx="${arrIdx}">
+      <div class="card-row-qty">
+        <button class="qty-dec" data-grp="${c.grpId}" data-which="${which}">&minus;</button>
+        <span class="qty">${c.quantity}</span>
+        <button class="qty-inc" data-grp="${c.grpId}" data-which="${which}">+</button>
+      </div>
+      <div class="card-row-main">
+        <div class="card-row-name">${esc(name)} <span class="card-row-cost">${cost}</span></div>
+        <div class="card-row-type"><span class="rarity ${r}">${card ? esc(card.r || '') : ''}</span> ${type} <span class="color-pips">${ci}</span></div>
+      </div>
+      <div class="card-row-actions">
+        <button class="move" data-grp="${c.grpId}" data-from="${which}"
+                data-to="${which === 'mainboard' ? 'sideboard' : 'mainboard'}"
+                title="Move to ${which === 'mainboard' ? 'sideboard' : 'mainboard'}">&harr;</button>
+        <button class="remove" data-grp="${c.grpId}" data-which="${which}">&times;</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  container.querySelectorAll('.qty-inc, .qty-dec, .remove, .move').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const grp = parseInt(btn.dataset.grp, 10);
+      const which = btn.dataset.which;
+      const deck = DECKS.get(ACTIVE_DECK_ID);
+      if (!deck) return;
+      const arr = deck[which];
+      const idx = arr.findIndex(c => c.grpId === grp);
+      if (idx < 0) return;
+      if (btn.classList.contains('qty-inc')) arr[idx].quantity++;
+      else if (btn.classList.contains('qty-dec')) {
+        arr[idx].quantity--;
+        if (arr[idx].quantity <= 0) arr.splice(idx, 1);
+      }
+      else if (btn.classList.contains('remove')) arr.splice(idx, 1);
+      else if (btn.classList.contains('move')) {
+        const to = btn.dataset.to;
+        deck[to].push(arr[idx]);
+        arr.splice(idx, 1);
+      }
+      deck.last_modified = Math.floor(Date.now() / 1000);
+      saveAll();
+      renderList(which);
+      if (btn.classList.contains('move')) renderList(btn.dataset.to);
+      renderStats();
+    });
+  });
+}
+
+function renderStats() {
+  const deck = DECKS.get(ACTIVE_DECK_ID);
+  if (!deck) return;
+  const stats = document.getElementById('deck-stats');
+  // Color identity (aggregate across all cards).
+  const all = deck.mainboard.concat(deck.sideboard);
+  const ciSet = new Set();
+  let totalCmc = 0; let totalQty = 0;
+  for (const e of all) {
+    const c = BY_ID.get(e.grpId);
+    if (!c) continue;
+    for (const ch of (c.ci || '')) ciSet.add(ch);
+    totalCmc += (c.c || 0) * e.quantity;
+    totalQty += e.quantity;
+  }
+  const order = ['W','U','B','R','G'];
+  const ci = order.filter(c => ciSet.has(c));
+  const avgCmc = totalQty > 0 ? (totalCmc / totalQty).toFixed(2) : '0';
+  const ciPips = ci.map(c => `<i class="pip pip-${c}"></i>`).join('') || '<span class="muted">colorless</span>';
+  stats.innerHTML = `
+    <span class="stat"><b>${totalQty}</b> cards total</span>
+    <span class="stat"><b>${deck.mainboard.length}</b> unique mainboard</span>
+    <span class="stat"><b>${deck.sideboard.length}</b> unique sideboard</span>
+    <span class="stat"><b>${avgCmc}</b> avg CMC</span>
+    <span class="stat"><span class="color-pips">${ciPips}</span> color identity</span>`;
+}
+
+// ===== Catalog (right pane) =====
+const catSearch = document.getElementById('cat-search');
+const catType = document.getElementById('cat-type');
+const catColorToggles = Array.from(document.querySelectorAll('.builder-catalog .color-toggle input'));
+const catGrid = document.getElementById('cat-grid');
+let catVisibleCount = 0;
+let catFiltered = [];
+const CAT_BATCH = 100;
+
+function applyCatalogFilter() {
+  const q = catSearch.value.trim().toLowerCase();
+  const t = catType.value;
+  const setColors = new Set();
+  for (const cb of catColorToggles) if (cb.checked) setColors.add(cb.dataset.color);
+  catFiltered = [];
+  for (const c of CARDS) {
+    if (q && !c.n.toLowerCase().includes(q)) continue;
+    if (t && primaryType(c.t) !== t) continue;
+    if (setColors.size > 0) {
+      const ci = c.ci || '';
+      let ok = true;
+      for (const col of setColors) {
+        if (col === 'COLORLESS') { if (ci.length !== 0) ok = false; break; }
+        else if (col === 'MULTI') { if (ci.length < 2) ok = false; break; }
+        else { if (!ci.includes(col)) ok = false; break; }
+      }
+      if (!ok) continue;
+    }
+    catFiltered.push(c);
+  }
+  catVisibleCount = 0;
+  catGrid.innerHTML = '';
+  renderCatNext();
+}
+function renderCatNext() {
+  const end = Math.min(catVisibleCount + CAT_BATCH, catFiltered.length);
+  const frag = document.createDocumentFragment();
+  for (let i = catVisibleCount; i < end; i++) {
+    const c = catFiltered[i];
+    const tmp = document.createElement('div');
+    tmp.innerHTML = renderCatCard(c);
+    frag.appendChild(tmp.firstElementChild);
+  }
+  catGrid.appendChild(frag);
+  catVisibleCount = end;
+  if (catVisibleCount < catFiltered.length) requestAnimationFrame(renderCatNext);
+}
+function renderCatCard(c) {
+  const ci = (c.ci || '').split('').map(ch =>
+    `<i class="pip pip-${ch}" title="${ch}"></i>`).join('');
+  const img = c.u
+    ? `<img loading="lazy" src="${esc(c.u)}" alt="${esc(c.n)}" onerror="this.style.display='none'">`
+    : `<div class="no-img">no image</div>`;
+  return `<article class="cat-cell" data-id="${c.i}">
+    <div class="cat-img">${img}</div>
+    <div class="cat-meta">
+      <div class="cat-name" title="${esc(c.n)}">${esc(c.n)}</div>
+      <div class="cat-cost">${manaHtml(c.m)}</div>
+      <div class="cat-bottom">
+        <span class="rarity ${rarityClass(c.r)}">${esc(c.r || '')}</span>
+        <span class="color-pips">${ci}</span>
+      </div>
+      <div class="cat-actions">
+        <button class="add-main" data-id="${c.i}" title="Add to mainboard">+ main</button>
+        <button class="add-side" data-id="${c.i}" title="Add to sideboard">+ side</button>
+      </div>
+    </div>
+  </article>`;
+}
+let catTimer = null;
+catSearch.addEventListener('input', () => {
+  clearTimeout(catTimer);
+  catTimer = setTimeout(applyCatalogFilter, 100);
+});
+catType.addEventListener('change', applyCatalogFilter);
+for (const cb of catColorToggles) cb.addEventListener('change', applyCatalogFilter);
+
+catGrid.addEventListener('click', (e) => {
+  const main = e.target.closest('.add-main');
+  const side = e.target.closest('.add-side');
+  if (main) { addCardToDeck(parseInt(main.dataset.id, 10), 'mainboard'); e.stopPropagation(); return; }
+  if (side) { addCardToDeck(parseInt(side.dataset.id, 10), 'sideboard'); e.stopPropagation(); return; }
+  const cell = e.target.closest('.cat-cell');
+  if (!cell) return;
+  const id = parseInt(cell.dataset.id, 10);
+  const card = BY_ID.get(id);
+  if (!card) return;
+  showAddDialog(card, e.shiftKey);
+});
+
+function addCardToDeck(grpId, which) {
+  if (!ACTIVE_DECK_ID) {
+    if (DECKS.size === 0) createDeck('Untitled deck');
+    ACTIVE_DECK_ID = Array.from(DECKS.keys()).pop();
+    renderDeckList();
+  }
+  const deck = DECKS.get(ACTIVE_DECK_ID);
+  const arr = deck[which];
+  const existing = arr.find(c => c.grpId === grpId);
+  if (existing) existing.quantity++;
+  else arr.push({ grpId, quantity: 1 });
+  deck.last_modified = Math.floor(Date.now() / 1000);
+  saveAll();
+  renderList(which);
+  renderStats();
+  renderDeckList();
+}
+
+// ===== Add dialog (when clicking a card cell directly) =====
+const addDialog = document.getElementById('add-dialog');
+const addCardName = document.getElementById('add-card-name');
+const addCardMeta = document.getElementById('add-card-meta');
+function showAddDialog(card, shift) {
+  if (!ACTIVE_DECK_ID) {
+    createDeck('Untitled deck');
+  }
+  addCardName.textContent = card.n;
+  addCardMeta.innerHTML = `${manaHtml(card.m)} &middot; ${esc(card.t || '')}`;
+  addDialog.returnValue = '';
+  addDialog.showModal();
+  addDialog.addEventListener('close', function once() {
+    addDialog.removeEventListener('close', once);
+    const v = addDialog.returnValue;
+    if (v === 'main') addCardToDeck(card.i, 'mainboard');
+    else if (v === 'side') addCardToDeck(card.i, 'sideboard');
+  });
+}
+
+// ===== Wire up editor inputs =====
+document.getElementById('deck-name').addEventListener('input', e => {
+  if (!ACTIVE_DECK_ID) return;
+  const deck = DECKS.get(ACTIVE_DECK_ID);
+  deck.name = e.target.value || '(unnamed)';
+  deck.last_modified = Math.floor(Date.now() / 1000);
+  saveAll();
+  renderDeckList();
+});
+document.getElementById('deck-format').addEventListener('change', e => {
+  if (!ACTIVE_DECK_ID) return;
+  const deck = DECKS.get(ACTIVE_DECK_ID);
+  deck.format = e.target.value;
+  deck.last_modified = Math.floor(Date.now() / 1000);
+  saveAll();
+  renderDeckList();
+});
+document.getElementById('deck-notes').addEventListener('input', e => {
+  if (!ACTIVE_DECK_ID) return;
+  const deck = DECKS.get(ACTIVE_DECK_ID);
+  deck.notes = e.target.value;
+  deck.last_modified = Math.floor(Date.now() / 1000);
+  saveAll();
+});
+document.querySelectorAll('.move-all').forEach(b => {
+  b.addEventListener('click', () => {
+    if (!ACTIVE_DECK_ID) return;
+    const deck = DECKS.get(ACTIVE_DECK_ID);
+    const from = b.dataset.from === 'main' ? 'mainboard' : 'sideboard';
+    const to = b.dataset.to === 'main' ? 'mainboard' : 'sideboard';
+    deck[to] = deck[to].concat(deck[from]);
+    deck[from] = [];
+    saveAll();
+    renderList('mainboard');
+    renderList('sideboard');
+    renderStats();
+  });
+});
+
+// ===== Buttons =====
+document.getElementById('new-deck').addEventListener('click', () => createDeck());
+document.getElementById('delete-deck').addEventListener('click', deleteActiveDeck);
+document.getElementById('import-snapshot').addEventListener('click', async () => {
+  // Force a reload from snapshot, overwriting any local state.
+  if (DECKS.size > 0 && !confirm('Reload from disk will replace your in-progress edits. Continue?')) return;
+  try {
+    const r = await fetch('builder-data.json?ts=' + Date.now());
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    DECKS.clear();
+    for (const d of (data.user_decks || [])) {
+      const id = d.deck_id || ('user-' + Math.random().toString(16).slice(2, 10));
+      DECKS.set(id, {
+        name: d.name || '(unnamed)',
+        format: d.format || '',
+        notes: d.notes || '',
+        mainboard: d.mainboard || [],
+        sideboard: d.sideboard || [],
+        first_created: d.first_created || Math.floor(Date.now() / 1000),
+        last_modified: d.last_modified || Math.floor(Date.now() / 1000),
+      });
+    }
+    saveAll();
+    renderDeckList();
+    renderEditor();
+  } catch (e) {
+    alert('Failed to load builder-data.json: ' + e.message);
+  }
+});
+
+// ===== Export =====
+document.getElementById('export-deck').addEventListener('click', () => {
+  if (!ACTIVE_DECK_ID) return;
+  const deck = DECKS.get(ACTIVE_DECK_ID);
+  const payload = {
+    decks: [{
+      deck_id: ACTIVE_DECK_ID,
+      name: deck.name,
+      format: deck.format || null,
+      notes: deck.notes || null,
+      mainboard: deck.mainboard,
+      sideboard: deck.sideboard,
+    }]
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const safeName = (deck.name || 'deck').replace(/[^A-Za-z0-9_-]+/g, '_');
+  a.href = url;
+  a.download = `${safeName}-${ACTIVE_DECK_ID}.json`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 100);
+  flashToast(`Exported ${deck.name}. Run: mtga-logs deck-import ${a.download}`);
+});
+
+function flashToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.classList.add('visible'), 10);
+  setTimeout(() => {
+    t.classList.remove('visible');
+    setTimeout(() => t.remove(), 300);
+  }, 2400);
+}
+
+// ===== Boot =====
+loadFromStorage();
+loadFromSnapshot();
+renderDeckList();
+renderEditor();
+</script>
+"#;
+

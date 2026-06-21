@@ -545,3 +545,185 @@ pub fn status() -> Result<DbStatus, String> {
         db_size: fs::metadata(&db_file).ok().map(|m| m.len()),
     })
 }
+
+/// Dump all cards in the catalog as a compact JSON file at `out_path`.
+/// The shape is:
+///   {
+///     "v": 1,
+///     "meta": { "updated_at": "...", "count": N },
+///     "cards": [
+///       {
+///         "i":  93645,                    // arena_id (grpId)
+///         "n":  "Inspiring Overseer",     // name
+///         "m":  "{3}{W}",                 // mana_cost
+///         "c":  4,                        // cmc
+///         "t":  "Creature — Human Cleric",// type_line
+///         "cs": "W",                      // colors (sorted WUBRG string)
+///         "ci": "W",                      // color_identity (sorted WUBRG string)
+///         "r":  "common",                 // rarity
+///         "u":  "https://cards.scryfall.io/..."  // image_url
+///       },
+///       ...
+///     ]
+///   }
+///
+/// Single-letter keys keep the file size manageable (~4-5 MB for 18k cards).
+/// Used by the catalog page; `cards-data.json` is fetched once on load.
+pub fn dump_catalog_json(out_path: &Path) -> Result<usize, String> {
+    let conn = open_db(&db_path()).map_err(|e| format!("open card db: {}", e))?;
+    let updated_at = meta_get(&conn, "updated_at");
+    let mut stmt = conn
+        .prepare(
+            "SELECT arena_id, name, mana_cost, cmc, type_line,
+                    colors, color_identity, rarity, image_url
+             FROM cards
+             ORDER BY name",
+        )
+        .map_err(|e| format!("prepare dump: {}", e))?;
+
+    // Helper: collapse a JSON-array-of-letters like ["W","U"] into "WU" by
+    // reading the raw JSON column text and walking the string. SQLite stores
+    // colors / color_identity as JSON strings (e.g. `["W"]`), so we strip
+    // brackets, quotes, and join in WUBRG order.
+    fn collapse_color_letters(raw: &str) -> String {
+        let mut out = String::with_capacity(5);
+        for c in raw.chars() {
+            if "WUBRG".contains(c) {
+                out.push(c);
+            }
+        }
+        // Sort to WUBRG order (already in order since we iterate the string).
+        out
+    }
+    let file = fs::File::create(out_path).map_err(|e| format!("create {}: {}", out_path.display(), e))?;
+    let mut writer = BufWriter::new(file);
+
+    // Header
+    writer
+        .write_all(b"{\"v\":1,\"meta\":")
+        .map_err(|e| format!("write header: {}", e))?;
+    if let Some(ref u) = updated_at {
+        write!(
+            writer,
+            "{{\"updated_at\":\"{}\",\"count\":",
+            u.replace('"', "\\\"")
+        )
+        .map_err(|e| format!("write meta: {}", e))?;
+    } else {
+        writer.write_all(b"{\"count\":").map_err(|e| format!("write meta: {}", e))?;
+    }
+
+    // First pass: count rows (cheap on SQLite).
+    let total: i64 = conn
+        .query_row("SELECT COUNT(*) FROM cards", [], |r| r.get(0))
+        .map_err(|e| format!("count cards: {}", e))?;
+    write!(writer, "{}", total).map_err(|e| format!("write count: {}", e))?;
+    writer.write_all(b"},\"cards\":[").map_err(|e| format!("write cards: ["))?;
+
+    // Stream rows into JSON
+    let mut rows = stmt
+        .query([])
+        .map_err(|e| format!("query dump: {}", e))?;
+    let mut count: usize = 0;
+    let mut first = true;
+    while let Some(row) = rows.next().map_err(|e| format!("row: {}", e))? {
+        let arena_id: i64 = row.get(0).map_err(|e| format!("read arena_id: {}", e))?;
+        let name: Option<String> = row.get(1).map_err(|e| format!("read name: {}", e))?;
+        let mana_cost: Option<String> = row.get(2).map_err(|e| format!("read mana_cost: {}", e))?;
+        let cmc: Option<f64> = row.get(3).map_err(|e| format!("read cmc: {}", e))?;
+        let type_line: Option<String> = row.get(4).map_err(|e| format!("read type_line: {}", e))?;
+        let colors: Option<String> = row.get(5).map_err(|e| format!("read colors: {}", e))?;
+        let color_identity: Option<String> = row.get(6).map_err(|e| format!("read color_identity: {}", e))?;
+        let rarity: Option<String> = row.get(7).map_err(|e| format!("read rarity: {}", e))?;
+        let image_url: Option<String> = row.get(8).map_err(|e| format!("read image_url: {}", e))?;
+
+        if !first {
+            writer.write_all(b",").map_err(|e| format!("write comma: {}", e))?;
+        }
+        first = false;
+        let cs = collapse_color_letters(&colors.unwrap_or_default());
+        let ci = collapse_color_letters(&color_identity.unwrap_or_default());
+        write!(
+            writer,
+            r#"{{"i":{},"n":{},"m":{},"c":{},"t":{},"cs":{},"ci":{},"r":{},"u":{}}}"#,
+            arena_id,
+            json_str(&name.unwrap_or_default()),
+            json_str(&mana_cost.unwrap_or_default()),
+            json_num(cmc.unwrap_or(0.0)),
+            json_str(&type_line.unwrap_or_default()),
+            json_str(&cs),
+            json_str(&ci),
+            json_str(&rarity.unwrap_or_default()),
+            json_str(&image_url.unwrap_or_default()),
+        )
+        .map_err(|e| format!("write card {count}: {}", e))?;
+        count += 1;
+    }
+    writer.write_all(b"]}").map_err(|e| format!("write tail: {}", e))?;
+    writer.flush().map_err(|e| format!("flush: {}", e))?;
+    Ok(count)
+}
+
+/// Serialize a string as a JSON string literal (with surrounding quotes).
+/// Escapes the minimal set: `"`, `\`, and control characters. Non-ASCII
+/// characters are emitted as their UTF-8 bytes (valid JSON, no escaping).
+fn json_str(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\x08' => out.push_str("\\b"),
+            '\x0c' => out.push_str("\\f"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            // Pass through all other characters (including non-ASCII)
+            // verbatim. JSON allows raw UTF-8 in string literals.
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn json_num(n: f64) -> String {
+    if n.is_nan() || n.is_infinite() {
+        "0".to_string()
+    } else if n == n.trunc() && n.abs() < 1e15 {
+        format!("{}", n as i64)
+    } else {
+        format!("{}", n)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_str_escapes_specials() {
+        assert_eq!(json_str(""), "\"\"");
+        assert_eq!(json_str("a"), "\"a\"");
+        assert_eq!(json_str("a\"b"), "\"a\\\"b\"");
+        assert_eq!(json_str("a\\b"), "\"a\\\\b\"");
+        assert_eq!(json_str("a\nb"), "\"a\\nb\"");
+        assert_eq!(json_str("a\u{0000}b"), "\"a\\u0000b\"");
+        // Non-ASCII passes through verbatim.
+        assert_eq!(json_str("a—b"), "\"a—b\"");
+        assert_eq!(json_str("Magic: The Gathering"), "\"Magic: The Gathering\"");
+    }
+
+    #[test]
+    fn json_num_formats() {
+        assert_eq!(json_num(0.0), "0");
+        assert_eq!(json_num(3.0), "3");
+        assert_eq!(json_num(2.5), "2.5");
+        assert_eq!(json_num(f64::NAN), "0");
+        assert_eq!(json_num(f64::INFINITY), "0");
+    }
+}
+
+

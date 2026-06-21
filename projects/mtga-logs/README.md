@@ -166,6 +166,77 @@ cd /tmp && python3 -m http.server 8000 --bind 0.0.0.0
 
 If the connection is refused, you may need `sudo ufw allow from 192.168.0.0/24 to any port 8000`.
 
+## Catalog and deck builder
+
+`mtga-logs web` also writes two extra pages that work fully offline:
+
+- `cards.html` — searchable browser over all 18,767 Scryfall cards
+- `builder.html` — deck builder with a built-in catalog mini-pane
+- `cards-data.json` — compact (~4 MB) JSON dump of all cards (fetched on page load)
+- `builder-data.json` — initial snapshot of your user decks
+
+```bash
+./target/release/mtga-logs web -o /tmp/decks.html
+# → /tmp/decks.html
+# → /tmp/decks-matches.html + /tmp/decks-matches/<id>.html
+# → /tmp/cards.html + /tmp/cards-data.json
+# → /tmp/builder.html + /tmp/builder-data.json
+```
+
+Use `--no-cards` or `--no-builder` to opt out of the extras.
+
+### Catalog (`cards.html`)
+
+Filter the full Scryfall card database:
+
+- **Name search** — debounced text input, matches `card.n` substring (case-insensitive)
+- **Color identity** — W / U / B / R / G toggles, plus `multicolor` and `colorless` quick-filters; multiple toggles AND together
+- **Type** — Creature / Planeswalker / Instant / Sorcery / Enchantment / Artifact / Battle / Land
+- **Sort** — by name (default), mana cost, or rarity
+
+Card grid renders 18k+ cards in batches of 200 to stay responsive. Click any card to open a detail modal with the full image, grpId, and an "Add to deck…" button that queues the card into the deck builder's localStorage.
+
+### Deck builder (`builder.html`)
+
+Three-pane layout:
+
+- **Left** — deck list + "+ New deck" / "↻ Reload from disk" buttons. Existing decks load from `builder-data.json`; new decks live in `localStorage` until exported.
+- **Center** — editor with name, format select (Standard / Historic / Explorer / Alchemy / Timeless / Brawl / Draft / Casual), notes textarea, mainboard + sideboard lists with per-card `+`/`−`/move/remove buttons, and live stats (card count, unique mainboard/sideboard counts, average CMC, color identity).
+- **Right** — same catalog as `cards.html` but in a side panel. Click a card to add to mainboard; click `+ main`/`+ side` for explicit placement; Shift-click to add directly to sideboard.
+
+**Round-trip workflow:**
+
+```bash
+# 1. Open the builder in your browser
+xdg-open http://localhost:8000/builder.html
+
+# 2. Build/edit a deck, click "Export as JSON…" (downloads file)
+# 3. Import it back into the DB:
+./target/release/mtga-logs deck-import ~/Downloads/Selesnya_Tokens_v2-user-abc12345.json
+
+# 4. Re-render the deck pages so the new deck shows up
+./target/release/mtga-logs web -o /tmp/decks.html
+```
+
+JSON shape (see `EXTRA_OPPONENT_DATA.md` for the format spec):
+
+```json
+{
+  "decks": [{
+    "deck_id": "user-abc12345",
+    "name": "Selesnya Tokens v2",
+    "format": "Standard",
+    "notes": "Trying Anointed Procession",
+    "mainboard": [{"grpId": 123, "quantity": 4}],
+    "sideboard":  [{"grpId": 456, "quantity": 2}]
+  }]
+}
+```
+
+`deck_id` is auto-generated as `user-<8 hex>` if missing. `id` is accepted as an alias for `grpId`. CLI flags: `--stdin` or `-` to read from stdin instead of a file. Exit codes: `0` success, `1` malformed JSON, `2` some decks rejected.
+
+Schema v4 added the `user_decks` table to `events.db`. Decks you build live there; they never overwrite the `decks` table (which contains Arena-submitted decks from your log history).
+
 ## Persistence: events.db is the source of truth
 
 All read commands (`inventory`, `decks`, `deck <ID>`, `matches`, `web`) read from a persistent SQLite database at `~/.local/share/mtga-logs/events.db`, **not** directly from the current `Player.log`. This survives MTGA's log rotation: both `Player.log` and `Player.log.old` are ingested in one pass.

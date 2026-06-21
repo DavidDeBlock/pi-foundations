@@ -51,7 +51,7 @@ use serde_json::{json, Value};
 
 use crate::{DeckSummary, InventorySnapshot, MatchRecord};
 
-const SCHEMA_VERSION: &str = "3";
+const SCHEMA_VERSION: &str = "4";
 
 // ============================================================================
 // paths
@@ -87,6 +87,39 @@ pub fn open_db() -> Result<Connection, String> {
 }
 
 fn init_schema(conn: &Connection) -> Result<(), String> {
+    // First, read the existing schema version (if any). If it's older than
+    // SCHEMA_VERSION, run incremental migrations. This lets us add new
+    // tables without losing existing data.
+    let existing_version = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |r| r.get::<_, String>(0),
+        )
+        .ok();
+
+    // v3 -> v4: add user_decks table for the deck builder.
+    if existing_version.as_deref() == Some("3") {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS user_decks (
+                deck_id         TEXT    PRIMARY KEY,
+                name            TEXT    NOT NULL,
+                format          TEXT,
+                notes           TEXT,
+                first_created   INTEGER NOT NULL,
+                last_modified   INTEGER NOT NULL,
+                mainboard_json  TEXT    NOT NULL,
+                sideboard_json  TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_decks_modified
+                ON user_decks(last_modified DESC);
+            UPDATE meta SET value = '4' WHERE key = 'schema_version';
+            "#,
+        )
+        .map_err(|e| format!("migrate v3->v4: {}", e))?;
+    }
+
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS meta (
@@ -212,6 +245,26 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
         );
         CREATE INDEX IF NOT EXISTS idx_zone_match
             ON match_zone_transfers(match_id, annotation_id);
+
+        -- user_decks: decks built by the user in the deck builder. Decks
+        -- imported via `mtga-logs deck-import` live here. They share the
+        -- same DB as played decks (which live in `decks`) but use a
+        -- distinct deck_id prefix ("user-<8chars>") to avoid collision
+        -- with Arena-deck UUIDs. Cards are stored as JSON arrays of
+        -- {grpId, quantity} to match the existing `decks.mainboard_json`
+        -- shape.
+        CREATE TABLE IF NOT EXISTS user_decks (
+            deck_id         TEXT    PRIMARY KEY,
+            name            TEXT    NOT NULL,
+            format          TEXT,
+            notes           TEXT,
+            first_created   INTEGER NOT NULL,
+            last_modified   INTEGER NOT NULL,
+            mainboard_json  TEXT    NOT NULL,
+            sideboard_json  TEXT    NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_decks_modified
+            ON user_decks(last_modified DESC);
         "#,
     )
     .map_err(|e| format!("init schema: {}", e))?;
@@ -222,6 +275,8 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
         params![SCHEMA_VERSION],
     )
     .map_err(|e| format!("write schema_version: {}", e))?;
+
+    let _ = existing_version; // silence unused warning
     Ok(())
 }
 
@@ -1538,6 +1593,7 @@ pub struct StoreStatus {
     pub decks_total: usize,
     pub decks_user: usize,
     pub decks_netdeck: usize,
+    pub user_decks: usize,
     pub matches: usize,
     pub match_states: usize,
     pub inventory_snapshots: usize,
@@ -1554,6 +1610,7 @@ pub fn status(conn: &Connection) -> Result<StoreStatus, String> {
         decks_total: 0,
         decks_user: 0,
         decks_netdeck: 0,
+        user_decks: 0,
         matches: 0,
         match_states: 0,
         inventory_snapshots: 0,
@@ -1600,6 +1657,12 @@ pub fn status(conn: &Connection) -> Result<StoreStatus, String> {
         )
         .map(|n| n as usize)
         .unwrap_or(0);
+    s.user_decks = conn
+        .query_row("SELECT COUNT(*) FROM user_decks", [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .map(|n| n as usize)
+        .unwrap_or(0);
     s.matches = conn
         .query_row("SELECT COUNT(*) FROM matches", [], |r| r.get::<_, i64>(0))
         .map(|n| n as usize)
@@ -1631,3 +1694,536 @@ fn sum_quantities(arr: Option<&Vec<Value>>) -> i64 {
     })
     .unwrap_or(0)
 }
+
+// ============================================================================
+// user_decks — user-built decks (separate from played decks).
+//
+// These decks live in their own table to keep them clean from the
+// noisy played-deck history. They share the `events.db` file with the
+// rest of the data (single source of truth), but use a distinct
+// deck_id prefix ("user-<8chars>") so they never collide with Arena
+// deck UUIDs.
+//
+// The JSON shape on disk (used by `deck-import`) is:
+//   {
+//     "decks": [
+//       {
+//         "deck_id": "user-abc12345",   // optional; auto-generated if missing
+//         "name": "Selesnya Tokens v2",
+//         "format": "Standard",
+//         "notes": "Trying Anointed Procession",
+//         "mainboard": [{"grpId": 123, "quantity": 4}, ...],
+//         "sideboard":  [{"grpId": 456, "quantity": 2}, ...]
+//       }
+//     ]
+//   }
+// ============================================================================
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UserDeck {
+    pub deck_id: String,
+    pub name: String,
+    pub format: Option<String>,
+    pub notes: Option<String>,
+    pub first_created: i64,
+    pub last_modified: i64,
+    pub mainboard: Vec<UserDeckCard>,
+    pub sideboard: Vec<UserDeckCard>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UserDeckCard {
+    #[serde(rename = "grpId", alias = "id")]
+    pub grp_id: i64,
+    pub quantity: i64,
+}
+
+/// Result of a deck-import operation.
+#[derive(Debug, Default, serde::Serialize)]
+pub struct ImportStats {
+    pub decks_inserted: usize,
+    pub decks_updated: usize,
+    pub decks_rejected: usize,
+    pub cards_imported: usize,
+}
+
+/// Load all user_decks, most-recently-modified first.
+pub fn load_user_decks(conn: &Connection) -> Result<Vec<UserDeck>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT deck_id, name, format, notes, first_created,
+                    last_modified, mainboard_json, sideboard_json
+             FROM user_decks
+             ORDER BY last_modified DESC",
+        )
+        .map_err(|e| format!("prepare load_user_decks: {}", e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(UserDeckRow {
+                deck_id: row.get(0)?,
+                name: row.get(1)?,
+                format: row.get(2)?,
+                notes: row.get(3)?,
+                first_created: row.get(4)?,
+                last_modified: row.get(5)?,
+                mainboard_json: row.get(6)?,
+                sideboard_json: row.get(7)?,
+            })
+        })
+        .map_err(|e| format!("query load_user_decks: {}", e))?;
+    let mut out = Vec::new();
+    for r in rows {
+        let row = r.map_err(|e| format!("read user_deck row: {}", e))?;
+        out.push(UserDeck {
+            deck_id: row.deck_id,
+            name: row.name,
+            format: row.format,
+            notes: row.notes,
+            first_created: row.first_created,
+            last_modified: row.last_modified,
+            mainboard: parse_user_deck_cards(&row.mainboard_json)?,
+            sideboard: parse_user_deck_cards(&row.sideboard_json)?,
+        });
+    }
+    Ok(out)
+}
+
+struct UserDeckRow {
+    deck_id: String,
+    name: String,
+    format: Option<String>,
+    notes: Option<String>,
+    first_created: i64,
+    last_modified: i64,
+    mainboard_json: String,
+    sideboard_json: String,
+}
+
+fn parse_user_deck_cards(s: &str) -> Result<Vec<UserDeckCard>, String> {
+    serde_json::from_str(s).map_err(|e| format!("parse user_deck cards JSON: {}", e))
+}
+
+/// Load a single user_deck by id.
+pub fn load_user_deck(conn: &Connection, deck_id: &str) -> Result<Option<UserDeck>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT deck_id, name, format, notes, first_created,
+                    last_modified, mainboard_json, sideboard_json
+             FROM user_decks
+             WHERE deck_id = ?1",
+        )
+        .map_err(|e| format!("prepare load_user_deck: {}", e))?;
+    let mut rows = stmt
+        .query(params![deck_id])
+        .map_err(|e| format!("query load_user_deck: {}", e))?;
+    if let Ok(Some(row)) = rows.next() {
+        let deck = UserDeck {
+            deck_id: row.get(0).map_err(|e| format!("read deck_id: {}", e))?,
+            name: row.get(1).map_err(|e| format!("read name: {}", e))?,
+            format: row.get(2).map_err(|e| format!("read format: {}", e))?,
+            notes: row.get(3).map_err(|e| format!("read notes: {}", e))?,
+            first_created: row.get(4).map_err(|e| format!("read first_created: {}", e))?,
+            last_modified: row.get(5).map_err(|e| format!("read last_modified: {}", e))?,
+            mainboard: parse_user_deck_cards(
+                &row.get::<_, String>(6).map_err(|e| format!("read mainboard_json: {}", e))?,
+            )?,
+            sideboard: parse_user_deck_cards(
+                &row.get::<_, String>(7).map_err(|e| format!("read sideboard_json: {}", e))?,
+            )?,
+        };
+        Ok(Some(deck))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Generate a `user-<8chars>` deck_id, using 8 hex chars from a fresh
+/// timestamp + a small randomizer. Collision probability is negligible
+/// for personal deck-builder use (16^8 = 4B).
+fn gen_user_deck_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let salt = (nanos ^ (nanos >> 32)) as u32;
+    format!("user-{:08x}", salt & 0xffffffff)
+}
+
+/// Insert or update a single user_deck. If `deck.deck_id` already
+/// exists, the row is updated and `first_created` is preserved. If it
+/// does not exist, `first_created` is set to `last_modified`.
+pub fn upsert_user_deck(conn: &Connection, deck: &mut UserDeck) -> Result<(), String> {
+    // Auto-assign a deck_id if the caller didn't provide one.
+    if deck.deck_id.is_empty() || !deck.deck_id.starts_with("user-") {
+        deck.deck_id = gen_user_deck_id();
+    }
+
+    let now = deck.last_modified;
+    let main_json = serde_json::to_string(&deck.mainboard)
+        .map_err(|e| format!("serialize mainboard: {}", e))?;
+    let side_json = serde_json::to_string(&deck.sideboard)
+        .map_err(|e| format!("serialize sideboard: {}", e))?;
+
+    // UPSERT; preserve first_created if the row already exists.
+    conn.execute(
+        "INSERT INTO user_decks
+            (deck_id, name, format, notes, first_created, last_modified,
+             mainboard_json, sideboard_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(deck_id) DO UPDATE SET
+            name = excluded.name,
+            format = excluded.format,
+            notes = excluded.notes,
+            last_modified = excluded.last_modified,
+            mainboard_json = excluded.mainboard_json,
+            sideboard_json = excluded.sideboard_json",
+        params![
+            deck.deck_id,
+            deck.name,
+            deck.format,
+            deck.notes,
+            deck.first_created,
+            now,
+            main_json,
+            side_json,
+        ],
+    )
+    .map_err(|e| format!("upsert user_deck: {}", e))?;
+    Ok(())
+}
+
+/// Delete a user_deck by id. Returns true if a row was removed.
+pub fn delete_user_deck(conn: &Connection, deck_id: &str) -> Result<bool, String> {
+    let n = conn
+        .execute("DELETE FROM user_decks WHERE deck_id = ?1", params![deck_id])
+        .map_err(|e| format!("delete user_deck: {}", e))?;
+    Ok(n > 0)
+}
+
+/// Import a JSON document (file or stdin) into the user_decks table.
+/// Returns ImportStats with counts and any errors encountered.
+///
+/// `source_name` is shown in error messages (e.g. the file path or "<stdin>").
+pub fn import_user_decks_json(
+    conn: &Connection,
+    raw: &str,
+    source_name: &str,
+) -> Result<ImportStats, String> {
+    let value: Value =
+        serde_json::from_str(raw).map_err(|e| format!("invalid JSON in {source_name}: {e}"))?;
+
+    // Accept either `{"decks": [...]}` or a bare `[...]` or a bare single
+    // `{...}` deck object.
+    let arr_value = if let Some(arr) = value.as_array() {
+        arr.clone()
+    } else if let Some(obj) = value.as_object() {
+        if let Some(d) = obj.get("decks") {
+            d.as_array()
+                .cloned()
+                .ok_or_else(|| format!("{source_name}: 'decks' must be an array"))?
+        } else {
+            vec![value.clone()]
+        }
+    } else {
+        return Err(format!("{source_name}: expected object or array"));
+    };
+
+    let mut stats = ImportStats::default();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    for (i, dv) in arr_value.iter().enumerate() {
+        let tag = format!("{source_name}[{i}]");
+        match parse_user_deck_json(dv, now) {
+            Ok(mut deck) => {
+                let existing_first = load_user_deck(conn, &deck.deck_id)
+                    .ok()
+                    .flatten()
+                    .map(|d| d.first_created);
+                if let Some(fc) = existing_first {
+                    deck.first_created = fc;
+                }
+                stats.cards_imported +=
+                    (deck.mainboard.len() + deck.sideboard.len()) as usize;
+                let existed = load_user_deck(conn, &deck.deck_id)
+                    .ok()
+                    .flatten()
+                    .is_some();
+                if upsert_user_deck(conn, &mut deck).is_ok() {
+                    if existed {
+                        stats.decks_updated += 1;
+                    } else {
+                        stats.decks_inserted += 1;
+                    }
+                } else {
+                    stats.decks_rejected += 1;
+                }
+            }
+            Err(e) => {
+                eprintln!("warning: skipping {tag}: {e}");
+                stats.decks_rejected += 1;
+            }
+        }
+    }
+
+    Ok(stats)
+}
+
+fn parse_user_deck_json(v: &Value, default_ts: i64) -> Result<UserDeck, String> {
+    let obj = v
+        .as_object()
+        .ok_or_else(|| "expected an object".to_string())?;
+    let name = obj
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "missing required field 'name'".to_string())?;
+    let deck_id = obj
+        .get("deck_id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let format = obj.get("format").and_then(Value::as_str).map(String::from);
+    let notes = obj.get("notes").and_then(Value::as_str).map(String::from);
+    let mainboard = parse_card_list(obj.get("mainboard"))?;
+    let sideboard = parse_card_list(obj.get("sideboard"))?;
+    if name.trim().is_empty() {
+        return Err("'name' is empty".to_string());
+    }
+    Ok(UserDeck {
+        deck_id,
+        name: name.to_string(),
+        format,
+        notes,
+        first_created: default_ts,
+        last_modified: default_ts,
+        mainboard,
+        sideboard,
+    })
+}
+
+fn parse_card_list(v: Option<&Value>) -> Result<Vec<UserDeckCard>, String> {
+    let arr = match v {
+        Some(a) => a
+            .as_array()
+            .ok_or_else(|| "mainboard/sideboard must be an array".to_string())?,
+        None => return Ok(Vec::new()),
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    for (i, c) in arr.iter().enumerate() {
+        let grp_id = c
+            .get("grpId")
+            .or_else(|| c.get("id"))
+            .and_then(Value::as_i64)
+            .ok_or_else(|| format!("card[{i}]: missing grpId"))?;
+        let quantity = c
+            .get("quantity")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| format!("card[{i}]: missing quantity"))?;
+        if quantity <= 0 {
+            return Err(format!("card[{i}]: quantity must be positive (got {quantity})"));
+        }
+        out.push(UserDeckCard { grp_id, quantity });
+    }
+    Ok(out)
+}
+
+// ============================================================================
+// tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Open an in-memory DB, run init_schema, return the connection.
+    fn fresh_db() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        // Ensure the parent dir exists so init_schema doesn't choke on
+        // db_path() (which reads XDG dirs).
+        ensure_data_dir().expect("ensure data dir");
+        init_schema(&conn).expect("init schema");
+        conn
+    }
+
+    fn sample_deck_json(name: &str, qty: i64) -> String {
+        format!(
+            r#"{{
+                "name": "{}",
+                "format": "Standard",
+                "mainboard": [{{"grpId": 1, "quantity": {}}}],
+                "sideboard": [{{"grpId": 99, "quantity": 2}}]
+            }}"#,
+            name, qty
+        )
+    }
+
+    #[test]
+    fn schema_bumps_to_v4_with_user_decks() {
+        let conn = fresh_db();
+        let v: String = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v, "4");
+        // Table must exist.
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM user_decks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn import_single_deck_inserts() {
+        let conn = fresh_db();
+        let raw = sample_deck_json("Test Deck A", 4);
+        let stats = import_user_decks_json(&conn, &raw, "<test>").unwrap();
+        assert_eq!(stats.decks_inserted, 1);
+        assert_eq!(stats.decks_updated, 0);
+        assert_eq!(stats.decks_rejected, 0);
+        let decks = load_user_decks(&conn).unwrap();
+        assert_eq!(decks.len(), 1);
+        assert_eq!(decks[0].name, "Test Deck A");
+        assert_eq!(decks[0].mainboard.len(), 1);
+        assert_eq!(decks[0].mainboard[0].grp_id, 1);
+        assert_eq!(decks[0].mainboard[0].quantity, 4);
+        assert_eq!(decks[0].deck_id.starts_with("user-"), true);
+    }
+
+    #[test]
+    fn import_reimport_updates_existing() {
+        let conn = fresh_db();
+        let raw1 = sample_deck_json("Original", 4);
+        import_user_decks_json(&conn, &raw1, "<test>").unwrap();
+        let deck_id = load_user_decks(&conn).unwrap()[0].deck_id.clone();
+        // Re-import with same deck_id but different name/qty.
+        let raw2 = format!(
+            r#"{{ "deck_id": "{}", "name": "Updated", "mainboard": [{{"grpId": 1, "quantity": 3}}] }}"#,
+            deck_id
+        );
+        let stats = import_user_decks_json(&conn, &raw2, "<test>").unwrap();
+        assert_eq!(stats.decks_inserted, 0);
+        assert_eq!(stats.decks_updated, 1);
+        let decks = load_user_decks(&conn).unwrap();
+        assert_eq!(decks.len(), 1);
+        assert_eq!(decks[0].name, "Updated");
+        assert_eq!(decks[0].mainboard[0].quantity, 3);
+    }
+
+    #[test]
+    fn import_preserves_first_created_on_update() {
+        let conn = fresh_db();
+        let raw = sample_deck_json("Test", 4);
+        import_user_decks_json(&conn, &raw, "<test>").unwrap();
+        let deck = load_user_decks(&conn).unwrap()[0].clone();
+        // Simulate the passage of time by manually updating last_modified.
+        conn.execute(
+            "UPDATE user_decks SET last_modified = last_modified + 100 WHERE deck_id = ?1",
+            params![deck.deck_id],
+        )
+        .unwrap();
+        let raw2 = format!(
+            r#"{{ "deck_id": "{}", "name": "Renamed", "mainboard": [] }}"#,
+            deck.deck_id
+        );
+        import_user_decks_json(&conn, &raw2, "<test>").unwrap();
+        let after = load_user_deck(&conn, &deck.deck_id).unwrap().unwrap();
+        assert_eq!(after.first_created, deck.first_created);
+        assert!(after.last_modified >= deck.last_modified);
+    }
+
+    #[test]
+    fn import_multi_deck_wrapper() {
+        let conn = fresh_db();
+        let raw = r#"{
+            "decks": [
+                {"name": "Deck A", "mainboard": [{"grpId": 1, "quantity": 4}]},
+                {"name": "Deck B", "mainboard": [{"grpId": 2, "quantity": 3}]}
+            ]
+        }"#;
+        let stats = import_user_decks_json(&conn, raw, "<test>").unwrap();
+        assert_eq!(stats.decks_inserted, 2);
+        assert_eq!(load_user_decks(&conn).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn import_bare_array_works() {
+        let conn = fresh_db();
+        let raw = r#"[
+            {"name": "Bare A", "mainboard": [{"grpId": 1, "quantity": 4}]},
+            {"name": "Bare B", "mainboard": [{"grpId": 2, "quantity": 3}]}
+        ]"#;
+        let stats = import_user_decks_json(&conn, raw, "<test>").unwrap();
+        assert_eq!(stats.decks_inserted, 2);
+    }
+
+    #[test]
+    fn import_rejects_invalid_decks_but_keeps_valid() {
+        let conn = fresh_db();
+        let raw = r#"{
+            "decks": [
+                {"name": "Good", "mainboard": [{"grpId": 1, "quantity": 4}]},
+                {"name": "", "mainboard": []},
+                {"name": "Missing qty", "mainboard": [{"grpId": 1}]},
+                {"name": "Negative qty", "mainboard": [{"grpId": 1, "quantity": -1}]}
+            ]
+        }"#;
+        let stats = import_user_decks_json(&conn, raw, "<test>").unwrap();
+        assert_eq!(stats.decks_inserted, 1);
+        assert_eq!(stats.decks_rejected, 3);
+        // Only the valid deck should be present.
+        assert_eq!(load_user_decks(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn import_rejects_garbage_json() {
+        let conn = fresh_db();
+        let err = import_user_decks_json(&conn, "not json", "<test>");
+        assert!(err.is_err());
+        assert_eq!(load_user_decks(&conn).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn delete_user_deck_works() {
+        let conn = fresh_db();
+        let raw = sample_deck_json("To Delete", 4);
+        import_user_decks_json(&conn, &raw, "<test>").unwrap();
+        let id = load_user_decks(&conn).unwrap()[0].deck_id.clone();
+        assert!(delete_user_deck(&conn, &id).unwrap());
+        assert_eq!(load_user_decks(&conn).unwrap().len(), 0);
+        // Second delete is a no-op.
+        assert!(!delete_user_deck(&conn, &id).unwrap());
+    }
+
+    #[test]
+    fn status_reports_user_deck_count() {
+        let conn = fresh_db();
+        let s = status(&conn).unwrap();
+        assert_eq!(s.user_decks, 0);
+        import_user_decks_json(&conn, &sample_deck_json("A", 4), "<t>").unwrap();
+        import_user_decks_json(&conn, &sample_deck_json("B", 4), "<t>").unwrap();
+        let s = status(&conn).unwrap();
+        assert_eq!(s.user_decks, 2);
+        assert_eq!(s.schema_version.as_deref(), Some("4"));
+    }
+
+    #[test]
+    fn parse_user_deck_card_accepts_id_alias() {
+        // Some JSON decks use "id" instead of "grpId" for the card key.
+        let conn = fresh_db();
+        let raw = r#"{
+            "name": "Alias Test",
+            "mainboard": [{"id": 93645, "quantity": 4}]
+        }"#;
+        let stats = import_user_decks_json(&conn, raw, "<test>").unwrap();
+        assert_eq!(stats.decks_inserted, 1);
+        let deck = load_user_decks(&conn).unwrap();
+        assert_eq!(deck[0].mainboard[0].grp_id, 93645);
+    }
+}
+

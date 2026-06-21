@@ -75,6 +75,10 @@ fn main() {
             run_store_info();
             return;
         }
+        Command::DeckImport { path } => {
+            run_deck_import(path.clone());
+            return;
+        }
         Command::Ingest { force } => {
             run_ingest(*force, &config.path);
             return;
@@ -91,7 +95,14 @@ fn main() {
         Command::Decks { all } => run_decks(*all),
         Command::DeckDetail { id } => run_deck_detail(id),
         Command::Matches => run_matches(),
-        Command::Web { all, output, show_system } => run_web(&config.path, *all, *show_system, output.as_deref()),
+        Command::Web { all, output, show_system, with_cards, with_builder } => run_web(
+            &config.path,
+            *all,
+            *show_system,
+            output.as_deref(),
+            *with_cards,
+            *with_builder,
+        ),
         Command::Events => {
             let text = match fs::read_to_string(&config.path) {
                 Ok(t) => t,
@@ -158,7 +169,14 @@ fn run_sync_cards(force: bool, info_only: bool) {
     }
 }
 
-fn run_web(log_path: &std::path::Path, all: bool, show_system: bool, output: Option<&std::path::Path>) {
+fn run_web(
+    log_path: &std::path::Path,
+    all: bool,
+    show_system: bool,
+    output: Option<&std::path::Path>,
+    with_cards: bool,
+    with_builder: bool,
+) {
     // Auto-ingest: parses Player.log (and Player.log.old if present) only if
     // its fingerprint has changed since last ingest. Free on repeat runs.
     let stats = store::maybe_ingest(log_path).unwrap_or_else(|e| {
@@ -244,6 +262,14 @@ fn run_web(log_path: &std::path::Path, all: bool, show_system: bool, output: Opt
             );
             if written > 0 || errors > 0 {
                 eprintln!("(match pages: {} written, {} errors)", written, errors);
+            }
+
+            // Catalog + builder pages (opt-in via --cards / --builder; default on).
+            if with_cards {
+                write_catalog_pages(path, &store_conn);
+            }
+            if with_builder {
+                write_builder_pages(path, &store_conn);
             }
         }
         None => {
@@ -413,6 +439,117 @@ fn sibling_filename(path: &std::path::Path, this_is_decks: bool) -> String {
     filename
 }
 
+/// Compute the catalog HTML path from the decks path (e.g. `/tmp/decks.html`
+/// → `/tmp/cards.html`).
+fn catalog_path_for(decks_path: &std::path::Path) -> std::path::PathBuf {
+    let parent = decks_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    parent.join("cards.html")
+}
+
+/// Compute the catalog data JSON path (sibling of cards.html).
+fn catalog_data_path_for(decks_path: &std::path::Path) -> std::path::PathBuf {
+    let parent = decks_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    parent.join("cards-data.json")
+}
+
+/// Compute the builder HTML path.
+fn builder_path_for(decks_path: &std::path::Path) -> std::path::PathBuf {
+    let parent = decks_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    parent.join("builder.html")
+}
+
+/// Compute the builder data JSON path.
+fn builder_data_path_for(decks_path: &std::path::Path) -> std::path::PathBuf {
+    let parent = decks_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    parent.join("builder-data.json")
+}
+
+/// Write the catalog HTML page and the compact cards-data.json file.
+/// Skipped silently if the card DB isn't available.
+fn write_catalog_pages(decks_path: &std::path::Path, _store_conn: &Connection) {
+    if !cards::db_path().exists() {
+        eprintln!("(skipping catalog page: card DB not found)");
+        return;
+    }
+    let data_path = catalog_data_path_for(decks_path);
+    let html_path = catalog_path_for(decks_path);
+    match cards::dump_catalog_json(&data_path) {
+        Ok(n) => {
+            let sz = std::fs::metadata(&data_path).map(|m| m.len() / 1024).unwrap_or(0);
+            eprintln!("(wrote {} ({} KB, {} cards))", data_path.display(), sz, n);
+        }
+        Err(e) => {
+            eprintln!("error writing catalog data {}: {}", data_path.display(), e);
+            return;
+        }
+    }
+    let card_db_summary = cards::status().ok().and_then(|s| {
+        Some((s.card_count?, s.updated_at?))
+    });
+    let decks_filename = decks_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("decks.html")
+        .to_string();
+    let matches_filename = sibling_filename(decks_path, true);
+    let html = web::render_catalog(card_db_summary, &decks_filename, &matches_filename);
+    if let Err(e) = fs::write(&html_path, &html) {
+        eprintln!("error writing {}: {}", html_path.display(), e);
+        return;
+    }
+    eprintln!("(wrote {})", html_path.display());
+}
+
+/// Write the deck builder HTML page and a JSON snapshot of current
+/// user_decks. The HTML uses JavaScript + localStorage for editing; the
+/// JSON snapshot is the initial state shown on page load.
+fn write_builder_pages(decks_path: &std::path::Path, store_conn: &Connection) {
+    let data_path = builder_data_path_for(decks_path);
+    let html_path = builder_path_for(decks_path);
+
+    let user_decks = store::load_user_decks(store_conn).unwrap_or_default();
+    let cards_count = cards::status().ok().and_then(|s| s.card_count);
+    let cards_updated = cards::status().ok().and_then(|s| s.updated_at);
+
+    let json = match serde_json::to_string(&serde_json::json!({
+        "v": 1,
+        "user_decks": user_decks,
+        "cards": { "count": cards_count, "updated_at": cards_updated },
+    })) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("error serializing builder data: {}", e); return; }
+    };
+    if let Err(e) = fs::write(&data_path, &json) {
+        eprintln!("error writing {}: {}", data_path.display(), e);
+        return;
+    }
+    eprintln!("(wrote {} ({} KB))", data_path.display(), json.len() / 1024);
+
+    let decks_filename = decks_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("decks.html")
+        .to_string();
+    let cards_filename = catalog_path_for(decks_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("cards.html")
+        .to_string();
+    let html = web::render_builder(
+        user_decks.len(),
+        cards_count,
+        cards_updated.as_deref(),
+        &decks_filename,
+        &cards_filename,
+    );
+    if let Err(e) = fs::write(&html_path, &html) {
+        eprintln!("error writing {}: {}", html_path.display(), e);
+        return;
+    }
+    eprintln!("(wrote {})", html_path.display());
+}
+
+
 fn print_usage() {
     eprintln!("Usage: mtga-logs [COMMAND] [PATH] [FLAGS]");
     eprintln!();
@@ -444,10 +581,17 @@ enum Command {
     Decks { all: bool },
     DeckDetail { id: String },
     Matches,
-    Web { all: bool, show_system: bool, output: Option<PathBuf> },
+    Web {
+        all: bool,
+        show_system: bool,
+        output: Option<PathBuf>,
+        with_cards: bool,
+        with_builder: bool,
+    },
     SyncCards { force: bool, info_only: bool },
     Ingest { force: bool },
     StoreInfo,
+    DeckImport { path: Option<PathBuf> },
 }
 
 struct Config {
@@ -495,11 +639,20 @@ impl Config {
                     command = match command {
                         Command::Events | Command::Decks { .. } => Command::Decks { all: true },
                         Command::Web { .. } => {
-                            let (_all, output, show_system) = match command {
-                                Command::Web { all, output, show_system } => (all, output, show_system),
-                                _ => unreachable!(),
-                            };
-                            Command::Web { all: true, output, show_system }
+                            let (_all, output, show_system, with_cards, with_builder) =
+                                match command {
+                                    Command::Web { all, output, show_system, with_cards, with_builder } => {
+                                        (all, output, show_system, with_cards, with_builder)
+                                    }
+                                    _ => unreachable!(),
+                                };
+                            Command::Web {
+                                all: true,
+                                output,
+                                show_system,
+                                with_cards,
+                                with_builder,
+                            }
                         }
                         _ => return Err("--all is only valid with the decks or web command".to_string()),
                     };
@@ -508,11 +661,19 @@ impl Config {
                 "--system" => {
                     command = match command {
                         Command::Web { .. } => {
-                            let (all, output) = match command {
-                                Command::Web { all, output, .. } => (all, output),
+                            let (all, output, with_cards, with_builder) = match command {
+                                Command::Web { all, output, with_cards, with_builder, .. } => {
+                                    (all, output, with_cards, with_builder)
+                                }
                                 _ => unreachable!(),
                             };
-                            Command::Web { all, output, show_system: true }
+                            Command::Web {
+                                all,
+                                output,
+                                show_system: true,
+                                with_cards,
+                                with_builder,
+                            }
                         }
                         _ => return Err("--system is only valid with the web command".to_string()),
                     };
@@ -525,11 +686,19 @@ impl Config {
                     let path = PathBuf::from(v);
                     command = match command {
                         Command::Events | Command::Web { .. } => {
-                            let (all, show_system) = match &command {
-                                Command::Web { all, show_system, .. } => (*all, *show_system),
-                                _ => (false, false),
+                            let (all, show_system, with_cards, with_builder) = match &command {
+                                Command::Web { all, show_system, with_cards, with_builder, .. } => {
+                                    (*all, *show_system, *with_cards, *with_builder)
+                                }
+                                _ => (false, false, true, true),
                             };
-                            Command::Web { all, show_system, output: Some(path) }
+                            Command::Web {
+                                all,
+                                show_system,
+                                output: Some(path),
+                                with_cards,
+                                with_builder,
+                            }
                         }
                         _ => return Err(format!("{} is only valid with the web command", arg)),
                     };
@@ -575,7 +744,37 @@ impl Config {
                 }
                 "web" => {
                     ensure_events(&command, "web")?;
-                    command = Command::Web { all: false, show_system: false, output: None };
+                    command = Command::Web {
+                        all: false,
+                        show_system: false,
+                        output: None,
+                        with_cards: true,
+                        with_builder: true,
+                    };
+                    i += 1;
+                }
+                "--cards" => {
+                    if let Command::Web { with_cards, .. } = &mut command {
+                        *with_cards = true;
+                    }
+                    i += 1;
+                }
+                "--no-cards" => {
+                    if let Command::Web { with_cards, .. } = &mut command {
+                        *with_cards = false;
+                    }
+                    i += 1;
+                }
+                "--builder" => {
+                    if let Command::Web { with_builder, .. } = &mut command {
+                        *with_builder = true;
+                    }
+                    i += 1;
+                }
+                "--no-builder" => {
+                    if let Command::Web { with_builder, .. } = &mut command {
+                        *with_builder = false;
+                    }
                     i += 1;
                 }
                 "ingest" => {
@@ -587,6 +786,19 @@ impl Config {
                     ensure_events(&command, "store-info")?;
                     command = Command::StoreInfo;
                     i += 1;
+                }
+                "deck-import" => {
+                    ensure_events(&command, "deck-import")?;
+                    let path = args
+                        .get(i + 1)
+                        .map(|s| PathBuf::from(s))
+                        // Allow `-` to mean stdin (handled in run_deck_import).
+                        .filter(|p| p != &PathBuf::from("-"));
+                    command = Command::DeckImport { path };
+                    i += match command {
+                        Command::DeckImport { path: None } => 1,
+                        _ => 2,
+                    };
                 }
                 "deck" => {
                     ensure_events(&command, "deck")?;
@@ -1077,7 +1289,7 @@ fn run_store_info() {
         println!("  last ingestion at  (never)");
     }
     println!();
-    println!("Decks:    {} total ({} user, {} netdeck)", s.decks_total, s.decks_user, s.decks_netdeck);
+    println!("Decks:    {} total ({} user, {} netdeck), {} user-built", s.decks_total, s.decks_user, s.decks_netdeck, s.user_decks);
     println!("Matches:  {}", s.matches);
     println!("Inventory snapshots: {} (latest: {})",
         s.inventory_snapshots,
@@ -1086,6 +1298,61 @@ fn run_store_info() {
                 .map(|d| d.format("%Y-%m-%d %H:%M UTC").to_string()))
             .unwrap_or_else(|| "n/a".into()),
     );
+}
+
+/// Import user-built decks from a JSON file (or stdin if path is None).
+///
+/// JSON shape: see `store::import_user_decks_json`.
+fn run_deck_import(path: Option<PathBuf>) {
+    use std::io::Read;
+
+    let (raw, source_name) = match path {
+        Some(p) => {
+            let s = std::fs::read_to_string(&p).unwrap_or_else(|e| {
+                eprintln!("error: cannot read {}: {}", p.display(), e);
+                process::exit(1);
+            });
+            (s, p.display().to_string())
+        }
+        None => {
+            // Read all of stdin.
+            let mut s = String::new();
+            if let Err(e) = std::io::stdin().read_to_string(&mut s) {
+                eprintln!("error: cannot read stdin: {}", e);
+                process::exit(1);
+            }
+            (s, "<stdin>".to_string())
+        }
+    };
+
+    let conn = match store::open_db() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("store open error: {}", e);
+            process::exit(1);
+        }
+    };
+
+    match store::import_user_decks_json(&conn, &raw, &source_name) {
+        Ok(stats) => {
+            println!(
+                "Imported from {}: {} decks ({} inserted, {} updated, {} rejected), {} card slots total",
+                source_name,
+                stats.decks_inserted + stats.decks_updated,
+                stats.decks_inserted,
+                stats.decks_updated,
+                stats.decks_rejected,
+                stats.cards_imported,
+            );
+            if stats.decks_rejected > 0 {
+                process::exit(2);
+            }
+        }
+        Err(e) => {
+            eprintln!("error: {}", e);
+            process::exit(1);
+        }
+    }
 }
 
 // ============================================================================
