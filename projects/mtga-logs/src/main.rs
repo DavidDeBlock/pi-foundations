@@ -13,7 +13,9 @@
 //!   mtga-logs decks --all            # include netdecks
 //!   mtga-logs deck <ID>              # show one deck's cards (uses card DB if synced)
 //!   mtga-logs matches                # game results with deck used
-//!   mtga-logs web [--all] [-o FILE]  # write self-contained HTML pages (decks + matches) to FILE
+//!   mtga-logs web [--all] [--system] [-o FILE]  # write self-contained HTML pages (decks + matches) to FILE
+//!   #   --all      also include netdecks
+//!   #   --system   also include precons/world-champ decks (names starting with "?=")
 //!
 //! Persistence (events.db at $XDG_DATA_HOME/mtga-logs/events.db):
 //!   mtga-logs ingest                 # force re-ingest the log (normally automatic)
@@ -89,7 +91,7 @@ fn main() {
         Command::Decks { all } => run_decks(*all),
         Command::DeckDetail { id } => run_deck_detail(id),
         Command::Matches => run_matches(),
-        Command::Web { all, output } => run_web(&config.path, *all, output.as_deref()),
+        Command::Web { all, output, show_system } => run_web(&config.path, *all, *show_system, output.as_deref()),
         Command::Events => {
             let text = match fs::read_to_string(&config.path) {
                 Ok(t) => t,
@@ -156,7 +158,7 @@ fn run_sync_cards(force: bool, info_only: bool) {
     }
 }
 
-fn run_web(log_path: &std::path::Path, all: bool, output: Option<&std::path::Path>) {
+fn run_web(log_path: &std::path::Path, all: bool, show_system: bool, output: Option<&std::path::Path>) {
     // Auto-ingest: parses Player.log (and Player.log.old if present) only if
     // its fingerprint has changed since last ingest. Free on repeat runs.
     let stats = store::maybe_ingest(log_path).unwrap_or_else(|e| {
@@ -186,6 +188,7 @@ fn run_web(log_path: &std::path::Path, all: bool, output: Option<&std::path::Pat
         Some(path) => {
             let decks_opts = web::RenderOptions {
                 include_netdecks: all,
+                show_system_decks: show_system,
                 log_path: log_path_str.clone(),
                 generated_at: generated_at.clone(),
                 sections: web::Sections::Decks,
@@ -196,6 +199,7 @@ fn run_web(log_path: &std::path::Path, all: bool, output: Option<&std::path::Pat
             };
             let matches_opts = web::RenderOptions {
                 include_netdecks: all,
+                show_system_decks: show_system,
                 log_path: log_path_str,
                 generated_at,
                 sections: web::Sections::Matches,
@@ -228,6 +232,7 @@ fn run_web(log_path: &std::path::Path, all: bool, output: Option<&std::path::Pat
         None => {
             let opts = web::RenderOptions {
                 include_netdecks: all,
+                show_system_decks: show_system,
                 log_path: log_path_str,
                 generated_at,
                 sections: web::Sections::Both,
@@ -281,7 +286,7 @@ fn print_usage() {
     eprintln!("  decks --all            include netdecks");
     eprintln!("  deck <ID>              show one deck's cards (from store)");
     eprintln!("  matches                game results with deck used (from store)");
-    eprintln!("  web [--all] [-o FILE]  render self-contained HTML pages (decks + matches) to FILE (or stdout)");
+    eprintln!("  web [--all] [--system] [-o FILE]  render self-contained HTML pages (decks + matches) to FILE (or stdout)");
     eprintln!("  ingest                 force re-ingest the log (usually automatic)");
     eprintln!("  store-info             show DB row counts and last ingestion");
     eprintln!("  sync-cards             download Scryfall card database (~520 MB)");
@@ -301,7 +306,7 @@ enum Command {
     Decks { all: bool },
     DeckDetail { id: String },
     Matches,
-    Web { all: bool, output: Option<PathBuf> },
+    Web { all: bool, show_system: bool, output: Option<PathBuf> },
     SyncCards { force: bool, info_only: bool },
     Ingest { force: bool },
     StoreInfo,
@@ -352,14 +357,26 @@ impl Config {
                     command = match command {
                         Command::Events | Command::Decks { .. } => Command::Decks { all: true },
                         Command::Web { .. } => {
-                            let (all, output) = match command {
-                                Command::Web { all, output } => (all, output),
+                            let (_all, output, show_system) = match command {
+                                Command::Web { all, output, show_system } => (all, output, show_system),
                                 _ => unreachable!(),
                             };
-                            let _ = all;
-                            Command::Web { all: true, output }
+                            Command::Web { all: true, output, show_system }
                         }
                         _ => return Err("--all is only valid with the decks or web command".to_string()),
+                    };
+                    i += 1;
+                }
+                "--system" => {
+                    command = match command {
+                        Command::Web { .. } => {
+                            let (all, output) = match command {
+                                Command::Web { all, output, .. } => (all, output),
+                                _ => unreachable!(),
+                            };
+                            Command::Web { all, output, show_system: true }
+                        }
+                        _ => return Err("--system is only valid with the web command".to_string()),
                     };
                     i += 1;
                 }
@@ -370,11 +387,11 @@ impl Config {
                     let path = PathBuf::from(v);
                     command = match command {
                         Command::Events | Command::Web { .. } => {
-                            let (all, _) = match &command {
-                                Command::Web { all, .. } => (*all, ()),
-                                _ => (false, ()),
+                            let (all, show_system) = match &command {
+                                Command::Web { all, show_system, .. } => (*all, *show_system),
+                                _ => (false, false),
                             };
-                            Command::Web { all, output: Some(path) }
+                            Command::Web { all, show_system, output: Some(path) }
                         }
                         _ => return Err(format!("{} is only valid with the web command", arg)),
                     };
@@ -420,7 +437,7 @@ impl Config {
                 }
                 "web" => {
                     ensure_events(&command, "web")?;
-                    command = Command::Web { all: false, output: None };
+                    command = Command::Web { all: false, show_system: false, output: None };
                     i += 1;
                 }
                 "ingest" => {

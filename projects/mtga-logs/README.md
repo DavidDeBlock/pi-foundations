@@ -42,30 +42,51 @@ Binary lands at `target/release/mtga-logs`.
 
 ## Web view
 
-`web` generates self-contained HTML pages (no JavaScript, no external assets) you can open in any browser. When `-o FILE` is given, it produces two files that link to each other:
+`web` generates self-contained dark-themed HTML pages you can open in any browser. When `-o FILE` is given, it produces two files that link to each other:
 
 - `FILE` (e.g. `decks.html`) — deck list with collapsible card tables
 - `FILE`-matches.html (e.g. `decks-matches.html`) — match history with W/L badges and a win-rate summary
 
 ```bash
-./target/release/mtga-logs web -o /tmp/decks.html     # writes /tmp/decks.html and /tmp/decks-matches.html
-./target/release/mtga-logs web --all -o /tmp/decks.html  # 186 decks incl. netdecks, ~1.6 MB
-./target/release/mtga-logs web > decks.html           # stdout: single combined page (no nav links)
+./target/release/mtga-logs web -o /tmp/decks.html         # writes both files (47 user decks, ~630 KB)
+./target/release/mtga-logs web --all -o /tmp/decks.html   # include netdecks (140 decks, ~3.4 MB)
+./target/release/mtga-logs web --system -o /tmp/d.html    # also show precons / world-champ decks ("?=" names)
+./target/release/mtga-logs web > decks.html               # stdout: single combined page (no nav links)
 ```
 
-**Decks page** — each deck is a collapsible `<details>` block; cards in a table showing:
+### Decks page
+
+Each deck is a closed `<details>` block; click the row to expand. The collapsed summary shows:
+
+- **Color identity pips** — W/U/B/R/G in the deck's colors
+- **Name** (bold)
+- **Format pill** — Standard / Alchemy / Historic / etc.
+- **Card count** — `60 cards`, `9 side`
+- **Crafting cost** — wildcards needed (`19C 10U 6R`); basic lands excluded
+- **Played date** — most recent `DeckSubmission`
+- **Type pill** — `user` (green) / `netdeck` (red) / `system` (orange)
+- **ID** (faded, right-aligned)
+
+The card table inside each expanded deck shows:
 
 - **Qty** — count in mainboard / sideboard
-- **Name** — from the Scryfall DB (or `grpId N` if DB not synced)
-- **Colors** — colored pips (W/U/B/R/G)
+- **Name** — from the Scryfall DB. **Hover any card to see a Scryfall card image** (loaded on demand from their CDN)
 - **Mana** — cost in `{W}{U}{B}` notation
-- **Type** — full type line (e.g. `Legendary Creature — Human Wizard`)
-- **Rarity** — color-coded (C/U/R/M)
+- **Type** — full type line
+- **Rarity** — color-coded letter (c/u/r/m)
 - **Set** + collector number
+- **Artist**
 
-User decks are open by default; netdecks are collapsed. The page warns at the top if the card database is missing.
+A toggle in the header bar reveals hidden **system decks** (the `?=?Loc/Decks/Precon/...` rows — game-shipped precons / world-champ decks whose friendly name was never seen by the MTGA client).
 
-**Matches page** — table of every game result found in the log:
+**Default filtering:**
+
+- Hides netdecks (use `--all` to show them)
+- Hides system decks (use `--system` to show them; or click the toggle on the rendered page)
+
+### Matches page
+
+Table of every game result found in the log:
 
 - **Date** — when the game finished
 - **Result** — green Win / red Loss / gray ? badge
@@ -73,7 +94,7 @@ User decks are open by default; netdecks are collapsed. The page warns at the to
 - **Event** — `Ladder`, `Jump_In_2024`, etc.
 - **Reason** — `Game`, `Concede`, `Timeout`, ...
 
-A "8 GAMES · 5W–3L (62%)" summary sits at the top. Deck names show `(unknown)` for matches that started without a preceding `DeckSubmission` (some event entry flows).
+A "8 GAMES · 5W–3L (62%)" summary sits at the top. Deck names show `(no deck)` for matches that started without a preceding `DeckSubmission`.
 
 ### Serving on the network
 

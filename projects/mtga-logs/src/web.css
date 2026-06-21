@@ -1,318 +1,584 @@
-body {
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  max-width: 1100px;
-  margin: 2em auto;
-  padding: 0 1em;
-  color: #1a1a1a;
-  background: #fafafa;
-  line-height: 1.4;
+/* =============================================================================
+   mtga-logs dark theme
+   Palette:
+     bg-0 (page)        #15151a   darkest, main canvas
+     bg-1 (card)        #1f1f25   deck rows, tables
+     bg-2 (hover)       #262630   row hover, active states
+     border-dim         #2a2a32
+     border-bright      #3a3a45
+     text-0             #e6e6ea   primary text
+     text-1             #b6b6bd   secondary
+     text-2             #7a7a85   tertiary / deemphasised
+     text-3             #4a4a55   very faint
+     accent             #5ea7e6   links, focus rings
+     win                #5ed193
+     loss               #f08080
+     unknown            #8a8a92
+   ============================================================================= */
+
+:root {
+  --bg-0: #15151a;
+  --bg-1: #1f1f25;
+  --bg-2: #262630;
+  --border-dim: #2a2a32;
+  --border-bright: #3a3a45;
+  --text-0: #e6e6ea;
+  --text-1: #b6b6bd;
+  --text-2: #7a7a85;
+  --text-3: #4a4a55;
+  --accent: #5ea7e6;
+  --accent-warm: #d6a55e;
+  --win: #5ed193;
+  --loss: #f08080;
+  --unknown: #8a8a92;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.55);
 }
+
+* { box-sizing: border-box; }
+
+html, body {
+  background: var(--bg-0);
+  color: var(--text-0);
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", "Inter", sans-serif;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.6em 1.4em 4em 1.4em;
+  line-height: 1.45;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===== header ===== */
 h1 {
-  margin: 0 0 0.2em 0;
-  font-size: 1.8em;
+  margin: 0 0 0.15em 0;
+  font-size: 1.85em;
   font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-0);
 }
 .meta {
-  color: #666;
-  font-size: 0.9em;
-  margin-bottom: 1.5em;
+  color: var(--text-2);
+  font-size: 0.88em;
+  margin-bottom: 1em;
 }
 .meta code {
-  background: #eee;
-  padding: 0 0.4em;
-  border-radius: 3px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-dim);
+  padding: 0.05em 0.45em;
+  border-radius: 4px;
   font-size: 0.95em;
+  color: var(--text-1);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
+
+/* ===== top banner (card DB status) ===== */
 .banner {
-  padding: 0.6em 1em;
+  padding: 0.55em 0.95em;
   border-radius: 6px;
   margin-bottom: 1em;
-  font-size: 0.95em;
+  font-size: 0.9em;
+  border: 1px solid var(--border-dim);
 }
 .banner.ok {
-  background: #eef7ee;
-  border: 1px solid #b6d8b6;
-  color: #2a5a2a;
+  background: rgba(94, 209, 147, 0.06);
+  border-color: rgba(94, 209, 147, 0.25);
+  color: var(--win);
 }
 .banner.warn {
-  background: #fff8e0;
-  border: 1px solid #e0c060;
-  color: #6a5400;
+  background: rgba(214, 165, 94, 0.08);
+  border-color: rgba(214, 165, 94, 0.35);
+  color: var(--accent-warm);
 }
 .banner code {
-  background: rgba(255, 255, 255, 0.6);
-  padding: 0 0.3em;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0 0.35em;
   border-radius: 3px;
+  color: var(--text-0);
 }
+
+/* ===== summary stats ===== */
 .summary {
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  padding: 0.8em 1.2em;
-  border-radius: 6px;
-  margin-bottom: 1.5em;
   display: flex;
   gap: 1.8em;
   flex-wrap: wrap;
-  font-size: 0.95em;
-}
-.summary strong {
-  color: #1a1a1a;
-  font-size: 1.1em;
-  margin-right: 0.3em;
-}
-.deck {
-  margin: 1em 0;
-  background: #fff;
-  border: 1px solid #e0e0e0;
+  padding: 0.7em 1em;
+  background: var(--bg-1);
+  border: 1px solid var(--border-dim);
   border-radius: 6px;
-  padding: 0.5em 0.8em;
-  /* Skip layout/paint for off-screen decks. Without this, the browser does a
-     full-page reflow every time a <details> toggles, which can hang the UI on
-     long pages with many expanded decks. `auto` keeps it cheap to scroll
-     (uses last-known size if any, else the 200px fallback). */
+  margin-bottom: 0.6em;
+  font-size: 0.9em;
+  color: var(--text-1);
+}
+.summary b {
+  color: var(--text-0);
+  font-weight: 600;
+  font-size: 1.05em;
+  margin-right: 0.25em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== filter bar (system-deck toggle) ===== */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  margin: 0.4em 0 1.1em 0;
+  padding: 0.55em 0.85em;
+  background: var(--bg-1);
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  font-size: 0.88em;
+}
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55em;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-1);
+}
+.toggle input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 30px;
+  height: 17px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-bright);
+  border-radius: 999px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.toggle input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 13px;
+  height: 13px;
+  background: var(--text-2);
+  border-radius: 50%;
+  transition: left 0.15s, background 0.15s;
+}
+.toggle input[type="checkbox"]:checked {
+  background: rgba(94, 167, 230, 0.35);
+  border-color: var(--accent);
+}
+.toggle input[type="checkbox"]:checked::after {
+  left: 14px;
+  background: var(--accent);
+}
+.toggle b {
+  color: var(--text-0);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== deck row ===== */
+.deck {
+  margin: 0.55em 0;
+  background: var(--bg-1);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  padding: 0.2em 0.95em;
+  box-shadow: var(--shadow-sm);
+  /* Same perf trick as before: skip off-screen decks until they scroll in. */
   content-visibility: auto;
-  contain-intrinsic-size: auto 200px;
+  contain-intrinsic-size: auto 56px;
+  transition: border-color 0.12s;
+}
+/* System decks live in the DOM but are hidden until the user toggles them
+   on, OR unless the page was rendered with `--system` (then `system-shown`
+   is set at render time). */
+.deck[data-system="true"]:not(.system-shown) {
+  display: none;
+}
+.deck:hover {
+  border-color: var(--border-bright);
 }
 .deck > summary {
   cursor: pointer;
   list-style: none;
-  padding: 0.3em 0;
+  padding: 0.5em 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5em 1em;
+  gap: 0.45em 0.85em;
+  min-height: 2em;
 }
-.deck > summary::-webkit-details-marker {
-  display: none;
-}
-.deck > summary::before {
-  content: "▸";
-  color: #999;
-  font-size: 0.85em;
-  width: 1em;
+.deck > summary::-webkit-details-marker { display: none; }
+
+.deck .caret {
+  color: var(--text-2);
+  font-size: 0.75em;
+  width: 0.95em;
+  text-align: center;
+  transition: transform 0.12s, color 0.12s;
   display: inline-block;
-  transition: transform 0.1s;
 }
-.deck[open] > summary::before {
+.deck[open] > summary .caret {
   transform: rotate(90deg);
+  color: var(--accent);
 }
+
 .deck .name {
-  font-size: 1.1em;
+  font-size: 1.05em;
   font-weight: 600;
+  color: var(--text-0);
+  margin-right: 0.25em;
 }
+
 .deck .badges {
   display: inline-flex;
+  align-items: center;
   gap: 0.4em;
   flex-wrap: wrap;
+  margin-left: 0.15em;
 }
-.deck .badge {
-  background: #f0f0f0;
-  color: #444;
-  padding: 0.15em 0.6em;
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-2);
+  color: var(--text-1);
+  padding: 0.12em 0.6em;
   border-radius: 999px;
   font-size: 0.8em;
+  border: 1px solid transparent;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.deck .badge.type-netdeck {
-  background: #fce8e8;
-  color: #a33333;
+.pill b {
+  color: var(--text-0);
+  font-weight: 600;
+  margin-right: 0.1em;
 }
+.pill-format    { background: rgba(94, 167, 230, 0.12); color: #8fc1ee; border-color: rgba(94, 167, 230, 0.28); }
+.pill-count     { background: var(--bg-2); color: var(--text-1); }
+.pill-side      { background: var(--bg-2); color: var(--text-1); }
+.pill-played    { background: var(--bg-2); color: var(--text-2); }
+.pill-netdeck   { background: rgba(240, 128, 128, 0.12); color: var(--loss); border-color: rgba(240, 128, 128, 0.3); }
+.pill-system    { background: rgba(214, 165, 94, 0.12); color: var(--accent-warm); border-color: rgba(214, 165, 94, 0.3); }
+.pill-user      { background: rgba(94, 209, 147, 0.1); color: var(--win); border-color: rgba(94, 209, 147, 0.25); }
+.pill-faint     { background: transparent; color: var(--text-3); border-color: var(--border-dim); }
+
+.craft {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-size: 0.78em;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  padding: 0 0.1em;
+}
+.craft-bucket {
+  display: inline-block;
+  padding: 0.08em 0.5em;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.95em;
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+.craft-c { color: #c8c8c8; }
+.craft-u { color: #8fb1d3; }
+.craft-r { color: #d4a647; }
+.craft-m { color: #ec7e3a; }
+
 .deck .id {
   margin-left: auto;
-  color: #999;
+  color: var(--text-3);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 0.8em;
-}
-table {
-  border-collapse: collapse;
-  margin: 0.6em 0 0.2em 0;
-  width: 100%;
-  font-size: 0.92em;
-}
-caption {
-  text-align: left;
-  color: #555;
-  font-weight: 500;
-  padding: 0.3em 0;
-  font-size: 0.9em;
-}
-th,
-td {
-  text-align: left;
-  padding: 0.25em 0.6em;
-  border-bottom: 1px solid #eee;
-}
-th {
-  background: #fafafa;
-  font-weight: 500;
-  color: #555;
-  font-size: 0.85em;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-td.qty {
-  text-align: right;
-  color: #666;
-  width: 3.5em;
+  font-size: 0.72em;
+  letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
 }
-td.name {
-  font-weight: 500;
+
+/* ===== color identity pips ===== */
+.colors, .colors-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 1.3em;
 }
-td.mana {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  color: #4a6da7;
-  white-space: nowrap;
+.colors-inline {
+  margin-left: 0.5em;
+  vertical-align: -2px;
 }
-td.type {
-  color: #555;
-  font-size: 0.92em;
-}
-td.rarity {
-  font-weight: 600;
-  text-align: center;
-  width: 3em;
-}
-td.rarity.c {
-  color: #222;
-}
-td.rarity.u {
-  color: #707883;
-}
-td.rarity.r {
-  color: #a37f00;
-}
-td.rarity.m {
-  color: #b8222c;
-}
-td.set {
-  color: #888;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 0.88em;
-}
-td.cn {
-  color: #666;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  width: 3em;
-}
-td.colors {
-  white-space: nowrap;
-  width: 5em;
+.colors-none {
+  color: var(--text-3);
+  font-size: 0.95em;
 }
 .pip {
-  display: inline-block;
-  width: 1.15em;
-  height: 1.15em;
-  line-height: 1.1;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05em;
+  height: 1.05em;
   border-radius: 50%;
-  font-size: 0.75em;
+  font-size: 0.66em;
   font-weight: 700;
-  color: #fff;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: 0;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
-.pip-w { background: #f0f0e0; color: #1a1a1a; text-shadow: none; border: 1px solid #cfcab0; }
-.pip-u { background: #4a6da7; }
-.pip-b { background: #2b2b2b; }
-.pip-r { background: #b8222c; }
-.pip-g { background: #4a7a3a; }
+.pip-w { background: #f0e6c0; color: #3a3520; }
+.pip-u { background: #2a5e9e; color: #d8e6f5; }
+.pip-b { background: #2a2a2e; color: #c4c4ca; border: 1px solid #4a4a55; }
+.pip-r { background: #c8453a; color: #fbe2dd; }
+.pip-g { background: #4a8a3a; color: #d8e8d0; }
 
-/* ===== matches ===== */
+/* ===== expanded card tables ===== */
+.deck table {
+  border-collapse: collapse;
+  margin: 0.5em 0 0.6em 0;
+  width: 100%;
+  font-size: 0.91em;
+  background: var(--bg-0);
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.deck table caption {
+  text-align: left;
+  color: var(--text-2);
+  font-weight: 500;
+  padding: 0.4em 0.7em;
+  font-size: 0.82em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border-dim);
+}
+.deck table th,
+.deck table td {
+  text-align: left;
+  padding: 0.32em 0.7em;
+  border-bottom: 1px solid var(--border-dim);
+}
+.deck table tr:last-child td { border-bottom: none; }
+.deck table th {
+  background: var(--bg-1);
+  font-weight: 500;
+  color: var(--text-2);
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.deck table tr:hover td {
+  background: rgba(94, 167, 230, 0.04);
+}
+.deck td.qty {
+  text-align: right;
+  color: var(--text-1);
+  width: 3.5em;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.deck td.name {
+  font-weight: 500;
+  color: var(--text-0);
+}
+.card-name {
+  cursor: help;
+  border-bottom: 1px dotted transparent;
+  transition: color 0.1s, border-color 0.1s;
+}
+.card-name:hover {
+  color: var(--accent);
+  border-bottom-color: rgba(94, 167, 230, 0.4);
+}
+.deck td.mana {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--text-1);
+  white-space: nowrap;
+  font-size: 0.92em;
+}
+.deck td.type {
+  color: var(--text-2);
+  font-size: 0.88em;
+}
+.deck td.rarity {
+  font-weight: 600;
+  text-align: center;
+  width: 2.4em;
+  font-size: 0.85em;
+}
+.deck td.rarity.c { color: #c8c8c8; }
+.deck td.rarity.u { color: #8fb1d3; }
+.deck td.rarity.r { color: #d4a647; }
+.deck td.rarity.m { color: #ec7e3a; }
+.deck td.set {
+  color: var(--text-2);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+.deck td.set .cn {
+  color: var(--text-3);
+  margin-left: 0.2em;
+}
+.deck td.artist {
+  color: var(--text-3);
+  font-size: 0.84em;
+  font-style: italic;
+}
+
+/* ===== floating card preview ===== */
+#card-preview {
+  position: fixed;
+  z-index: 9999;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.12s, transform 0.12s;
+  background: var(--bg-1);
+  border: 1px solid var(--border-bright);
+  border-radius: 8px;
+  padding: 0.5em;
+  box-shadow: var(--shadow-lg);
+  max-width: 280px;
+}
+#card-preview.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+#card-preview-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+  background: #000;
+}
+#card-preview-meta {
+  margin-top: 0.45em;
+  font-size: 0.78em;
+  color: var(--text-2);
+  line-height: 1.5;
+  text-align: center;
+}
+.cmeta-mana   { color: var(--text-0); font-family: ui-monospace, monospace; }
+.cmeta-type   { color: var(--text-1); }
+.cmeta-rarity { font-weight: 600; }
+.cmeta-rarity.r-common    { color: #c8c8c8; }
+.cmeta-rarity.r-uncommon  { color: #8fb1d3; }
+.cmeta-rarity.r-rare      { color: #d4a647; }
+.cmeta-rarity.r-mythic    { color: #ec7e3a; }
+.cmeta-set    { color: var(--text-2); font-family: ui-monospace, monospace; }
+.cmeta-artist { color: var(--text-3); font-style: italic; }
+
+/* ===== matches page ===== */
 nav.tabs {
   display: inline-block;
   margin: 0 0 1em 0;
-  background: #fff;
-  border: 1px solid #e0e0e0;
+  background: var(--bg-1);
+  border: 1px solid var(--border-dim);
   border-radius: 6px;
-  padding: 0;
   overflow: hidden;
 }
 nav.tabs a {
   display: inline-block;
-  padding: 0.4em 0.9em;
+  padding: 0.4em 0.95em;
   text-decoration: none;
-  color: #1a6b9a;
-  font-size: 0.92em;
+  color: var(--accent);
+  font-size: 0.9em;
   font-weight: 500;
 }
-nav.tabs a:hover {
-  background: #f0f6fa;
-}
+nav.tabs a:hover { background: var(--bg-2); }
+
 h2 {
-  margin: 1.8em 0 0.6em 0;
+  margin: 1.6em 0 0.6em 0;
   font-size: 1.3em;
   font-weight: 600;
+  color: var(--text-0);
   display: flex;
   align-items: center;
   gap: 0.6em;
   flex-wrap: wrap;
 }
 h2 .count {
-  background: #e8e8e8;
-  color: #555;
-  padding: 0.15em 0.7em;
+  background: var(--bg-2);
+  color: var(--text-1);
+  padding: 0.18em 0.75em;
   border-radius: 999px;
   font-size: 0.6em;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  border: 1px solid var(--border-dim);
 }
 h2 .wl-summary {
   font-size: 0.7em;
   font-weight: 400;
-  color: #555;
+  color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
 h2 .wl-summary b {
   font-weight: 700;
-  color: #1a1a1a;
+  color: var(--text-0);
 }
+
 table.matches {
   width: 100%;
+  background: var(--bg-1);
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  overflow: hidden;
+  border-collapse: collapse;
+  font-size: 0.92em;
 }
 table.matches th,
 table.matches td {
-  padding: 0.4em 0.7em;
+  padding: 0.45em 0.85em;
+  text-align: left;
+  border-bottom: 1px solid var(--border-dim);
 }
+table.matches th {
+  background: var(--bg-0);
+  color: var(--text-2);
+  font-weight: 500;
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+table.matches tbody tr:last-child td { border-bottom: none; }
+table.matches tbody tr:hover { background: var(--bg-2); }
 table.matches td.date {
-  color: #666;
+  color: var(--text-1);
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 0.92em;
+  font-size: 0.9em;
   white-space: nowrap;
 }
-table.matches td.deck-name {
-  font-weight: 500;
-}
-table.matches td.event {
-  color: #555;
-}
-table.matches td.reason {
-  color: #666;
-  font-size: 0.92em;
-}
+table.matches td.deck-name { font-weight: 500; color: var(--text-0); }
+table.matches td.event    { color: var(--text-1); }
+table.matches td.reason   { color: var(--text-2); font-size: 0.9em; }
+
 .result {
   display: inline-block;
-  padding: 0.15em 0.6em;
+  padding: 0.18em 0.7em;
   border-radius: 4px;
-  font-size: 0.85em;
-  font-weight: 600;
+  font-size: 0.83em;
+  font-weight: 700;
   min-width: 3.5em;
   text-align: center;
+  letter-spacing: 0.04em;
 }
-.result.win {
-  background: #e3f1e3;
-  color: #2a6a2a;
-  border: 1px solid #b6d8b6;
-}
-.result.loss {
-  background: #f7e3e3;
-  color: #a33333;
-  border: 1px solid #e0b6b6;
-}
-.result.unknown {
-  background: #f0f0f0;
-  color: #666;
-  border: 1px solid #d0d0d0;
+.result.win     { background: rgba(94, 209, 147, 0.12); color: var(--win);    border: 1px solid rgba(94, 209, 147, 0.3); }
+.result.loss    { background: rgba(240, 128, 128, 0.12); color: var(--loss);   border: 1px solid rgba(240, 128, 128, 0.3); }
+.result.unknown { background: var(--bg-2); color: var(--unknown); border: 1px solid var(--border-dim); }
+
+/* ===== small-screen tweaks ===== */
+@media (max-width: 720px) {
+  body { padding: 1em 0.7em 3em 0.7em; }
+  .deck .id { display: none; }
+  .deck > summary { gap: 0.3em 0.5em; }
+  .craft { font-size: 0.72em; }
+  #card-preview { max-width: 200px; }
 }

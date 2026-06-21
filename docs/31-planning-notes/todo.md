@@ -77,3 +77,6 @@ Let's first focus on the card name lookup and use scryfall as a data source. I s
 1.Yes
 2.Current value is ok for now, as long we keep the time-series aswell 
 3.I dunno maybe yes?
+
+
+Let's work a bit on the visuals of the decks.html. Some decks have a question mark type. Those need to be filtered out. I also want, on opening the page, the lines to be closed and to give a little bit more information about the deck, and then we can expand the row. Also check if you have images available so that when we hover over certain cards, they show up. For the rest, enrich it visually and give it a dark theme as well. 

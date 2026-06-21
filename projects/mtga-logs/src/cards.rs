@@ -47,6 +47,31 @@ pub struct BulkInfo {
     pub size: u64,
 }
 
+/// Extract a Scryfall card image URL. Handles single-faced cards (which have
+/// `image_uris` at the top level) and double-faced cards (where the image is
+/// on `card_faces[0].image_uris`). Returns the "normal" size (488×680).
+fn extract_image_url(card: &serde_json::Map<String, Value>) -> Option<String> {
+    if let Some(url) = card
+        .get("image_uris")
+        .and_then(|u| u.get("normal"))
+        .and_then(Value::as_str)
+    {
+        return Some(url.to_string());
+    }
+    if let Some(faces) = card.get("card_faces").and_then(Value::as_array) {
+        if let Some(face) = faces.first() {
+            if let Some(url) = face
+                .get("image_uris")
+                .and_then(|u| u.get("normal"))
+                .and_then(Value::as_str)
+            {
+                return Some(url.to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Hit Scryfall's `/bulk-data` index and return the entry for `default_cards`.
 pub fn fetch_bulk_info() -> Result<BulkInfo, String> {
     let resp = ureq::get(BULK_INDEX_URL)
@@ -101,7 +126,9 @@ pub fn open_db(path: &Path) -> Result<Connection, String> {
              set_code        TEXT,
              set_name        TEXT,
              collector_number TEXT,
-             released_at     TEXT
+             released_at     TEXT,
+             image_url       TEXT,
+             artist          TEXT
          );
          CREATE INDEX IF NOT EXISTS idx_name ON cards(name);
          CREATE INDEX IF NOT EXISTS idx_set ON cards(set_code);
@@ -361,12 +388,15 @@ pub struct CardRow {
     pub rarity: Option<String>,
     pub set_code: Option<String>,
     pub collector_number: Option<String>,
+    pub image_url: Option<String>,
+    pub artist: Option<String>,
 }
 
 /// Look up a single card by Arena grpId. Returns None if not in DB or DB missing.
 pub fn lookup(conn: &Connection, arena_id: i64) -> Option<CardRow> {
     conn.query_row(
-        "SELECT name, mana_cost, type_line, colors, rarity, set_code, collector_number
+        "SELECT name, mana_cost, type_line, colors, rarity, set_code,
+                collector_number, image_url, artist
            FROM cards WHERE arena_id = ?1",
         params![arena_id],
         |r| {
@@ -378,6 +408,8 @@ pub fn lookup(conn: &Connection, arena_id: i64) -> Option<CardRow> {
                 rarity: r.get(4)?,
                 set_code: r.get(5)?,
                 collector_number: r.get(6)?,
+                image_url: r.get(7)?,
+                artist: r.get(8)?,
             })
         },
     )
@@ -428,14 +460,16 @@ impl<'a> StreamingCardInsert<'a> {
         let set_name = obj.get("set_name").and_then(Value::as_str);
         let collector_number = obj.get("collector_number").and_then(Value::as_str);
         let released_at = obj.get("released_at").and_then(Value::as_str);
+        let image_url = extract_image_url(obj);
+        let artist = obj.get("artist").and_then(Value::as_str);
 
         self.tx
             .execute(
                 "INSERT OR IGNORE INTO cards
                  (arena_id, scryfall_id, name, mana_cost, cmc, type_line,
                   colors, color_identity, rarity, set_code, set_name,
-                  collector_number, released_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                  collector_number, released_at, image_url, artist)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 params![
                     arena_id,
                     scryfall_id,
@@ -450,6 +484,8 @@ impl<'a> StreamingCardInsert<'a> {
                     set_name,
                     collector_number,
                     released_at,
+                    image_url,
+                    artist,
                 ],
             )
             .map_err(|e| format!("insert at {}: {}", self.count, e))?;
