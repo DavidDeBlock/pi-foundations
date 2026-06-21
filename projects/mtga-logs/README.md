@@ -87,6 +87,72 @@ cd /tmp && python3 -m http.server 8000 --bind 0.0.0.0
 
 If the connection is refused, you may need `sudo ufw allow from 192.168.0.0/24 to any port 8000`.
 
+## Persistence: events.db is the source of truth
+
+All read commands (`inventory`, `decks`, `deck <ID>`, `matches`, `web`) read from a persistent SQLite database at `~/.local/share/mtga-logs/events.db`, **not** directly from the current `Player.log`. This survives MTGA's log rotation: both `Player.log` and `Player.log.old` are ingested in one pass.
+
+```
+Player.log ────ingest────▶ events.db ────query────▶ HTML / CLI output
+   (and Player.log.old)
+```
+
+### How it works
+
+Every read command first calls `store::maybe_ingest(log_path)`:
+
+1. Compute fingerprint `(path, mtime, size)` for `Player.log` and `Player.log.old` (if present)
+2. Look up each fingerprint in the `ingestions` table
+3. If seen before → skip. Otherwise → parse the whole file and upsert.
+
+A match in the same fingerprint means the file hasn't changed → near-instant.
+A different fingerprint (e.g. MTGA rotated the log) → ingest the new content → accumulate over time.
+
+Result: `web` runs are ~30ms when the log hasn't changed, ~2 seconds on first run / after rotation.
+
+### Schema
+
+| Table | Purpose | Rows |
+|---|---|---|
+| `ingestions` | Fingerprint per parsed log file | 1 per (path × mtime × size) |
+| `decks` | One row per `deck_id`; latest `DeckCollection` wins for contents | all decks ever seen |
+| `matches` | One row per `matchID` (from `GameResult.game_info.matchID`) | one per game |
+| `inventory_snapshots` | Append-only time series of `InventoryInfo` | one per Arena session |
+| `meta` | Schema version | 1 row |
+
+### Conflict resolution
+
+| Data | Rule | Why |
+|---|---|---|
+| Deck contents | Latest `DeckCollection` payload wins | Decks you edit in MTGA; latest is "what it was" |
+| Deck deletion | Deck stays in DB | We never see "deleted" events; keeps history |
+| Match | First-write-wins by `matchID` | Matches are immutable events |
+| Inventory | Append every snapshot | History is interesting (when did you spend that gold?) |
+
+### Commands
+
+```bash
+mtga-logs store-info   # show DB row counts and last ingestion time
+mtga-logs ingest       # force re-ingest (skips the fingerprint check)
+```
+
+### Reset
+
+To wipe everything and re-ingest from the current log:
+
+```bash
+rm ~/.local/share/mtga-logs/events.db
+mtga-logs web -o /tmp/decks.html
+```
+
+### Layout
+
+```
+~/.local/share/mtga-logs/
+├── cards.db        # Scryfall (18,767 Arena-mapped cards)
+├── cards.json      # Scryfall cached bulk (~520 MB)
+└── events.db       # your parsed MTGA Arena history (this feature)
+```
+
 ## Card name database
 
 `deck <ID>` shows card names instead of grpId numbers when a local Scryfall mirror is synced:

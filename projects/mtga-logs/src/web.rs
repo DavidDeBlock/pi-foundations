@@ -7,12 +7,12 @@
 
 use std::fmt::Write as _;
 
-use manasight_parser::GameEvent;
 use rusqlite::Connection;
 use serde_json::Value;
 
 use crate::cards;
-use crate::{collect_decks, collect_matches, find_deck_value, DeckSummary, MatchRecord};
+use crate::store;
+use crate::{DeckSummary, MatchRecord};
 
 pub struct RenderOptions {
     /// Include netdecks (imported decks). Default: user decks only.
@@ -44,8 +44,10 @@ pub struct SiblingLink {
 
 /// Render the full HTML page as a String. Output is self-contained (no external
 /// assets); open in any browser or serve with any static file server.
-pub fn render(events: &[GameEvent], card_db: Option<&Connection>, opts: &RenderOptions) -> String {
-    let decks = collect_decks(events);
+///
+/// Reads all data from the persistent store (events.db) — see `crate::store`.
+pub fn render(store_db: &Connection, card_db: Option<&Connection>, opts: &RenderOptions) -> String {
+    let decks = store::load_decks(store_db).expect("load decks from store");
 
     // Collect and sort decks: most-recently-played first.
     let mut summaries: Vec<(String, DeckSummary)> = decks.into_iter().collect();
@@ -68,7 +70,7 @@ pub fn render(events: &[GameEvent], card_db: Option<&Connection>, opts: &RenderO
     let mut total_unique_cards = 0usize;
     let mut total_mainboard = 0i64;
     for (id, _) in &summaries {
-        if let Some(deck) = find_deck_value(events, id) {
+        if let Ok(Some(deck)) = store::load_deck_value(store_db, id) {
             if let Some(main) = deck
                 .get("list")
                 .and_then(|l| l.get("MainDeck"))
@@ -84,7 +86,7 @@ pub fn render(events: &[GameEvent], card_db: Option<&Connection>, opts: &RenderO
     }
 
     // Pre-count matches for the summary line.
-    let matches = collect_matches(events);
+    let matches = store::load_matches(store_db).expect("load matches from store");
     let match_count = matches.len();
 
     // Estimate capacity: ~400 bytes per deck section + ~150 bytes per card row.
@@ -177,9 +179,9 @@ pub fn render(events: &[GameEvent], card_db: Option<&Connection>, opts: &RenderO
     // Decks.
     if matches!(opts.sections, Sections::Decks | Sections::Both) {
         for (id, summary) in &summaries {
-            let deck = match find_deck_value(events, id) {
-                Some(d) => d,
-                None => continue,
+            let deck = match store::load_deck_value(store_db, id) {
+                Ok(Some(d)) => d,
+                _ => continue,
             };
             write_deck(&mut out, id, &deck, summary, card_db);
         }

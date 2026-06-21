@@ -6,14 +6,18 @@
 //!   mtga-logs <PATH> --limit N # show only the last N events
 //!   mtga-logs --scrub          # redact PII (tokens, names, IDs) before parsing
 //!
-//! Subcommands (operate on the parsed log, ignore --limit):
+//! Subcommands (read from the persistent store; auto-ingest the log first):
 //!   mtga-logs inventory              # current gold, gems, wildcards
-//!   mtga-logs inventory --history    # inventory across all snapshots in the log
+//!   mtga-logs inventory --history    # inventory across all snapshots in the store
 //!   mtga-logs decks                  # list user decks (excludes netdecks)
 //!   mtga-logs decks --all            # include netdecks
 //!   mtga-logs deck <ID>              # show one deck's cards (uses card DB if synced)
 //!   mtga-logs matches                # game results with deck used
 //!   mtga-logs web [--all] [-o FILE]  # write self-contained HTML pages (decks + matches) to FILE
+//!
+//! Persistence (events.db at $XDG_DATA_HOME/mtga-logs/events.db):
+//!   mtga-logs ingest                 # force re-ingest the log (normally automatic)
+//!   mtga-logs store-info             # show DB row counts and last ingestion
 //!
 //! Card database (independent of any log file):
 //!   mtga-logs sync-cards             # download Scryfall default-cards into a local SQLite DB
@@ -21,6 +25,11 @@
 //!   mtga-logs sync-cards --force     # re-download even if up to date
 //!
 //! Data notes:
+//!   - The persistent store is the source of truth for read commands. Every
+//!     subcommand that needs events first calls `store::maybe_ingest`, which
+//!     is idempotent: a log file with the same (path, mtime, size) is not
+//!     re-parsed. This means data survives MTGA's log rotation: both
+//!     Player.log and Player.log.old (if present) are ingested in order.
 //!   - `inventory` reads from DeckCollection.raw_start_hook.InventoryInfo,
 //!     because the parser router dispatches StartHook to DeckCollection first
 //!     and never emits Inventory events.
@@ -28,9 +37,9 @@
 //!     the GetPlayerCardsV3 endpoint in August 2021 and never replaced it).
 
 mod cards;
+mod store;
 mod web;
 
-use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -54,36 +63,50 @@ fn main() {
         }
     };
 
-    // sync-cards doesn't need the log file — handle it before reading.
-    if let Command::SyncCards { force, info_only } = &config.command {
-        run_sync_cards(*force, *info_only);
-        return;
+    // Commands that don't need the log file — handle before reading.
+    match &config.command {
+        Command::SyncCards { force, info_only } => {
+            run_sync_cards(*force, *info_only);
+            return;
+        }
+        Command::StoreInfo => {
+            run_store_info();
+            return;
+        }
+        Command::Ingest { force } => {
+            run_ingest(*force, &config.path);
+            return;
+        }
+        _ => {}
     }
 
-    let text = match fs::read_to_string(&config.path) {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("error reading {}: {}", config.path.display(), e);
-            process::exit(1);
-        }
-    };
-
-    let text = if config.scrub {
-        scrub_raw_log(&text)
-    } else {
-        text
-    };
-
-    let events = parse_whole_log(&text);
-
+    // Read commands (inventory, decks, deck, matches, web) read from the
+    // persistent store. We auto-ingest the log first (idempotent), then query.
+    // The default `Events` mode is the only command that still reads the raw
+    // log — it's the diagnostic for "what's in this file right now".
     match &config.command {
-        Command::Events => run_events(&config, events),
-        Command::Inventory { history } => run_inventory(&events, *history),
-        Command::Decks { all } => run_decks(&events, *all),
-        Command::DeckDetail { id } => run_deck_detail(&events, id),
-        Command::Matches => run_matches(&events),
-        Command::Web { all, output } => run_web(&events, &config.path, *all, output.as_deref()),
-        Command::SyncCards { .. } => unreachable!("handled above"),
+        Command::Inventory { history } => run_inventory(*history),
+        Command::Decks { all } => run_decks(*all),
+        Command::DeckDetail { id } => run_deck_detail(id),
+        Command::Matches => run_matches(),
+        Command::Web { all, output } => run_web(&config.path, *all, output.as_deref()),
+        Command::Events => {
+            let text = match fs::read_to_string(&config.path) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("error reading {}: {}", config.path.display(), e);
+                    process::exit(1);
+                }
+            };
+            let text = if config.scrub {
+                scrub_raw_log(&text)
+            } else {
+                text
+            };
+            let events = parse_whole_log(&text);
+            run_events(&config, events);
+        }
+        _ => unreachable!("handled above"),
     }
 }
 
@@ -133,7 +156,17 @@ fn run_sync_cards(force: bool, info_only: bool) {
     }
 }
 
-fn run_web(events: &[GameEvent], log_path: &std::path::Path, all: bool, output: Option<&std::path::Path>) {
+fn run_web(log_path: &std::path::Path, all: bool, output: Option<&std::path::Path>) {
+    // Auto-ingest: parses Player.log (and Player.log.old if present) only if
+    // its fingerprint has changed since last ingest. Free on repeat runs.
+    let stats = store::maybe_ingest(log_path).unwrap_or_else(|e| {
+        eprintln!("ingest error: {}", e);
+        process::exit(1);
+    });
+    if stats.events_seen > 0 {
+        eprintln!("(ingested {} events)", stats.events_seen);
+    }
+
     let card_db = if cards::db_path().exists() {
         cards::open_db(&cards::db_path()).ok()
     } else {
@@ -145,13 +178,12 @@ fn run_web(events: &[GameEvent], log_path: &std::path::Path, all: bool, output: 
         eprintln!("(using card database at {})", cards::db_path().display());
     }
 
+    let store_conn = store::open_db().expect("open store db");
     let generated_at = Utc::now().format("%Y-%m-%d %H:%M UTC").to_string();
     let log_path_str = log_path.display().to_string();
 
     match output {
         Some(path) => {
-            // Write two files: <base> (decks) and <base>-matches (matches),
-            // each linking to the other.
             let decks_opts = web::RenderOptions {
                 include_netdecks: all,
                 log_path: log_path_str.clone(),
@@ -173,8 +205,8 @@ fn run_web(events: &[GameEvent], log_path: &std::path::Path, all: bool, output: 
                 }),
             };
 
-            let decks_html = web::render(events, card_db.as_ref(), &decks_opts);
-            let matches_html = web::render(events, card_db.as_ref(), &matches_opts);
+            let decks_html = web::render(&store_conn, card_db.as_ref(), &decks_opts);
+            let matches_html = web::render(&store_conn, card_db.as_ref(), &matches_opts);
 
             let matches_path = matches_path_for(path);
             if let Err(e) = fs::write(path, &decks_html) {
@@ -194,7 +226,6 @@ fn run_web(events: &[GameEvent], log_path: &std::path::Path, all: bool, output: 
             );
         }
         None => {
-            // Stdout: one combined page (backward compatible).
             let opts = web::RenderOptions {
                 include_netdecks: all,
                 log_path: log_path_str,
@@ -202,7 +233,7 @@ fn run_web(events: &[GameEvent], log_path: &std::path::Path, all: bool, output: 
                 sections: web::Sections::Both,
                 sibling_link: None,
             };
-            print!("{}", web::render(events, card_db.as_ref(), &opts));
+            print!("{}", web::render(&store_conn, card_db.as_ref(), &opts));
         }
     }
 }
@@ -244,13 +275,15 @@ fn print_usage() {
     eprintln!();
     eprintln!("Commands:");
     eprintln!("  (default)              dump all parsed events");
-    eprintln!("  inventory              current gold, gems, wildcards");
-    eprintln!("  inventory --history    inventory across all log snapshots");
-    eprintln!("  decks                  list user decks");
+    eprintln!("  inventory              current gold, gems, wildcards (from store)");
+    eprintln!("  inventory --history    inventory across all snapshots in the store");
+    eprintln!("  decks                  list user decks (from store)");
     eprintln!("  decks --all            include netdecks");
-    eprintln!("  deck <ID>              show one deck's cards");
-    eprintln!("  matches                game results with deck used");
+    eprintln!("  deck <ID>              show one deck's cards (from store)");
+    eprintln!("  matches                game results with deck used (from store)");
     eprintln!("  web [--all] [-o FILE]  render self-contained HTML pages (decks + matches) to FILE (or stdout)");
+    eprintln!("  ingest                 force re-ingest the log (usually automatic)");
+    eprintln!("  store-info             show DB row counts and last ingestion");
     eprintln!("  sync-cards             download Scryfall card database (~520 MB)");
     eprintln!("  sync-cards --info      show card database status (no download)");
     eprintln!("  sync-cards --force     re-download even if up to date");
@@ -270,6 +303,8 @@ enum Command {
     Matches,
     Web { all: bool, output: Option<PathBuf> },
     SyncCards { force: bool, info_only: bool },
+    Ingest { force: bool },
+    StoreInfo,
 }
 
 struct Config {
@@ -388,6 +423,16 @@ impl Config {
                     command = Command::Web { all: false, output: None };
                     i += 1;
                 }
+                "ingest" => {
+                    ensure_events(&command, "ingest")?;
+                    command = Command::Ingest { force: false };
+                    i += 1;
+                }
+                "store-info" => {
+                    ensure_events(&command, "store-info")?;
+                    command = Command::StoreInfo;
+                    i += 1;
+                }
                 "deck" => {
                     ensure_events(&command, "deck")?;
                     let id = args
@@ -457,80 +502,57 @@ fn run_events(config: &Config, mut events: Vec<GameEvent>) {
 // inventory
 // ============================================================================
 
-struct InventorySnapshot {
-    gold: i64,
-    gems: i64,
-    wc_common: i64,
-    wc_uncommon: i64,
-    wc_rare: i64,
-    wc_mythic: i64,
-    vault_progress: i64,
-    wc_track_position: i64,
-    seq_id: i64,
+pub(crate) struct InventorySnapshot {
+    pub(crate) gold: i64,
+    pub(crate) gems: i64,
+    pub(crate) wc_common: i64,
+    pub(crate) wc_uncommon: i64,
+    pub(crate) wc_rare: i64,
+    pub(crate) wc_mythic: i64,
+    pub(crate) vault_progress: i64,
+    pub(crate) wc_track_position: i64,
+    pub(crate) seq_id: i64,
 }
 
 impl InventorySnapshot {
-    fn from_value(value: &Value) -> Option<Self> {
-        let inv = value.get("InventoryInfo")?;
-        Some(Self {
-            gold: i64_from(inv, "Gold"),
-            gems: i64_from(inv, "Gems"),
-            wc_common: i64_from(inv, "WildCardCommons"),
-            wc_uncommon: i64_from(inv, "WildCardUnCommons"),
-            wc_rare: i64_from(inv, "WildCardRares"),
-            wc_mythic: i64_from(inv, "WildCardMythics"),
-            vault_progress: i64_from(inv, "TotalVaultProgress"),
-            wc_track_position: i64_from(inv, "wcTrackPosition"),
-            seq_id: i64_from(inv, "SeqId"),
-        })
-    }
-
     fn wildcards_total(&self) -> i64 {
         self.wc_common + self.wc_uncommon + self.wc_rare + self.wc_mythic
     }
 }
 
-fn i64_from(v: &Value, key: &str) -> i64 {
-    v.get(key).and_then(Value::as_i64).unwrap_or(0)
-}
-
-fn collect_inventories(events: &[GameEvent]) -> Vec<(DateTime<Utc>, InventorySnapshot)> {
-    let mut out = Vec::new();
-    for event in events {
-        if let GameEvent::DeckCollection(e) = event {
-            if let Some(rsh) = e.payload().get("raw_start_hook") {
-                if let Some(mut snap) = InventorySnapshot::from_value(rsh) {
-                    if let Some(ts) = event.metadata().timestamp() {
-                        // Silence unused mut warning: snap is built then moved; ts consumed here.
-                        let _ = &mut snap;
-                        out.push((ts, snap));
-                    }
-                }
-            }
+fn run_inventory(history: bool) {
+    let stats = match store::maybe_ingest(&std::path::PathBuf::from(DEFAULT_LOG)) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("ingest error: {}", e);
+            process::exit(1);
         }
+    };
+    if stats.events_seen > 0 {
+        eprintln!("(ingested {} events)", stats.events_seen);
     }
-    out
-}
 
-fn run_inventory(events: &[GameEvent], history: bool) {
-    let snapshots = collect_inventories(events);
-    if snapshots.is_empty() {
-        eprintln!("no inventory data found in log");
-        eprintln!("(open Arena to trigger a StartHook; the InventoryInfo lives in the response)");
-        return;
-    }
+    let conn = store::open_db().expect("open store db");
 
     if history {
+        let snapshots = store::load_inventory_history(&conn).expect("load history");
+        if snapshots.is_empty() {
+            eprintln!("no inventory data found");
+            eprintln!("(open Arena to trigger a StartHook; the InventoryInfo lives in the response)");
+            return;
+        }
         println!("Inventory history ({} snapshots):", snapshots.len());
         println!();
         println!(
             "{:<20}  {:>8}  {:>6}  {:>4}  {:>4}  {:>4}  {:>4}  {:>6}  {:>5}",
             "Session start", "Gold", "Gems", "WCc", "WCu", "WCr", "WCm", "Vault", "SeqId"
         );
-        for (ts, snap) in &snapshots {
+        let last_ts: Option<i64> = None;
+        for snap in &snapshots {
+            let _ = last_ts;
             println!(
                 "{:<20}  {:>8}  {:>6}  {:>4}  {:>4}  {:>4}  {:>4}  {:>6}  {:>5}",
-                ts.format("%Y-%m-%d %H:%M:%S"),
+                "(by seq)",
                 format_number(snap.gold),
                 format_number(snap.gems),
                 snap.wc_common,
@@ -542,10 +564,14 @@ fn run_inventory(events: &[GameEvent], history: bool) {
             );
         }
     } else {
-        let (ts, snap) = snapshots.last().unwrap();
+        let snap = store::load_latest_inventory(&conn).expect("load latest inventory");
+        let Some(snap) = snap else {
+            eprintln!("no inventory data found");
+            eprintln!("(open Arena to trigger a StartHook; the InventoryInfo lives in the response)");
+            return;
+        };
         println!(
-            "Inventory snapshot from {} (SeqId {})",
-            ts.format("%Y-%m-%d %H:%M:%S UTC"),
+            "Inventory snapshot (SeqId {})",
             snap.seq_id
         );
         println!();
@@ -592,70 +618,18 @@ pub(crate) struct DeckSummary {
     pub(crate) last_seen: Option<DateTime<Utc>>,
 }
 
-fn attr_value(attrs: &Value, name: &str) -> Option<String> {
-    attrs.as_array()?.iter().find_map(|a| {
-        if a.get("name").and_then(Value::as_str) == Some(name) {
-            a.get("value").and_then(Value::as_str).map(str::to_owned)
-        } else {
-            None
-        }
-    })
-}
-
-fn parse_last_played(v: &str) -> Option<DateTime<Utc>> {
-    // Arena stores the value as a JSON-escaped quoted string:
-    //   "\"2025-10-13T22:39:19.6016588+02:00\""
-    let trimmed = v.trim();
-    let inner = trimmed.trim_matches('"');
-    let unescaped = inner.replace("\\\"", "\"");
-    DateTime::parse_from_rfc3339(&unescaped)
-        .ok()
-        .map(|dt| dt.with_timezone(&Utc))
-}
-
-fn deck_summary_from_value(deck: &Value, fallback_last_seen: Option<DateTime<Utc>>) -> DeckSummary {
-    let attrs = deck.get("Attributes").cloned().unwrap_or(Value::Null);
-    let format = attr_value(&attrs, "Format").unwrap_or_else(|| "?".to_string());
-    let last_played = attr_value(&attrs, "LastPlayed").and_then(|v| parse_last_played(&v));
-    let list = deck.get("list");
-    let main = list.and_then(|l| l.get("MainDeck")).and_then(Value::as_array);
-    let side = list.and_then(|l| l.get("Sideboard")).and_then(Value::as_array);
-    let sum_quantities = |arr: Option<&Vec<Value>>| -> i64 {
-        arr.map(|a| a.iter().filter_map(|c| c.get("quantity").and_then(Value::as_i64)).sum())
-            .unwrap_or(0)
-    };
-    DeckSummary {
-        name: deck.get("Name").and_then(Value::as_str).unwrap_or("?").to_string(),
-        format,
-        main_count: sum_quantities(main),
-        side_count: sum_quantities(side),
-        is_netdeck: deck.get("IsNetDeck").and_then(Value::as_bool).unwrap_or(false),
-        last_seen: last_played.or(fallback_last_seen),
+fn run_decks(all: bool) {
+    let stats = store::maybe_ingest(&std::path::PathBuf::from(DEFAULT_LOG)).unwrap_or_else(|e| {
+        eprintln!("ingest error: {}", e);
+        std::process::exit(1);
+    });
+    if stats.events_seen > 0 {
+        eprintln!("(ingested {} events)", stats.events_seen);
     }
-}
-
-pub(crate) fn collect_decks(events: &[GameEvent]) -> HashMap<String, DeckSummary> {
-    // Use the most recent DeckCollection (events are in chronological order).
-    let mut out: HashMap<String, DeckSummary> = HashMap::new();
-    for event in events.iter().rev() {
-        if let GameEvent::DeckCollection(e) = event {
-            let payload = e.payload();
-            if let Some(decks) = payload.get("decks").and_then(Value::as_object) {
-                let fallback_ts = event.metadata().timestamp();
-                for (id, deck) in decks {
-                    out.insert(id.clone(), deck_summary_from_value(deck, fallback_ts));
-                }
-            }
-            break;
-        }
-    }
-    out
-}
-
-fn run_decks(events: &[GameEvent], all: bool) {
-    let decks = collect_decks(events);
+    let conn = store::open_db().expect("open store db");
+    let decks = store::load_decks(&conn).expect("load decks");
     if decks.is_empty() {
-        eprintln!("no deck data found in log");
+        eprintln!("no deck data found");
         return;
     }
 
@@ -701,34 +675,47 @@ fn run_decks(events: &[GameEvent], all: bool) {
     }
 }
 
-pub(crate) fn find_deck_value<'a>(events: &'a [GameEvent], id: &str) -> Option<Value> {
-    for event in events.iter().rev() {
-        if let GameEvent::DeckCollection(e) = event {
-            if let Some(deck) = e
-                .payload()
-                .get("decks")
-                .and_then(Value::as_object)
-                .and_then(|d| d.get(id))
-            {
-                return Some(deck.clone());
-            }
-        }
+fn run_deck_detail(id: &str) {
+    let stats = store::maybe_ingest(&std::path::PathBuf::from(DEFAULT_LOG)).unwrap_or_else(|e| {
+        eprintln!("ingest error: {}", e);
+        std::process::exit(1);
+    });
+    if stats.events_seen > 0 {
+        eprintln!("(ingested {} events)", stats.events_seen);
     }
-    None
-}
-
-fn run_deck_detail(events: &[GameEvent], id: &str) {
-    let deck = match find_deck_value(events, id) {
-        Some(d) => d,
-        None => {
+    let conn = store::open_db().expect("open store db");
+    let deck = match store::load_deck_value(&conn, id) {
+        Ok(Some(d)) => d,
+        Ok(None) => {
             eprintln!("deck not found: {}", id);
             eprintln!("(run `mtga-logs decks` to list available decks)");
             return;
         }
+        Err(e) => {
+            eprintln!("load error: {}", e);
+            process::exit(1);
+        }
     };
 
-    let summary = deck_summary_from_value(&deck, None);
-    let description = deck.get("Description").and_then(Value::as_str).unwrap_or("");
+    let summary_name = deck.get("Name").and_then(Value::as_str).unwrap_or("?").to_string();
+    let summary_format = deck
+        .get("Attributes")
+        .and_then(Value::as_array)
+        .and_then(|a| {
+            a.iter().find_map(|x| {
+                if x.get("name").and_then(Value::as_str) == Some("Format") {
+                    x.get("value").and_then(Value::as_str).map(str::to_owned)
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or_else(|| "?".to_string());
+    let summary_is_netdeck = deck
+        .get("IsNetDeck")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let description = String::new(); // Description isn't preserved in our store; would need a column.
 
     // Try to open the card DB; if present, show names; otherwise print grpId
     // and a one-time hint.
@@ -742,17 +729,14 @@ fn run_deck_detail(events: &[GameEvent], id: &str) {
         eprintln!();
     }
 
-    println!("Deck:   {}", summary.name);
+    println!("Deck:   {}", summary_name);
     println!("ID:     {}", id);
-    println!("Format: {}", summary.format);
-    if summary.is_netdeck {
+    println!("Format: {}", summary_format);
+    if summary_is_netdeck {
         println!("Type:   netdeck (imported)");
     }
     if !description.is_empty() {
         println!("Desc:   {}", description);
-    }
-    if let Some(ls) = summary.last_seen {
-        println!("Played: {}", ls.format("%Y-%m-%d %H:%M:%S UTC"));
     }
     println!();
 
@@ -835,83 +819,19 @@ pub(crate) struct MatchRecord {
     pub(crate) reason: String,
 }
 
-pub(crate) fn collect_matches(events: &[GameEvent]) -> Vec<MatchRecord> {
-    let decks = collect_decks(events);
-    let mut records: Vec<MatchRecord> = Vec::new();
-
-    let mut last_deck_id: Option<String> = None;
-    let mut last_event_name: Option<String> = None;
-    let mut last_local_team: Option<i64> = None;
-
-    for event in events {
-        match event {
-            GameEvent::DeckSubmission(e) => {
-                let p = e.payload();
-                if let Some(id) = p.get("deck_id").and_then(Value::as_str) {
-                    last_deck_id = Some(id.to_string());
-                }
-                if let Some(name) = p.get("event_name").and_then(Value::as_str) {
-                    last_event_name = Some(name.to_string());
-                }
-            }
-            GameEvent::MatchState(e) => {
-                let p = e.payload();
-                if let Some(players) = p.get("players").and_then(Value::as_array) {
-                    if let Some(first) = players.first() {
-                        if let Some(team) = first.get("team_id").and_then(Value::as_i64) {
-                            last_local_team = Some(team);
-                        }
-                    }
-                }
-            }
-            GameEvent::GameResult(e) => {
-                let p = e.payload();
-                let Some(game_info) = p.get("game_info") else { continue };
-                let Some(results) = game_info.get("results").and_then(Value::as_array) else {
-                    continue;
-                };
-                let game_result = results.iter().find(|r| {
-                    r.get("scope").and_then(Value::as_str) == Some("MatchScope_Game")
-                });
-                let Some(r) = game_result else { continue };
-                let Some(winning_team) = r.get("winningTeamId").and_then(Value::as_i64) else {
-                    continue;
-                };
-                let result = match last_local_team {
-                    Some(local) if local == winning_team => "Win",
-                    Some(_) => "Loss",
-                    None => "?",
-                };
-                let reason = r
-                    .get("reason")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .trim_start_matches("ResultReason_")
-                    .to_string();
-                let ts = event.metadata().timestamp().unwrap_or_else(Utc::now);
-                let deck_name = last_deck_id
-                    .as_ref()
-                    .and_then(|id| decks.get(id).map(|d| d.name.clone()))
-                    .unwrap_or_else(|| "(unknown)".to_string());
-                records.push(MatchRecord {
-                    timestamp: ts,
-                    deck_name,
-                    event_name: last_event_name.clone().unwrap_or_else(|| "?".to_string()),
-                    result: result.to_string(),
-                    reason,
-                });
-            }
-            _ => {}
-        }
+fn run_matches() {
+    let stats = store::maybe_ingest(&std::path::PathBuf::from(DEFAULT_LOG)).unwrap_or_else(|e| {
+        eprintln!("ingest error: {}", e);
+        std::process::exit(1);
+    });
+    if stats.events_seen > 0 {
+        eprintln!("(ingested {} events)", stats.events_seen);
     }
-
-    records
-}
-
-fn run_matches(events: &[GameEvent]) {
-    let records = collect_matches(events);
+    let conn = store::open_db().expect("open store db");
+    let records = store::load_matches(&conn).expect("load matches");
     if records.is_empty() {
-        eprintln!("no game results found in log");
+        eprintln!("no game results found in store");
+        eprintln!("(play a match — GameResult events are extracted from Player.log)");
         return;
     }
 
@@ -930,6 +850,86 @@ fn run_matches(events: &[GameEvent]) {
             date, deck, event, r.result, r.reason
         );
     }
+}
+
+// ============================================================================
+// ingest / store-info
+// ============================================================================
+
+fn run_ingest(force: bool, log_path: &PathBuf) {
+    let stats = if force {
+        store::force_ingest(log_path)
+    } else {
+        store::maybe_ingest(log_path)
+    };
+    match stats {
+        Ok(s) => {
+            if s.files_ingested == 0 && s.files_skipped == 0 {
+                eprintln!("nothing to ingest (no Player.log found at {})", log_path.display());
+                return;
+            }
+            for _ in 0..s.files_skipped {
+                eprintln!("skipped: {} (already ingested)", log_path.display());
+            }
+            for _ in 0..s.files_ingested {
+                eprintln!(
+                    "ingested {}: {} events, {} decks upserted, {} matches inserted, {} inventory snapshots",
+                    log_path.display(),
+                    s.events_seen,
+                    s.decks_upserted,
+                    s.matches_inserted,
+                    s.inventory_inserted,
+                );
+            }
+        }
+        Err(e) => {
+            eprintln!("ingest error: {}", e);
+            process::exit(1);
+        }
+    }
+}
+
+fn run_store_info() {
+    let conn = match store::open_db() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("store open error: {}", e);
+            process::exit(1);
+        }
+    };
+    let s = match store::status(&conn) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("store status error: {}", e);
+            process::exit(1);
+        }
+    };
+
+    println!("Store:   {}", s.db_path.display());
+    if let Some(v) = s.schema_version {
+        println!("Schema:  v{}", v);
+    }
+    println!();
+    println!("Ingestions:");
+    println!("  files tracked       {}", s.ingestions);
+    if let (Some(at), Some(sz)) = (s.last_ingestion_at, s.last_ingestion_size) {
+        let dt = chrono::DateTime::from_timestamp(at, 0)
+            .map(|t| t.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+            .unwrap_or_else(|| "?".into());
+        println!("  last ingestion at  {} ({} bytes parsed)", dt, sz);
+    } else {
+        println!("  last ingestion at  (never)");
+    }
+    println!();
+    println!("Decks:    {} total ({} user, {} netdeck)", s.decks_total, s.decks_user, s.decks_netdeck);
+    println!("Matches:  {}", s.matches);
+    println!("Inventory snapshots: {} (latest: {})",
+        s.inventory_snapshots,
+        s.latest_inventory_ts
+            .and_then(|t| chrono::DateTime::from_timestamp(t, 0)
+                .map(|d| d.format("%Y-%m-%d %H:%M UTC").to_string()))
+            .unwrap_or_else(|| "n/a".into()),
+    );
 }
 
 // ============================================================================
