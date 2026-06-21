@@ -111,6 +111,36 @@ The full **match table** lists every game result found in the log:
 
 A "8 GAMES · 5W–3L (62%)" summary sits at the top. Deck names show `(no deck)` for matches that started without a preceding `DeckSubmission`.
 
+Every match row has a **`↗`** link in the rightmost column that opens a per-match detail page (see below).
+
+### Match detail pages
+
+Clicking the `↗` on any match row opens a dedicated page at `decks-matches/<match_id>.html`:
+
+- **Header** — `Win`/`Loss` badge + deck name, event name, timestamp, and the match UUID
+- **Your deck** — the deck you played, with full card list (qty, name, mana, type, rarity). Cards resolve from the Scryfall DB; missing ones show as `#<grpId>`. If no deck was submitted before this match, the section is honestly empty.
+- **Opponent** — MTGA does **not** log the opponent's deck contents. The page shows a note explaining this and the opponent's team id (inferred from the GameResult).
+- **Game steps** — a deduplicated timeline of `(game_number, turn_number, phase, step, active_player)` transitions derived from the 1300+ `GameStateMessage` events per match. `You` rows are blue, `Opp` rows are grey.
+
+All match pages are static HTML files written to `decks-matches/` alongside the index. They work with any static file server (no routing needed).
+
+```
+./target/release/mtga-logs web -o /tmp/decks.html
+# → /tmp/decks.html
+# → /tmp/decks-matches.html
+# → /tmp/decks-matches/<uuid-1>.html
+# → /tmp/decks-matches/<uuid-2>.html
+# → ...
+```
+
+#### What we don't know
+
+- **Opponent deck cards** — MTGA's `ConnectResp.deckMessage` only carries the local player's deck. The opponent's deck contents are private to their client.
+- **Per-step action log** — `GameStateMessage` carries turn/phase/step but not a separate "actions" feed (the actions are interleaved with state diffs).
+- **Life totals across turns** — `gameStateMessage.players` is only populated on the 8 Full-state events per match, not on the ~1344 Diff events that carry the actual gameplay.
+
+The data is in `~/.local/share/mtga-logs/events.db` (see [Schema](#schema) below); the `match_states` table holds all captured game state transitions.
+
 ### Serving on the network
 
 Quick-and-dirty: regenerate, then serve with Python's built-in HTTP server (no install needed on Ubuntu):
@@ -152,6 +182,7 @@ Result: `web` runs are ~30ms when the log hasn't changed, ~2 seconds on first ru
 | `ingestions` | Fingerprint per parsed log file | 1 per (path × mtime × size) |
 | `decks` | One row per `deck_id`; latest `DeckCollection` wins for contents | all decks ever seen |
 | `matches` | One row per `matchID` (from `GameResult.game_info.matchID`) | one per game |
+| `match_states` | One row per `GameStateMessage`; tagged with matchID by bracketing | ~1300 per match |
 | `inventory_snapshots` | Append-only time series of `InventoryInfo` | one per Arena session |
 | `meta` | Schema version | 1 row |
 

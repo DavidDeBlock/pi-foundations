@@ -752,3 +752,131 @@ table.deck-stats td.deck-name em {
   .dash-right { align-items: flex-start; }
   .sparkline { max-width: 100%; height: auto; }
 }
+
+/* ===== match detail page ===== */
+
+section.match-deck,
+section.match-steps,
+section.raw {
+  margin: 1.6em 0;
+  padding: 1em 1.2em;
+  background: var(--bg-1);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+}
+
+section.match-deck h2,
+section.match-steps h2,
+section.raw h2,
+section.raw h3 {
+  margin-top: 0;
+  font-size: 0.9em;
+  font-weight: 600;
+  color: var(--text-1);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.match-deck .muted,
+.match-steps .muted {
+  color: var(--text-2);
+  font-style: italic;
+}
+
+section.match-deck h3 {
+  display: inline-block;
+  margin: 0.2em 0.4em 0.2em 0;
+  font-size: 1em;
+  color: var(--text-0);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+section.match-deck .pill-format {
+  vertical-align: middle;
+}
+
+section.match-deck table.cards {
+  margin-top: 0.6em;
+}
+
+section.match-deck.opponent {
+  border-left: 3px solid var(--accent-warm);
+}
+
+/* Steps timeline table */
+table.steps {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85em;
+  margin-top: 0.6em;
+}
+table.steps thead th {
+  text-align: left;
+  font-size: 0.7em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-2);
+  padding: 0.3em 0.6em;
+  border-bottom: 1px solid var(--border-dim);
+}
+table.steps tbody td {
+  padding: 0.3em 0.6em;
+  border-bottom: 1px solid var(--border-dim);
+  color: var(--text-1);
+}
+table.steps tbody tr:hover {
+  background: var(--bg-2);
+}
+table.steps .gnum,
+table.steps .tnum {
+  color: var(--text-0);
+  font-variant-numeric: tabular-nums;
+}
+table.steps .tnum {
+  text-align: right;
+  width: 3em;
+}
+table.steps .gnum {
+  width: 3.5em;
+  color: var(--text-2);
+}
+table.steps .active {
+  text-align: center;
+  width: 4em;
+  font-weight: 600;
+}
+table.steps .active.you { color: var(--accent); }
+table.steps .active.opp { color: var(--text-2); }
+table.steps .phase {
+  color: var(--text-0);
+  font-weight: 500;
+}
+
+/* Compact phase tags within steps table */
+table.steps tbody tr td.phase {
+  white-space: nowrap;
+}
+table.steps tbody tr td.step {
+  color: var(--text-2);
+  font-style: italic;
+}
+
+/* Detail link in matches table */
+table.matches td.detail-link {
+  text-align: right;
+  width: 2.4em;
+  padding-right: 0.4em;
+}
+table.matches td.detail-link a {
+  color: var(--text-2);
+  text-decoration: none;
+  font-size: 1.1em;
+  padding: 0 0.3em;
+}
+table.matches td.detail-link a:hover {
+  color: var(--accent);
+}
+table.matches tr:hover td.detail-link a {
+  color: var(--accent);
+}

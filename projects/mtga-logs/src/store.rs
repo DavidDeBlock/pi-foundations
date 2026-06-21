@@ -16,6 +16,10 @@
 //! - `inventory_snapshots` — append-only time series; one row per
 //!   `InventoryInfo` snapshot extracted from
 //!   `DeckCollection.raw_start_hook.InventoryInfo`.
+//! - `match_states` — one row per `GameStateMessage.gameStateId` for every
+//!   match. Captured by bracketing GameState events to the surrounding
+//!   GameOver state (which has `game_info.matchID`). Used for per-match step
+//!   timelines.
 //!
 //! ## Conflict resolution
 //!
@@ -37,7 +41,7 @@ use serde_json::{json, Value};
 
 use crate::{DeckSummary, InventorySnapshot, MatchRecord};
 
-const SCHEMA_VERSION: &str = "1";
+const SCHEMA_VERSION: &str = "2";
 
 // ============================================================================
 // paths
@@ -131,6 +135,22 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
         );
         CREATE INDEX IF NOT EXISTS idx_inventory_ts
             ON inventory_snapshots(ts DESC);
+
+        CREATE TABLE IF NOT EXISTS match_states (
+            match_id        TEXT    NOT NULL,
+            game_state_id   INTEGER NOT NULL,
+            ts              INTEGER NOT NULL,
+            game_number     INTEGER,
+            turn_number     INTEGER,
+            phase           TEXT,
+            step            TEXT,
+            active_player   INTEGER,
+            decision_player INTEGER,
+            stage           TEXT,
+            PRIMARY KEY (match_id, game_state_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_match_states_ts
+            ON match_states(match_id, ts);
         "#,
     )
     .map_err(|e| format!("init schema: {}", e))?;
@@ -373,8 +393,115 @@ fn ingest_one_file(conn: &Connection, path: &Path) -> Result<IngestStats, String
     )
     .map_err(|e| format!("record ingestion: {}", e))?;
 
+    // 4. Game states — bracket to match IDs by walking events forward,
+    //    picking up matchID from game_info and propagating it to subsequent
+    //    events until the next game_info.matchID overwrites it.
+    ingest_game_states(conn, &events)?;
+
     stats.files_ingested = 1;
     Ok(stats)
+}
+
+/// Tag each GameStateEvent with the most recent matchID seen (from
+/// `game_info.matchID` on game-start/game-over events). Events with no
+/// preceding game_info.matchID are skipped — these are typically the very
+/// first ConnectResp before any game has formally started.
+fn ingest_game_states(conn: &Connection, events: &[GameEvent]) -> Result<(), String> {
+    let mut current_match: Option<String> = None;
+    let mut states_inserted = 0usize;
+
+    let tx = conn.unchecked_transaction()
+        .map_err(|e| format!("begin match_states tx: {}", e))?;
+
+    for event in events {
+        if let GameEvent::GameState(gs) = event {
+            let p = gs.payload();
+
+            // 1. Update current_match if this state carries game_info.matchID.
+            if let Some(gi) = p.get("game_info") {
+                if let Some(mid) = gi.get("matchID").and_then(Value::as_str) {
+                    current_match = Some(mid.to_string());
+                }
+            }
+
+            let Some(match_id) = current_match.as_deref() else { continue };
+            let Some(gsid) = p.get("game_state_id").and_then(Value::as_i64) else { continue };
+
+            // game_state_id is unique per game; (match_id, game_state_id) is
+            // a natural PK. Skip if already inserted (re-ingestion safety).
+            let exists: bool = tx
+                .query_row(
+                    "SELECT 1 FROM match_states WHERE match_id = ?1 AND game_state_id = ?2",
+                    params![match_id, gsid],
+                    |_| Ok(true),
+                )
+                .unwrap_or(false);
+            if exists {
+                continue;
+            }
+
+            let ts = gs.metadata().timestamp().map(|t| t.timestamp()).unwrap_or(0);
+            let game_number = p
+                .get("game_info")
+                .and_then(|gi| gi.get("gameNumber"))
+                .and_then(Value::as_i64);
+            let stage = p
+                .get("game_info")
+                .and_then(|gi| gi.get("stage"))
+                .and_then(Value::as_str)
+                .map(|s| s.to_string());
+            let turn = p
+                .get("turn_info")
+                .and_then(|ti| ti.get("turn_number"))
+                .and_then(Value::as_i64);
+            let phase = p
+                .get("turn_info")
+                .and_then(|ti| ti.get("phase"))
+                .and_then(Value::as_str)
+                .map(|s| s.to_string());
+            let step = p
+                .get("turn_info")
+                .and_then(|ti| ti.get("step"))
+                .and_then(Value::as_str)
+                .map(|s| s.to_string());
+            let active = p
+                .get("turn_info")
+                .and_then(|ti| ti.get("active_player"))
+                .and_then(Value::as_i64);
+            let decision = p
+                .get("turn_info")
+                .and_then(|ti| ti.get("decision_player"))
+                .and_then(Value::as_i64);
+
+            tx.execute(
+                "INSERT OR IGNORE INTO match_states
+                    (match_id, game_state_id, ts, game_number, turn_number,
+                     phase, step, active_player, decision_player, stage)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    match_id,
+                    gsid,
+                    ts,
+                    game_number,
+                    turn,
+                    phase,
+                    step,
+                    active,
+                    decision,
+                    stage,
+                ],
+            )
+            .map_err(|e| format!("insert match_state: {}", e))?;
+            states_inserted += 1;
+        }
+    }
+
+    tx.commit()
+        .map_err(|e| format!("commit match_states: {}", e))?;
+    if states_inserted > 0 {
+        eprintln!("(inserted {} match_states)", states_inserted);
+    }
+    Ok(())
 }
 
 fn upsert_deck_from_collection(
@@ -629,7 +756,8 @@ pub fn load_matches(conn: &Connection) -> Result<Vec<MatchRecord>, String> {
     // Need deck names too — left join.
     let mut stmt = conn
         .prepare(
-            "SELECT m.ts, COALESCE(d.name, ''), m.event_name, m.result, m.reason, m.deck_id
+            "SELECT m.match_id, m.ts, COALESCE(d.name, ''), m.event_name,
+                    m.result, m.reason, m.deck_id
              FROM matches m
              LEFT JOIN decks d ON d.deck_id = m.deck_id
              ORDER BY m.ts DESC",
@@ -637,13 +765,15 @@ pub fn load_matches(conn: &Connection) -> Result<Vec<MatchRecord>, String> {
         .map_err(|e| format!("prepare load_matches: {}", e))?;
     let rows = stmt
         .query_map([], |row| {
-            let ts: i64 = row.get(0)?;
-            let deck_name: String = row.get(1)?;
-            let event_name: Option<String> = row.get(2)?;
-            let result: Option<String> = row.get(3)?;
-            let reason: Option<String> = row.get(4)?;
-            let deck_id: Option<String> = row.get(5)?;
+            let match_id: String = row.get(0)?;
+            let ts: i64 = row.get(1)?;
+            let deck_name: String = row.get(2)?;
+            let event_name: Option<String> = row.get(3)?;
+            let result: Option<String> = row.get(4)?;
+            let reason: Option<String> = row.get(5)?;
+            let deck_id: Option<String> = row.get(6)?;
             Ok((
+                match_id,
                 ts,
                 deck_name,
                 event_name.unwrap_or_else(|| "?".into()),
@@ -655,7 +785,7 @@ pub fn load_matches(conn: &Connection) -> Result<Vec<MatchRecord>, String> {
         .map_err(|e| format!("query matches: {}", e))?;
     let mut out = Vec::new();
     for r in rows {
-        let (ts, deck_name, event_name, result, reason, deck_id) =
+        let (match_id, ts, deck_name, event_name, result, reason, deck_id) =
             r.map_err(|e| format!("read match row: {}", e))?;
         let ts_dt = chrono::DateTime::from_timestamp(ts, 0)
             .map(|dt| dt.with_timezone(&chrono::Utc))
@@ -670,6 +800,7 @@ pub fn load_matches(conn: &Connection) -> Result<Vec<MatchRecord>, String> {
             deck_name
         };
         out.push(MatchRecord {
+            match_id,
             timestamp: ts_dt,
             deck_name,
             event_name,
@@ -738,6 +869,77 @@ pub fn load_inventory_history(conn: &Connection) -> Result<Vec<InventorySnapshot
 }
 
 // ============================================================================
+// match detail (steps + game progression)
+// ============================================================================
+
+/// One row of the per-match step timeline.
+#[derive(Debug, Clone)]
+pub struct MatchStep {
+    pub game_number: Option<i64>,
+    pub turn_number: Option<i64>,
+    pub phase: Option<String>,
+    pub step: Option<String>,
+    pub active_player: Option<i64>,
+    pub decision_player: Option<i64>,
+    pub stage: Option<String>,
+    pub ts: i64,
+}
+
+/// Load all recorded states for a match, ordered by ts ascending.
+///
+/// Returns rows where game_state_id, turn_number, phase, step, and stage
+/// are populated whenever the parser saw those fields. The render layer is
+/// expected to deduplicate consecutive identical (turn, phase, step) entries.
+pub fn load_match_steps(conn: &Connection, match_id: &str) -> Result<Vec<MatchStep>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT game_number, turn_number, phase, step, active_player,
+                    decision_player, stage, ts
+             FROM match_states
+             WHERE match_id = ?1
+             ORDER BY ts ASC, game_state_id ASC",
+        )
+        .map_err(|e| format!("prepare load_match_steps: {}", e))?;
+    let rows = stmt
+        .query_map(params![match_id], |row| {
+            Ok(MatchStep {
+                game_number: row.get(0)?,
+                turn_number: row.get(1)?,
+                phase: row.get(2)?,
+                step: row.get(3)?,
+                active_player: row.get(4)?,
+                decision_player: row.get(5)?,
+                stage: row.get(6)?,
+                ts: row.get(7)?,
+            })
+        })
+        .map_err(|e| format!("query load_match_steps: {}", e))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| format!("read match_step row: {}", e))?);
+    }
+    Ok(out)
+}
+
+/// Load the raw GameResult payload for a match (contains the full
+/// game_info with teams, players, winningTeamId, etc.).
+pub fn load_match_payload(conn: &Connection, match_id: &str) -> Result<Option<Value>, String> {
+    let row: Option<String> = conn
+        .query_row(
+            "SELECT payload_json FROM matches WHERE match_id = ?1",
+            params![match_id],
+            |r| r.get(0),
+        )
+        .ok();
+    match row {
+        None => Ok(None),
+        Some(s) => serde_json::from_str(&s)
+            .map(Some)
+            .map_err(|e| format!("parse match payload: {}", e)),
+    }
+}
+
+// ============================================================================
 // status
 // ============================================================================
 
@@ -751,6 +953,7 @@ pub struct StoreStatus {
     pub decks_user: usize,
     pub decks_netdeck: usize,
     pub matches: usize,
+    pub match_states: usize,
     pub inventory_snapshots: usize,
     pub latest_inventory_ts: Option<i64>,
 }
@@ -766,6 +969,7 @@ pub fn status(conn: &Connection) -> Result<StoreStatus, String> {
         decks_user: 0,
         decks_netdeck: 0,
         matches: 0,
+        match_states: 0,
         inventory_snapshots: 0,
         latest_inventory_ts: None,
     };
@@ -818,6 +1022,10 @@ pub fn status(conn: &Connection) -> Result<StoreStatus, String> {
         .query_row("SELECT COUNT(*) FROM inventory_snapshots", [], |r| {
             r.get::<_, i64>(0)
         })
+        .map(|n| n as usize)
+        .unwrap_or(0);
+    s.match_states = conn
+        .query_row("SELECT COUNT(*) FROM match_states", [], |r| r.get::<_, i64>(0))
         .map(|n| n as usize)
         .unwrap_or(0);
     s.latest_inventory_ts = conn

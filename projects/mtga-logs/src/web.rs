@@ -31,6 +31,9 @@ pub struct RenderOptions {
     pub sections: Sections,
     /// Optional sibling link for navigation between decks/matches pages.
     pub sibling_link: Option<SiblingLink>,
+    /// Directory name (relative to the matches file) where per-match detail
+    /// pages live. Used to build the ↗ href in each match row.
+    pub match_pages_dir: String,
 }
 
 #[derive(Clone, Copy)]
@@ -227,7 +230,7 @@ pub fn render(store_db: &Connection, card_db: Option<&Connection>, opts: &Render
     if !matches.is_empty()
         && matches!(opts.sections, Sections::Matches | Sections::Both)
     {
-        write_matches(&mut out, &matches);
+        write_matches(&mut out, &matches, &opts.match_pages_dir);
     }
 
     // Floating card preview (hidden until JS hovers a card with data-image).
@@ -562,7 +565,7 @@ fn write_deck_stats(out: &mut String, matches: &[MatchRecord]) {
     out.push_str("</tbody>\n</table>\n");
 }
 
-fn write_matches(out: &mut String, matches: &[MatchRecord]) {
+fn write_matches(out: &mut String, matches: &[MatchRecord], match_pages_dir: &str) {
     // Sort most-recent first.
     let mut sorted: Vec<&MatchRecord> = matches.iter().collect();
     sorted.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
@@ -599,26 +602,48 @@ fn write_matches(out: &mut String, matches: &[MatchRecord]) {
             "Loss" => "loss",
             _ => "unknown",
         };
+        let row_id = format!("match-{}", m.match_id);
+        // match_pages_dir lives as a sibling to the matches file itself, so
+        // the href from here is just `<dir-name>/<match_id>.html`.
         write!(
             out,
-            "<tr>\
+            "<tr id=\"{}\">\
              <td class=\"date\">{}</td>\
              <td><span class=\"result {}\">{}</span></td>\
              <td class=\"deck-name\">{}</td>\
              <td class=\"event\">{}</td>\
              <td class=\"reason\">{}</td>\
+             <td class=\"detail-link\"><a href=\"{}/{}.html\" \
+             title=\"Match details (deck, steps)\">↗</a></td>\
              </tr>\n",
+            esc(&row_id),
             esc(&date),
             result_class,
             esc(&m.result),
             esc(&m.deck_name),
             esc(&m.event_name),
             esc(&m.reason),
+            esc(match_pages_dir),
+            esc(&m.match_id),
         )
         .unwrap();
     }
 
     out.push_str("</tbody>\n</table>\n");
+}
+
+/// HTML escaper for safe attribute values (no quotes).
+fn esc_attr(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            '"' => "&quot;".to_string(),
+            '&' => "&amp;".to_string(),
+            '<' => "&lt;".to_string(),
+            '>' => "&gt;".to_string(),
+            c if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' => c.to_string(),
+            _ => '_'.to_string(),
+        })
+        .collect()
 }
 
 fn write_deck(
@@ -941,6 +966,336 @@ fn esc(s: &str) -> String {
 }
 
 // =============================================================================
+// Match detail page (one file per match)
+// =============================================================================
+
+/// Render a single match detail page.
+///
+/// Includes:
+/// - Match header (date, result, deck, event, reason)
+/// - "Your deck" mini-view (cards grouped by type, with crafting cost)
+/// - Game steps timeline (deduplicated phase/step transitions)
+/// - Opponent deck placeholder (MTGA doesn't log opponent cards)
+pub fn render_match_detail(
+    card_db: Option<&Connection>,
+    opts: &MatchDetailOptions,
+) -> String {
+    let mut out = String::with_capacity(8192);
+
+    // Header
+    out.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    out.push_str("<meta charset=\"utf-8\">\n");
+    out.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
+    write!(
+        &mut out,
+        "<title>Match — {} vs {}</title>\n",
+        esc(&opts.result),
+        esc(&opts.deck_name),
+    )
+    .unwrap();
+    out.push_str("<style>\n");
+    out.push_str(include_str!("web.css"));
+    out.push_str("</style>\n</head>\n<body>\n");
+
+    // Title + back link
+    let result_class = match opts.result.as_str() {
+        "Win" => "win",
+        "Loss" => "loss",
+        _ => "unknown",
+    };
+    write!(
+        &mut out,
+        "<nav class=\"tabs\"><a href=\"../{}.html\">{} Matches</a></nav>\n",
+        esc(&opts.matches_index),
+        esc("←"),
+    )
+    .unwrap();
+    write!(
+        &mut out,
+        "<h1><span class=\"result {0}\">{1}</span> &middot; {2}</h1>\n\
+         <div class=\"meta\">\
+         <span class=\"event\">{3}</span> &middot; \
+         {4} &middot; \
+         match <code>{5}</code>\
+         </div>\n",
+        result_class,
+        esc(&opts.result),
+        esc(&opts.deck_name),
+        esc(&opts.event_name),
+        esc(&opts.timestamp.format("%Y-%m-%d %H:%M UTC").to_string()),
+        esc(&opts.match_id),
+    )
+    .unwrap();
+
+    // Banner — same as index
+    if let Some((count, updated)) = &opts.card_db_summary {
+        write!(
+            &mut out,
+            "<div class=\"banner ok\">Card names from Scryfall DB ({} cards; bulk updated {}).</div>\n",
+            count,
+            esc(updated),
+        )
+        .unwrap();
+    } else {
+        out.push_str(
+            "<div class=\"banner warn\">\
+             <strong>Card database not found.</strong> \
+             Cards show as grpId numbers. Run <code>mtga-logs sync-cards</code> \
+             (~520 MB) to enable names.\
+             </div>\n",
+        );
+    }
+
+    // === Your deck ===
+    out.push_str("<section class=\"match-deck yours\">\n");
+    out.push_str("<h2>Your deck</h2>\n");
+    if let Some(deck) = &opts.your_deck {
+        write_deck_summary_section(&mut out, deck, card_db);
+    } else {
+        out.push_str("<p class=\"muted\">No deck recorded for this match. \
+                     (MTGA's deck submission event was not seen before this game.)</p>\n");
+    }
+    out.push_str("</section>\n");
+
+    // === Opponent deck ===
+    out.push_str("<section class=\"match-deck opponent\">\n");
+    out.push_str("<h2>Opponent</h2>\n");
+    write!(
+        &mut out,
+        "<p class=\"muted\">MTGA does not log the opponent's deck contents. \
+         All we know is the event (<code>{}</code>) and the opponent team id ({}).</p>\n",
+        esc(&opts.event_name),
+        opts.opponent_team_id
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| "?".into()),
+    )
+    .unwrap();
+    out.push_str("</section>\n");
+
+    // === Game steps timeline ===
+    out.push_str("<section class=\"match-steps\">\n");
+    out.push_str("<h2>Game steps</h2>\n");
+    write_match_steps(&mut out, &opts.steps);
+    out.push_str("</section>\n");
+
+    // Match payload (raw JSON, collapsed)
+    if opts.show_raw {
+        write_raw_payload(&mut out, &opts.raw_payload);
+    }
+
+    // Card hover script (same as index)
+    out.push_str("<script>\n");
+    out.push_str(CARD_HOVER_JS);
+    out.push_str("\n</script>\n");
+
+    out.push_str("</body>\n</html>\n");
+    out
+}
+
+/// Write the per-match "Your deck" panel: deck name, format, color identity,
+/// card counts, and the card list with crafting cost.
+fn write_deck_summary_section(out: &mut String, deck: &Value, card_db: Option<&Connection>) {
+    let name = deck.get("Name").and_then(Value::as_str).unwrap_or("?");
+    let format = deck.get("format").and_then(Value::as_str).unwrap_or("");
+    write!(out, "<h3>{}</h3>\n", esc(name)).unwrap();
+    if !format.is_empty() {
+        write!(out, "<span class=\"pill pill-format\">{}</span>\n", esc(format)).unwrap();
+    }
+
+    // Card counts + color identity + crafting cost (reuse same logic as
+    // the deck list — but inline rather than nesting <details>).
+    let main = deck.get("list").and_then(|l| l.get("MainDeck")).and_then(Value::as_array);
+    let side = deck.get("list").and_then(|l| l.get("Sideboard")).and_then(Value::as_array);
+    let main_count: i64 = main
+        .map(|a| a.iter().filter_map(|c| c.get("quantity").and_then(Value::as_i64)).sum())
+        .unwrap_or(0);
+    let side_count: i64 = side
+        .map(|a| a.iter().filter_map(|c| c.get("quantity").and_then(Value::as_i64)).sum())
+        .unwrap_or(0);
+    write!(
+        out,
+        "<div class=\"meta\"><b>{}</b> cards main / <b>{}</b> side</div>\n",
+        main_count, side_count,
+    )
+    .unwrap();
+
+    // Build card rows
+    if let Some(main) = main {
+        let mut rows: Vec<&Value> = main.iter().collect();
+        rows.sort_by(|a, b| {
+            let an = a.get("card_title").and_then(Value::as_str).unwrap_or("");
+            let bn = b.get("card_title").and_then(Value::as_str).unwrap_or("");
+            an.cmp(bn)
+        });
+        out.push_str("<table class=\"cards\"><thead><tr>");
+        out.push_str("<th>Qty</th><th>Name</th><th>Mana</th><th>Type</th><th>Rarity</th>");
+        out.push_str("</tr></thead>\n<tbody>\n");
+        for c in rows {
+            let qty = c.get("quantity").and_then(Value::as_i64).unwrap_or(1);
+            // Two shapes of card entries exist in the data:
+            //   - { id, card_title, quantity }  (from DeckSubmission / deck list)
+            //   - { cardId, quantity }          (from mainboard_json / raw arena payload)
+            let grp_id = c
+                .get("id")
+                .or_else(|| c.get("cardId"))
+                .and_then(Value::as_i64)
+                .unwrap_or(0);
+            let card = card_db.and_then(|conn| cards::lookup(conn, grp_id));
+            let name = card.as_ref().map(|c| c.name.as_str()).unwrap_or("");
+            let mana = card.as_ref().and_then(|c| c.mana_cost.clone()).unwrap_or_default();
+            let type_line = card.as_ref().and_then(|c| c.type_line.clone()).unwrap_or_default();
+            let rarity = card.as_ref().and_then(|c| c.rarity.clone()).unwrap_or_default();
+            let image_url = card.as_ref().and_then(|c| c.image_url.clone()).unwrap_or_default();
+            let display_name = if name.is_empty() || name == "?" {
+                format!("#{}", grp_id)
+            } else {
+                name.to_string()
+            };
+            write!(
+                out,
+                "<tr>\
+                 <td class=\"qty\">{}</td>\
+                 <td>{}</td>\
+                 <td class=\"mana\">{}</td>\
+                 <td class=\"type-line\">{}</td>\
+                 <td class=\"rarity r-{}\">{}</td>\
+                 </tr>\n",
+                qty,
+                if image_url.is_empty() {
+                    format!("<span class=\"card-name\">{}</span>", esc(&display_name))
+                } else {
+                    format!(
+                        "<span class=\"card-name\" data-image=\"{}\">{}</span>",
+                        esc_attr(&image_url),
+                        esc(&display_name)
+                    )
+                },
+                esc(&mana),
+                esc(&type_line),
+                rarity.to_ascii_lowercase(),
+                esc(&rarity),
+            )
+            .unwrap();
+        }
+        out.push_str("</tbody>\n</table>\n");
+    }
+}
+
+/// Write the game steps timeline. The data has many duplicate rows (Diff
+/// events between transitions); we deduplicate by (game_number, turn_number,
+/// phase, step) so only transitions appear.
+///
+/// Note: Diff events typically lack `game_info.gameNumber`, so we carry the
+/// last-seen game_number forward when it's None. Same idea for active_player.
+fn write_match_steps(out: &mut String, steps: &[store::MatchStep]) {
+    if steps.is_empty() {
+        out.push_str("<p class=\"muted\">No step data captured for this match. \
+                     (Likely the match happened before detailed logs were enabled.)</p>\n");
+        return;
+    }
+
+    // Forward-fill game_number so dedup works across Diff events.
+    let mut last_game: Option<i64> = None;
+    let mut keyed: Vec<(i64, i64, String, String, &store::MatchStep)> = Vec::with_capacity(steps.len());
+    for s in steps {
+        if let Some(g) = s.game_number {
+            last_game = Some(g);
+        }
+        let key_game = last_game.unwrap_or(0);
+        keyed.push((
+            key_game,
+            s.turn_number.unwrap_or(0),
+            s.phase.clone().unwrap_or_default(),
+            s.step.clone().unwrap_or_default(),
+            s,
+        ));
+    }
+
+    // Deduplicate consecutive identical (game, turn, phase, step) tuples.
+    // Empty rows (turn 0 + empty phase + empty step) are skipped entirely so
+    // they don't break the dedup chain between real states.
+    let mut deduped: Vec<(i64, i64, String, String, &store::MatchStep)> = Vec::new();
+    let mut prev_key: Option<(i64, i64, &str, &str)> = None;
+    for (g, t, p, st, s) in &keyed {
+        let is_empty = *t == 0 && p.is_empty() && st.is_empty();
+        if is_empty {
+            continue;
+        }
+        let key = (*g, *t, p.as_str(), st.as_str());
+        if Some(key) != prev_key {
+            deduped.push((*g, *t, p.clone(), st.clone(), *s));
+            prev_key = Some(key);
+        }
+    }
+
+    write!(
+        out,
+        "<div class=\"meta\">{} total states captured, {} unique transitions</div>\n",
+        steps.len(),
+        deduped.len(),
+    )
+    .unwrap();
+
+    out.push_str("<table class=\"steps\"><thead><tr>");
+    out.push_str("<th>Game</th><th>Turn</th><th>Phase</th><th>Step</th><th>Active</th>");
+    out.push_str("</tr></thead>\n<tbody>\n");
+    for (g, t, p, st, s) in &deduped {
+        let phase = p.trim_start_matches("Phase_");
+        let step = st.trim_start_matches("Step_");
+        let (active_text, active_class) = s
+            .active_player
+            .map(|a| if a == 1 { ("You", "you") } else { ("Opp", "opp") })
+            .unwrap_or(("", ""));
+        write!(
+            out,
+            "<tr>\
+             <td class=\"gnum\">{}</td>\
+             <td class=\"tnum\">{}</td>\
+             <td class=\"phase\">{}</td>\
+             <td class=\"step\">{}</td>\
+             <td class=\"active {}\">{}</td>\
+             </tr>\n",
+            g,
+            t,
+            esc(phase),
+            esc(step),
+            active_class,
+            active_text,
+        )
+        .unwrap();
+    }
+    out.push_str("</tbody>\n</table>\n");
+}
+
+fn write_raw_payload(out: &mut String, payload: &Value) {
+    out.push_str("<section class=\"raw\">\n");
+    out.push_str("<h3>Raw payload</h3>\n");
+    out.push_str("<details><summary>GameResult.gameInfo</summary>\n");
+    out.push_str("<pre>");
+    out.push_str(&esc(&serde_json::to_string_pretty(payload).unwrap_or_default()));
+    out.push_str("</pre>\n</details>\n");
+    out.push_str("</section>\n");
+}
+
+/// Options for rendering a single match detail page.
+pub struct MatchDetailOptions {
+    pub match_id: String,
+    pub result: String,
+    pub reason: String,
+    pub event_name: String,
+    pub deck_name: String,
+    pub timestamp: DateTime<Utc>,
+    pub your_deck: Option<Value>,
+    pub opponent_team_id: Option<i64>,
+    pub steps: Vec<store::MatchStep>,
+    pub raw_payload: Value,
+    pub matches_index: String,
+    pub show_raw: bool,
+    /// `(card_count, updated_at)` from `cards::status()`, if available.
+    pub card_db_summary: Option<(u64, String)>,
+}
+
+// =============================================================================
 // Inline scripts
 // =============================================================================
 
@@ -1018,6 +1373,7 @@ mod tests {
 
     fn mk(ts: i64, result: &str, deck: &str) -> MatchRecord {
         MatchRecord {
+            match_id: format!("test-{}", ts),
             timestamp: Utc.timestamp_opt(ts, 0).unwrap(),
             deck_name: deck.to_string(),
             event_name: "Ladder".to_string(),

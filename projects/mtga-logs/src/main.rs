@@ -186,6 +186,11 @@ fn run_web(log_path: &std::path::Path, all: bool, show_system: bool, output: Opt
 
     match output {
         Some(path) => {
+            let pages_dir_name = match_pages_dir_for(path)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("decks-matches")
+                .to_string();
             let decks_opts = web::RenderOptions {
                 include_netdecks: all,
                 show_system_decks: show_system,
@@ -196,6 +201,7 @@ fn run_web(log_path: &std::path::Path, all: bool, show_system: bool, output: Opt
                     label: "View recent matches →",
                     href: sibling_filename(path, true),
                 }),
+                match_pages_dir: pages_dir_name.clone(),
             };
             let matches_opts = web::RenderOptions {
                 include_netdecks: all,
@@ -207,6 +213,7 @@ fn run_web(log_path: &std::path::Path, all: bool, show_system: bool, output: Opt
                     label: "← Back to decks",
                     href: sibling_filename(path, false),
                 }),
+                match_pages_dir: pages_dir_name,
             };
 
             let decks_html = web::render(&store_conn, card_db.as_ref(), &decks_opts);
@@ -221,6 +228,13 @@ fn run_web(log_path: &std::path::Path, all: bool, show_system: bool, output: Opt
                 eprintln!("error writing {}: {}", matches_path.display(), e);
                 process::exit(1);
             }
+            // Per-match detail pages — one HTML file per match in a sibling
+            // `matches/` directory. The matches table links to them.
+            let (written, errors) = write_match_pages(
+                &store_conn,
+                card_db.as_ref(),
+                path,
+            );
             eprintln!(
                 "wrote {} ({} KB) and {} ({} KB)",
                 path.display(),
@@ -228,6 +242,9 @@ fn run_web(log_path: &std::path::Path, all: bool, show_system: bool, output: Opt
                 matches_path.display(),
                 matches_html.len() / 1024,
             );
+            if written > 0 || errors > 0 {
+                eprintln!("(match pages: {} written, {} errors)", written, errors);
+            }
         }
         None => {
             let opts = web::RenderOptions {
@@ -237,6 +254,7 @@ fn run_web(log_path: &std::path::Path, all: bool, show_system: bool, output: Opt
                 generated_at,
                 sections: web::Sections::Both,
                 sibling_link: None,
+                match_pages_dir: "decks-matches".into(),
             };
             print!("{}", web::render(&store_conn, card_db.as_ref(), &opts));
         }
@@ -253,6 +271,130 @@ fn matches_path_for(decks_path: &std::path::Path) -> std::path::PathBuf {
         .and_then(|s| s.to_str())
         .unwrap_or("decks");
     parent.join(format!("{}-matches.html", stem))
+}
+
+/// Directory where per-match detail pages are written (sibling to decks/matches
+/// files). Created on demand.
+fn match_pages_dir_for(decks_path: &std::path::Path) -> std::path::PathBuf {
+    let parent = decks_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let stem = decks_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("decks");
+    parent.join(format!("{}-matches", stem))
+}
+
+/// Write one HTML file per match into `<stem>-matches/<match_id>.html`.
+/// Returns (written, errors). Logs each error to stderr but doesn't abort.
+fn write_match_pages(
+    store_conn: &Connection,
+    card_db: Option<&Connection>,
+    decks_path: &std::path::Path,
+) -> (usize, usize) {
+    let dir = match_pages_dir_for(decks_path);
+    if let Err(e) = fs::create_dir_all(&dir) {
+        eprintln!("error creating {}: {}", dir.display(), e);
+        return (0, 0);
+    }
+
+    // Card DB summary (count + updated_at)
+    let card_db_summary = card_db.and_then(|_| {
+        cards::status().ok().and_then(|s| {
+            Some((s.card_count?, s.updated_at?))
+        })
+    });
+
+    // The matches index filename — used by each per-match page as a back link.
+    let matches_index = sibling_filename(decks_path, true);
+
+    let mut stmt = match store_conn.prepare(
+        "SELECT match_id, ts, deck_id, event_name, result, reason, payload_json
+         FROM matches ORDER BY ts DESC",
+    ) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("prepare match pages: {}", e); return (0, 1); }
+    };
+    let rows = match stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, Option<String>>(5)?,
+            row.get::<_, String>(6)?,
+        ))
+    }) {
+        Ok(r) => r,
+        Err(e) => { eprintln!("query match pages: {}", e); return (0, 1); }
+    };
+
+    let mut written = 0usize;
+    let mut errors = 0usize;
+    for row in rows {
+        let (match_id, ts, deck_id, event_name, result, reason, payload_json) = match row {
+            Ok(v) => v,
+            Err(e) => { eprintln!("read match row: {}", e); errors += 1; continue; }
+        };
+        let ts_dt = chrono::DateTime::from_timestamp(ts, 0)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .unwrap_or_else(chrono::Utc::now);
+        let result = result.unwrap_or_else(|| "?".into());
+        let reason = reason.unwrap_or_default();
+        let event_name = event_name.unwrap_or_else(|| "?".into());
+
+        // Deck name + full deck value (None if not found)
+        let (deck_name, your_deck) = match deck_id.as_deref() {
+            Some(id) => match store::load_deck_value(store_conn, id) {
+                Ok(Some(v)) => {
+                    let name = v.get("Name").and_then(Value::as_str).unwrap_or("?").to_string();
+                    (name, Some(v))
+                }
+                _ => ("(unknown)".to_string(), None),
+            },
+            None => ("(no deck)".to_string(), None),
+        };
+
+        let steps = store::load_match_steps(store_conn, &match_id).unwrap_or_default();
+        let raw_payload: Value = serde_json::from_str(&payload_json).unwrap_or(Value::Null);
+        let opponent_team_id = raw_payload
+            .get("game_info")
+            .and_then(|gi| gi.get("results"))
+            .and_then(|r| r.as_array())
+            .and_then(|arr| {
+                arr.iter()
+                    .find(|r| r.get("scope").and_then(Value::as_str) == Some("MatchScope_Match"))
+                    .or_else(|| arr.first())
+            })
+            .and_then(|r| r.get("winningTeamId"))
+            .and_then(Value::as_i64)
+            .map(|t| if t == 1 { 2 } else { 1 });
+
+        let opts = web::MatchDetailOptions {
+            match_id: match_id.clone(),
+            result,
+            reason,
+            event_name,
+            deck_name,
+            timestamp: ts_dt,
+            your_deck,
+            opponent_team_id,
+            steps,
+            raw_payload,
+            matches_index: matches_index.clone(),
+            show_raw: false,
+            card_db_summary: card_db_summary.clone(),
+        };
+        let html = web::render_match_detail(card_db, &opts);
+        let file = dir.join(format!("{}.html", match_id));
+        if let Err(e) = fs::write(&file, html) {
+            eprintln!("error writing {}: {}", file.display(), e);
+            errors += 1;
+        } else {
+            written += 1;
+        }
+    }
+    (written, errors)
 }
 
 /// Compute the href for the sibling link from a given path. Both files live in
@@ -829,6 +971,7 @@ fn truncate(s: &str, max: usize) -> String {
 // ============================================================================
 
 pub(crate) struct MatchRecord {
+    pub(crate) match_id: String,
     pub(crate) timestamp: DateTime<Utc>,
     pub(crate) deck_name: String,
     pub(crate) event_name: String,
