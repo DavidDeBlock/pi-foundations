@@ -1269,6 +1269,23 @@ table.plays td.card {
 }
 .empty.error { color: #e06070; }
 
+/* "Show more" pagination button (catalog + builder's mini catalog). */
+.load-more-bar {
+  text-align: center;
+  margin: 1.2em 0 0.5em;
+}
+.builder-catalog #cat-load-more {
+  display: block;
+  width: 100%;
+  margin-top: 0.6em;
+  padding: 0.5em 0.8em;
+  font-size: 0.9em;
+}
+#load-more, #cat-load-more {
+  cursor: pointer;
+  font-family: inherit;
+}
+
 /* Mana symbols in the cost string. {W} -> small gold disc, etc. */
 .mana {
   display: inline-block;

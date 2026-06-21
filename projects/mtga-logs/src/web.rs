@@ -2228,6 +2228,9 @@ pub fn render_catalog(
 <section class="card-grid" id="grid">
   <div class="empty">Loading card data...</div>
 </section>
+<section class="load-more-bar">
+  <button type="button" id="load-more" class="btn-secondary" style="display:none">Show more</button>
+</section>
 
 <dialog id="card-modal" class="card-modal">
   <button class="modal-close" aria-label="Close">&times;</button>
@@ -2344,6 +2347,12 @@ const modalClose = modal.querySelector('.modal-close');
 
 let filtered = [];
 
+// Pagination: only render a small page at a time so the page stays
+// snappy when 18k+ cards are loaded.
+const PAGE_SIZE = 48;        // ~12 rows of 4 columns — fits one screen with room
+let visibleCount = 0;        // how many cards are currently in the DOM
+const loadMoreBtn = document.getElementById('load-more');
+
 function getSelectedColors() {
   const s = new Set();
   for (const cb of colorToggles) if (cb.checked) s.add(cb.dataset.color);
@@ -2371,33 +2380,59 @@ function applyFilters() {
     out.sort((a, b) => (order[a.r] ?? 9) - (order[b.r] ?? 9) || a.n.localeCompare(b.n));
   }
   filtered = out;
-  countEl.textContent = `${out.length.toLocaleString()} of ${CARDS.length.toLocaleString()}`;
-  renderGrid();
-}
-
-let visibleCount = 0;
-const BATCH = 200;
-function renderGrid() {
-  // Render in batches so the page stays responsive on slow devices.
+  // Reset to first page on any filter change.
   grid.innerHTML = '';
   visibleCount = 0;
-  renderNext();
+  // Update count first so the user sees feedback even before rendering.
+  countEl.textContent = `${out.length.toLocaleString()} of ${CARDS.length.toLocaleString()}`;
+  renderPage();
 }
 
-function renderNext() {
-  const end = Math.min(visibleCount + BATCH, filtered.length);
+function renderPage() {
+  const start = visibleCount;
+  const end = Math.min(start + PAGE_SIZE, filtered.length);
+  if (start === end) {
+    // Nothing to render — either zero matches or fully loaded.
+    updateLoadMore();
+    return;
+  }
   const frag = document.createDocumentFragment();
-  for (let i = visibleCount; i < end; i++) {
+  for (let i = start; i < end; i++) {
     const tmp = document.createElement('div');
     tmp.innerHTML = renderCard(filtered[i]);
     frag.appendChild(tmp.firstElementChild);
   }
   grid.appendChild(frag);
   visibleCount = end;
-  if (visibleCount < filtered.length) {
-    requestAnimationFrame(renderNext);
+  updateLoadMore();
+}
+
+function updateLoadMore() {
+  const remaining = filtered.length - visibleCount;
+  if (remaining <= 0) {
+    loadMoreBtn.style.display = 'none';
+  } else {
+    loadMoreBtn.style.display = '';
+    const next = Math.min(PAGE_SIZE, remaining);
+    const shown = `${(visibleCount + 1).toLocaleString()}\u2013${visibleCount.toLocaleString()} shown`;
+    loadMoreBtn.textContent = `Show ${next} more (${remaining.toLocaleString()} remaining)`;
+    loadMoreBtn.title = `Showing ${visibleCount.toLocaleString()} of ${filtered.length.toLocaleString()}`;
+  }
+  if (filtered.length === 0 && visibleCount === 0) {
+    grid.innerHTML = '<div class="empty">No cards match the current filter.</div>';
   }
 }
+loadMoreBtn.addEventListener('click', () => {
+  renderPage();
+  // If grid is below the fold, scroll to the first newly-rendered card.
+  requestAnimationFrame(() => {
+    const cards = grid.children;
+    if (cards.length > 0) {
+      const firstNew = cards[visibleCount - PAGE_SIZE];
+      if (firstNew) firstNew.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+});
 
 // Wire up filters with debouncing on text input.
 let searchTimer = null;
@@ -2636,6 +2671,7 @@ pub fn render_builder(
       <option value="Land">Land</option>
     </select>
     <div id="cat-grid" class="cat-grid"></div>
+    <button type="button" id="cat-load-more" class="btn-secondary" style="display:none">Show more</button>
     <p class="cat-hint">Click a card to add to mainboard. Shift-click adds to sideboard. Click "+ main" / "+ side" buttons for explicit placement.</p>
   </aside>
 </section>
@@ -3010,9 +3046,10 @@ const catSearch = document.getElementById('cat-search');
 const catType = document.getElementById('cat-type');
 const catColorToggles = Array.from(document.querySelectorAll('.builder-catalog .color-toggle input'));
 const catGrid = document.getElementById('cat-grid');
+const catLoadMoreBtn = document.getElementById('cat-load-more');
+const CAT_PAGE = 48;          // ~12 rows of 4 columns — fits one screen
 let catVisibleCount = 0;
 let catFiltered = [];
-const CAT_BATCH = 100;
 
 function applyCatalogFilter() {
   const q = catSearch.value.trim().toLowerCase();
@@ -3035,14 +3072,23 @@ function applyCatalogFilter() {
     }
     catFiltered.push(c);
   }
-  catVisibleCount = 0;
+  // Reset to first page on any filter change.
   catGrid.innerHTML = '';
-  renderCatNext();
+  catVisibleCount = 0;
+  renderCatPage();
 }
-function renderCatNext() {
-  const end = Math.min(catVisibleCount + CAT_BATCH, catFiltered.length);
+function renderCatPage() {
+  const start = catVisibleCount;
+  const end = Math.min(start + CAT_PAGE, catFiltered.length);
+  if (start === end) {
+    updateCatLoadMore();
+    if (catFiltered.length === 0) {
+      catGrid.innerHTML = '<div class="empty">No cards match the current filter.</div>';
+    }
+    return;
+  }
   const frag = document.createDocumentFragment();
-  for (let i = catVisibleCount; i < end; i++) {
+  for (let i = start; i < end; i++) {
     const c = catFiltered[i];
     const tmp = document.createElement('div');
     tmp.innerHTML = renderCatCard(c);
@@ -3050,8 +3096,22 @@ function renderCatNext() {
   }
   catGrid.appendChild(frag);
   catVisibleCount = end;
-  if (catVisibleCount < catFiltered.length) requestAnimationFrame(renderCatNext);
+  updateCatLoadMore();
 }
+function updateCatLoadMore() {
+  const remaining = catFiltered.length - catVisibleCount;
+  if (remaining <= 0) {
+    catLoadMoreBtn.style.display = 'none';
+  } else {
+    catLoadMoreBtn.style.display = '';
+    const next = Math.min(CAT_PAGE, remaining);
+    catLoadMoreBtn.textContent = `Show ${next} more (${remaining.toLocaleString()} remaining)`;
+    catLoadMoreBtn.title = `Showing ${catVisibleCount.toLocaleString()} of ${catFiltered.length.toLocaleString()}`;
+  }
+}
+catLoadMoreBtn.addEventListener('click', () => {
+  renderCatPage();
+});
 function renderCatCard(c) {
   const ci = (c.ci || '').split('').map(ch =>
     `<i class="pip pip-${ch}" title="${ch}"></i>`).join('');

@@ -83,3 +83,5 @@ Let's work a bit on the visuals of the decks.html. Some decks have a question ma
 
 
 Since we have all the available cards and we already have a structure in place to download them and persist them, it would be handy to create some sort of deck builder. We can edit existing decks, we can create new decks, and we need a decent filter to search the Skyfall database. Create a separate HTML for the deck builder. And maybe a separate HTML for the catalog 
+
+
