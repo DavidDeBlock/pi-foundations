@@ -86,7 +86,22 @@ A toggle in the header bar reveals hidden **system decks** (the `?=?Loc/Decks/Pr
 
 ### Matches page
 
-Table of every game result found in the log:
+Above the match list, a **dashboard** adds three quick-glance views:
+
+- **Streak badge** (top-left) — `▲ 2-win streak` or `▼ 3-loss streak`; only shown for runs of 2+
+- **By event** chips — W–L breakdown per event type (Ladder, DirectGame, Draft, etc.), color-coded by category
+- **Last games sparkline** (top-right) — SVG row of up to 30 games, oldest on the left; hover a square for date/result/deck
+
+Below the dashboard, a **per-deck stats table** groups matches by deck:
+
+| Deck          | G | W | L | Win% | Last played |
+|---------------|---|---|---|------|-------------|
+| Mono White MK3| 4 | 2 | 2 | 50%  | 8h ago      |
+| (no deck)     | 5 | 3 | 2 | 60%  | 2026-06-21  |
+
+Win% is color-coded green/red only when the deck has 3+ games. `(no deck)` and `(unknown)` rows are shown in italic.
+
+The full **match table** lists every game result found in the log:
 
 - **Date** — when the game finished
 - **Result** — green Win / red Loss / gray ? badge

@@ -5,8 +5,10 @@
 //! element so the page is interactive without any JavaScript. Card names come
 //! from the Scryfall DB if available; otherwise they fall back to grpId.
 
+use std::collections::HashMap;
 use std::fmt::Write as _;
 
+use chrono::{DateTime, Utc};
 use rusqlite::Connection;
 use serde_json::Value;
 
@@ -252,6 +254,314 @@ fn is_system_deck(name: &str) -> bool {
     name.starts_with("?=") || name == "?"
 }
 
+// =========================================================================
+// Match-page enrichment: streak, per-deck stats, event breakdown, sparkline
+// =========================================================================
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StreakKind {
+    Win,
+    Loss,
+}
+
+struct Streak {
+    kind: Option<StreakKind>,
+    count: usize,
+}
+
+struct DeckStats {
+    name: String,
+    games: usize,
+    wins: usize,
+    losses: usize,
+    last_played: DateTime<Utc>,
+}
+
+struct EventStats {
+    name: String,
+    wins: usize,
+    losses: usize,
+}
+
+fn compute_streak(matches: &[MatchRecord]) -> Streak {
+    let mut sorted: Vec<&MatchRecord> = matches.iter().collect();
+    sorted.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    let first = match sorted.first().map(|m| m.result.as_str()) {
+        Some("Win") => StreakKind::Win,
+        Some("Loss") => StreakKind::Loss,
+        _ => return Streak { kind: None, count: 0 },
+    };
+    let count = sorted
+        .iter()
+        .take_while(|m| m.result == first_label(first))
+        .count();
+    Streak { kind: Some(first), count }
+}
+
+fn first_label(k: StreakKind) -> &'static str {
+    match k {
+        StreakKind::Win => "Win",
+        StreakKind::Loss => "Loss",
+    }
+}
+
+fn compute_deck_stats(matches: &[MatchRecord]) -> Vec<DeckStats> {
+    let mut by_deck: HashMap<String, DeckStats> = HashMap::new();
+    for m in matches {
+        let entry = by_deck.entry(m.deck_name.clone()).or_insert_with(|| DeckStats {
+            name: m.deck_name.clone(),
+            games: 0,
+            wins: 0,
+            losses: 0,
+            last_played: m.timestamp,
+        });
+        entry.games += 1;
+        if m.result == "Win" {
+            entry.wins += 1;
+        } else if m.result == "Loss" {
+            entry.losses += 1;
+        }
+        if m.timestamp > entry.last_played {
+            entry.last_played = m.timestamp;
+        }
+    }
+    let mut v: Vec<DeckStats> = by_deck.into_values().collect();
+    v.sort_by(|a, b| {
+        b.games
+            .cmp(&a.games)
+            .then(b.last_played.cmp(&a.last_played))
+    });
+    v
+}
+
+fn compute_event_breakdown(matches: &[MatchRecord]) -> Vec<EventStats> {
+    let mut by_event: HashMap<String, EventStats> = HashMap::new();
+    for m in matches {
+        let key = if m.event_name.is_empty() {
+            "?".to_string()
+        } else {
+            m.event_name.clone()
+        };
+        let entry = by_event.entry(key).or_insert_with(|| EventStats {
+            name: m.event_name.clone(),
+            wins: 0,
+            losses: 0,
+        });
+        if m.result == "Win" {
+            entry.wins += 1;
+        } else if m.result == "Loss" {
+            entry.losses += 1;
+        }
+    }
+    let mut v: Vec<EventStats> = by_event.into_values().collect();
+    v.sort_by(|a, b| {
+        (b.wins + b.losses)
+            .cmp(&(a.wins + a.losses))
+            .then(a.name.cmp(&b.name))
+    });
+    v
+}
+
+fn categorize_event(name: &str) -> &'static str {
+    if name.is_empty() || name == "?" {
+        "other"
+    } else if name.contains("Draft") {
+        "draft"
+    } else if name.starts_with("Ladder") || name == "Ranked" {
+        "ranked"
+    } else if name.contains("DirectGame") {
+        "play"
+    } else if name.contains("Jump_In") || name.contains("QuickDraft") {
+        "event"
+    } else {
+        "other"
+    }
+}
+
+fn format_relative(ts: DateTime<Utc>, now: DateTime<Utc>) -> String {
+    let minutes = now.signed_duration_since(ts).num_minutes();
+    if minutes < 0 {
+        // future (clock skew) — show absolute date
+        ts.format("%Y-%m-%d").to_string()
+    } else if minutes < 1 {
+        "just now".to_string()
+    } else if minutes < 60 {
+        format!("{}m ago", minutes)
+    } else if minutes < 60 * 24 {
+        format!("{}h ago", minutes / 60)
+    } else if minutes < 60 * 24 * 30 {
+        format!("{}d ago", minutes / (60 * 24))
+    } else {
+        ts.format("%Y-%m-%d").to_string()
+    }
+}
+
+fn write_dashboard(out: &mut String, matches: &[MatchRecord]) {
+    if matches.is_empty() {
+        return;
+    }
+    let streak = compute_streak(matches);
+    let breakdown = compute_event_breakdown(matches);
+    if streak.kind.is_none() && breakdown.is_empty() {
+        return;
+    }
+
+    out.push_str("<div class=\"dashboard\">\n");
+
+    // Left column: streak + event breakdown
+    out.push_str("<div class=\"dash-left\">\n");
+    if let Some(kind) = streak.kind {
+        if streak.count >= 2 {
+            let (cls, arrow, label) = match kind {
+                StreakKind::Win => ("streak-win", "▲", "win"),
+                StreakKind::Loss => ("streak-loss", "▼", "loss"),
+            };
+            let count = streak.count;
+            write!(
+                out,
+                "<div class=\"streak {cls}\">{arrow} <b>{count}</b>-{label} streak</div>\n"
+            )
+            .unwrap();
+        }
+    }
+    if !breakdown.is_empty() {
+        out.push_str("<div class=\"event-breakdown\">\n");
+        out.push_str("<span class=\"event-label\">By event</span>\n");
+        for e in &breakdown {
+            let cat = categorize_event(&e.name);
+            let display_name = if e.name.is_empty() { "?" } else { &e.name };
+            write!(
+                out,
+                "<span class=\"event-pill cat-{cat}\" title=\"{name}\">\
+                 <span class=\"event-name\">{name}</span>\
+                 <span class=\"wl-mini\">{w}W–{l}L</span>\
+                 </span>\n",
+                cat = cat,
+                name = esc(display_name),
+                w = e.wins,
+                l = e.losses,
+            )
+            .unwrap();
+        }
+        out.push_str("</div>\n");
+    }
+    out.push_str("</div>\n"); // dash-left
+
+    // Right column: sparkline of last 30 games
+    out.push_str("<div class=\"dash-right\">\n");
+    out.push_str("<div class=\"sparkline-label\">Last games (left = oldest)</div>\n");
+    write_sparkline(out, matches);
+    out.push_str("</div>\n"); // dash-right
+
+    out.push_str("</div>\n"); // dashboard
+}
+
+fn write_sparkline(out: &mut String, matches: &[MatchRecord]) {
+    let mut sorted: Vec<&MatchRecord> = matches.iter().collect();
+    sorted.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    let last_n: Vec<&MatchRecord> = sorted.iter().take(30).copied().collect();
+    if last_n.is_empty() {
+        return;
+    }
+    let n = last_n.len();
+    let cell = 14;
+    let gap = 3;
+    let w = (n * (cell + gap) - gap).max(cell);
+    let h = cell;
+
+    write!(
+        out,
+        "<svg class=\"sparkline\" viewBox=\"0 0 {w} {h}\" width=\"{w}\" height=\"{h}\" \
+         aria-label=\"last {n} games\">\n",
+        w = w,
+        h = h,
+        n = n
+    )
+    .unwrap();
+    // Oldest first → leftmost.
+    for (i, m) in last_n.iter().rev().enumerate() {
+        let x = i * (cell + gap);
+        let cls = match m.result.as_str() {
+            "Win" => "r-win",
+            "Loss" => "r-loss",
+            _ => "r-unknown",
+        };
+        let title = format!(
+            "{} · {} · {} · {}",
+            m.timestamp.format("%Y-%m-%d %H:%M"),
+            m.result,
+            m.deck_name,
+            if m.event_name.is_empty() { "?" } else { &m.event_name }
+        );
+        write!(
+            out,
+            "<rect class=\"{cls}\" x=\"{x}\" y=\"0\" width=\"{cell}\" height=\"{cell}\" rx=\"2\">\
+             <title>{t}</title></rect>\n",
+            cls = cls,
+            x = x,
+            cell = cell,
+            t = esc(&title),
+        )
+        .unwrap();
+    }
+    out.push_str("</svg>\n");
+}
+
+fn write_deck_stats(out: &mut String, matches: &[MatchRecord]) {
+    let stats = compute_deck_stats(matches);
+    if stats.is_empty() {
+        return;
+    }
+
+    out.push_str("<h3>By deck</h3>\n");
+    out.push_str("<table class=\"deck-stats\">\n<thead><tr>");
+    out.push_str("<th>Deck</th><th>G</th><th>W</th><th>L</th><th>Win%</th><th>Last played</th>");
+    out.push_str("</tr></thead>\n<tbody>\n");
+
+    let now = Utc::now();
+    for s in &stats {
+        let pct = if s.games > 0 { 100 * s.wins / s.games } else { 0 };
+        // Only color-code win% when there are enough games for it to be meaningful.
+        let pct_class = if s.games >= 3 {
+            if pct >= 60 {
+                "wl-good"
+            } else if pct <= 40 {
+                "wl-bad"
+            } else {
+                ""
+            }
+        } else {
+            ""
+        };
+        let deck_label = if s.name == "(no deck)" || s.name == "(unknown)" {
+            format!("<em>{}</em>", esc(&s.name))
+        } else {
+            esc(&s.name)
+        };
+        let ago = format_relative(s.last_played, now);
+        write!(
+            out,
+            "<tr>\
+             <td class=\"deck-name\">{name}</td>\
+             <td class=\"g\">{games}</td>\
+             <td class=\"w\">{wins}</td>\
+             <td class=\"l\">{losses}</td>\
+             <td class=\"pct {cls}\">{pct}%</td>\
+             <td class=\"ago\">{ago}</td>\
+             </tr>\n",
+            name = deck_label,
+            games = s.games,
+            wins = s.wins,
+            losses = s.losses,
+            cls = pct_class,
+            pct = pct,
+            ago = esc(&ago),
+        )
+        .unwrap();
+    }
+    out.push_str("</tbody>\n</table>\n");
+}
+
 fn write_matches(out: &mut String, matches: &[MatchRecord]) {
     // Sort most-recent first.
     let mut sorted: Vec<&MatchRecord> = matches.iter().collect();
@@ -270,6 +580,14 @@ fn write_matches(out: &mut String, matches: &[MatchRecord]) {
     )
     .unwrap();
 
+    // Dashboard: streak, event breakdown, sparkline.
+    write_dashboard(out, matches);
+
+    // Per-deck stats table.
+    write_deck_stats(out, matches);
+
+    // Original full match log.
+    out.push_str("<h3>All matches</h3>\n");
     out.push_str("<table class=\"matches\">\n<thead><tr>");
     out.push_str("<th>Date</th><th>Result</th><th>Deck</th><th>Event</th><th>Reason</th>");
     out.push_str("</tr></thead>\n<tbody>\n");
@@ -692,3 +1010,138 @@ const SYSTEM_TOGGLE_JS: &str = r#"
   });
 })();
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn mk(ts: i64, result: &str, deck: &str) -> MatchRecord {
+        MatchRecord {
+            timestamp: Utc.timestamp_opt(ts, 0).unwrap(),
+            deck_name: deck.to_string(),
+            event_name: "Ladder".to_string(),
+            result: result.to_string(),
+            reason: "Game".to_string(),
+        }
+    }
+
+    #[test]
+    fn streak_no_matches() {
+        let s = compute_streak(&[]);
+        assert!(s.kind.is_none());
+        assert_eq!(s.count, 0);
+    }
+
+    #[test]
+    fn streak_single_win() {
+        let s = compute_streak(&[mk(1, "Win", "A")]);
+        assert_eq!(s.kind, Some(StreakKind::Win));
+        assert_eq!(s.count, 1); // 1 = "no streak yet", badge hidden
+    }
+
+    #[test]
+    fn streak_two_wins_in_a_row() {
+        let matches = vec![
+            mk(20, "Win", "A"), // most recent
+            mk(10, "Win", "A"),
+            mk(5, "Loss", "A"),
+        ];
+        let s = compute_streak(&matches);
+        assert_eq!(s.kind, Some(StreakKind::Win));
+        assert_eq!(s.count, 2);
+    }
+
+    #[test]
+    fn streak_interrupted() {
+        // Most recent first: Win, Win, Loss, Win.
+        // Streak of most-recent is 2 (Win, Win), then Loss breaks it.
+        let matches = vec![
+            mk(40, "Win", "A"),
+            mk(30, "Win", "A"),
+            mk(20, "Loss", "A"),
+            mk(10, "Win", "A"),
+        ];
+        let s = compute_streak(&matches);
+        assert_eq!(s.kind, Some(StreakKind::Win));
+        assert_eq!(s.count, 2);
+    }
+
+    #[test]
+    fn streak_three_losses() {
+        let matches = vec![
+            mk(30, "Loss", "A"),
+            mk(20, "Loss", "A"),
+            mk(10, "Loss", "A"),
+            mk(5, "Win", "A"),
+        ];
+        let s = compute_streak(&matches);
+        assert_eq!(s.kind, Some(StreakKind::Loss));
+        assert_eq!(s.count, 3);
+    }
+
+    #[test]
+    fn deck_stats_groups_and_sorts() {
+        let matches = vec![
+            mk(30, "Win", "DeckA"),
+            mk(20, "Loss", "DeckA"),
+            mk(10, "Win", "DeckB"),
+            mk(5, "Win", "DeckA"),
+        ];
+        let stats = compute_deck_stats(&matches);
+        // DeckA has 3 games, DeckB has 1
+        assert_eq!(stats[0].name, "DeckA");
+        assert_eq!(stats[0].games, 3);
+        assert_eq!(stats[0].wins, 2);
+        assert_eq!(stats[0].losses, 1);
+        assert_eq!(stats[1].name, "DeckB");
+        assert_eq!(stats[1].games, 1);
+        assert_eq!(stats[1].wins, 1);
+    }
+
+    #[test]
+    fn event_breakdown_sorts_by_volume() {
+        let mut matches = vec![
+            mk(40, "Win", "A"),
+            mk(30, "Win", "A"),
+            mk(20, "Loss", "A"),
+            mk(10, "Win", "B"),
+            mk(5, "Win", "B"),
+        ];
+        matches[0].event_name = "Ladder".to_string();
+        matches[1].event_name = "Ladder".to_string();
+        matches[2].event_name = "Ladder".to_string();
+        matches[3].event_name = "Draft".to_string();
+        matches[4].event_name = "Draft".to_string();
+        let breakdown = compute_event_breakdown(&matches);
+        assert_eq!(breakdown[0].name, "Ladder"); // 3 games > 2 games
+        assert_eq!(breakdown[0].wins, 2);
+        assert_eq!(breakdown[0].losses, 1);
+        assert_eq!(breakdown[1].name, "Draft");
+    }
+
+    #[test]
+    fn format_relative_recent() {
+        // ts is in the past relative to `now`.
+        let now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        assert_eq!(format_relative(now, now), "just now");
+        let five_min_ago = now - chrono::Duration::minutes(5);
+        assert_eq!(format_relative(five_min_ago, now), "5m ago");
+        let three_h_ago = now - chrono::Duration::hours(3);
+        assert_eq!(format_relative(three_h_ago, now), "3h ago");
+        let two_d_ago = now - chrono::Duration::days(2);
+        assert_eq!(format_relative(two_d_ago, now), "2d ago");
+    }
+
+    #[test]
+    fn categorize_event_groups_correctly() {
+        assert_eq!(categorize_event("Ladder"), "ranked");
+        assert_eq!(categorize_event("DirectGame"), "play");
+        assert_eq!(categorize_event("Draft_Standard_2024"), "draft");
+        assert_eq!(categorize_event("Jump_In_2024"), "event");
+        // QuickDraft is a draft format, so categorized as draft (contains "Draft").
+        assert_eq!(categorize_event("QuickDraft_2024"), "draft");
+        assert_eq!(categorize_event(""), "other");
+        assert_eq!(categorize_event("RandomThing"), "other");
+    }
+}
