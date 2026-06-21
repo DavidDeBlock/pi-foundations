@@ -66,6 +66,12 @@ h1 {
   border: 1px solid #e0e0e0;
   border-radius: 6px;
   padding: 0.5em 0.8em;
+  /* Skip layout/paint for off-screen decks. Without this, the browser does a
+     full-page reflow every time a <details> toggles, which can hang the UI on
+     long pages with many expanded decks. `auto` keeps it cheap to scroll
+     (uses last-known size if any, else the 200px fallback). */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
 }
 .deck > summary {
   cursor: pointer;
