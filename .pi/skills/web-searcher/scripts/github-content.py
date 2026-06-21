@@ -44,14 +44,9 @@ except ImportError:
     # Fallback if paths.py not available (for standalone usage)
     PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
-# Load .env using shared path constant
-try:
-    from dotenv import load_dotenv
-    env_path = PROJECT_ROOT / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-except ImportError:
-    pass
+# Load .env using stdlib-only helper (no python-dotenv dependency)
+from env_loader import load_env
+load_env()
 
 # GitHub API endpoints
 GITHUB_API = "https://api.github.com"

@@ -59,4 +59,14 @@ I want to think more about the perspective to build a complete program or app, o
 
 
 /skill:python-implementer Implement issue 39, and do not run the test flow script because it's        
-taking too long. Unless you create a new simple test issue that will run faster, it's okay, but otherwise skip that test.   
+taking too long. Unless you create a new simple test issue that will run faster, it's okay, but otherwise skip that test. 
+
+
+Create a new project for our MTG Arena thing In the following folder: /home/david/projects/pi-foundations/projects
+
+lets use manasight-parser as log parser 
+
+the logs can be found in /mnt/mtga-logs
+
+Create something simple that shows us the output of the logs. 
+

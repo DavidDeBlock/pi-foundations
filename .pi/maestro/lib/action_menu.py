@@ -749,6 +749,183 @@ def run_single(
     )[0]
 
 
+# ─── Monitor launch (synchronous subprocess.run) ────────────────────────
+#
+# Issue #42: from the action menu, the operator can choose
+# "Launch monitor". That spawns ``maestro monitor`` as a subprocess
+# in the SAME terminal — the menu pauses until the monitor exits,
+# then the menu reappears. The monitor is the operator's eyes-on
+# view of running flows; the action menu is the operator's hands-on
+# trigger. Keeping them as separate processes (and the menu as
+# the parent) means the menu can keep its state (selected issue,
+# etc.) across monitor invocations.
+#
+# Key design choice: the spawn is **synchronous** (subprocess.run,
+# not subprocess.Popen). The action menu is BLOCKED on the monitor
+# process for the duration of the operator's monitor session. The
+# monitor is designed to be a long-running foreground process that
+# owns the terminal until the operator quits with ``q`` or
+# ``ctrl-c``; using ``subprocess.run`` with inherited stdin/
+# stdout/stderr gives the monitor that ownership. The action menu
+# is hidden behind the alternate-screen buffer that the monitor's
+# ``rich.live.Live(screen=True)`` manages, and is restored on
+# monitor exit.
+
+
+def _default_monitor_command(monitor_args: Optional[list[str]] = None) -> list[str]:
+    """Build the default ``maestro monitor`` command list.
+
+    Returns the argv that the action menu uses to launch the
+    monitor. The default is ``[sys.executable, <maestro.py>, "monitor"]``
+    — the same pattern :func:`spawn_runner` uses to launch
+    ``orchestrate.py`` (a direct python invocation of the entry
+    point, no PATH dependence).
+
+    Tests pass ``monitor_args`` to override (e.g. ``["echo"]``)
+    so the test can drive a fake command without needing the
+    real monitor machinery on the test host.
+
+    Args:
+        monitor_args: Optional override list. If ``None``
+            (default), the real ``maestro monitor`` command is
+            returned. If provided, it is returned as-is (the
+            test's responsibility to be a valid argv).
+
+    Returns:
+        The command list ready for :func:`subprocess.run`.
+    """
+    if monitor_args is not None:
+        return list(monitor_args)
+    maestro_dir = Path(__file__).resolve().parent.parent
+    maestro_script = maestro_dir / "maestro.py"
+    return [sys.executable, str(maestro_script), "monitor"]
+
+
+def launch_monitor(
+    *,
+    launch_fn: Optional[Callable[[list[str]], int]] = None,
+    monitor_args: Optional[list[str]] = None,
+) -> LaunchResult:
+    """Launch ``maestro monitor`` as a subprocess and block until it exits.
+
+    The subprocess inherits the parent's stdin/stdout/stderr so
+    the monitor owns the terminal — the operator sees the
+    alternate-screen monitor view, not the menu's TUI. The
+    function blocks on :func:`subprocess.run` for the lifetime
+    of the monitor session; when the operator quits (``q`` or
+    ``ctrl-c``), the subprocess returns and the action menu
+    reappears.
+
+    The function is intentionally non-raising. Launch failures
+    (e.g. command not found) are returned as a
+    :class:`LaunchResult` with ``started=False`` and a
+    human-readable ``error``. The action menu surfaces this in
+    :meth:`MenuIO.notify` and returns to the menu — the menu's
+    state (top-level prompt, last selection) is preserved.
+
+    A :class:`KeyboardInterrupt` raised in the parent while the
+    subprocess is running is caught and treated as a clean exit
+    (the monitor is the foreground process; ctrl-c is naturally
+    delivered to the foreground process group by the terminal,
+    not to the action menu). The function returns a
+    :class:`LaunchResult` with the subprocess's actual exit
+    code.
+
+    Args:
+        launch_fn: Optional callable ``(argv) -> int`` for
+            tests. ``None`` uses :func:`subprocess.run`
+            (block on the subprocess). Tests pass a fake that
+            returns a predetermined exit code without forking
+            a real process.
+        monitor_args: Optional override for the argv. ``None``
+            (default) builds the canonical
+            ``[python, maestro.py, monitor]`` argv via
+            :func:`_default_monitor_command`. Tests pass a
+            custom argv (e.g. ``["true"]``).
+
+    Returns:
+        A :class:`LaunchResult`. ``started`` is ``True`` iff
+        the launch itself succeeded (the subprocess was
+        spawned). The ``returncode`` field carries the
+        subprocess's exit code (``0`` for a clean monitor
+        exit, non-zero for a monitor-side error). On a launch
+        failure (``FileNotFoundError`` etc.), ``started`` is
+        ``False`` and ``error`` carries the reason.
+    """
+    cmd = _default_monitor_command(monitor_args)
+
+    if launch_fn is not None:
+        # Test seam: a fake launcher returns a predetermined
+        # exit code without forking a real subprocess. We do
+        # not catch any exception here — the test's launcher
+        # is responsible for returning a value (and for
+        # raising, the state machine surfaces the error
+        # through MenuIO).
+        try:
+            returncode = launch_fn(cmd)
+        except FileNotFoundError as e:
+            return LaunchResult(
+                started=False,
+                returncode=None,
+                error=f"monitor command not found: {e}",
+            )
+        except OSError as e:
+            return LaunchResult(
+                started=False,
+                returncode=None,
+                error=f"failed to launch monitor: {e}",
+            )
+        return LaunchResult(
+            started=True,
+            returncode=int(returncode) if returncode is not None else 0,
+            error=None,
+        )
+
+    # Production path: real subprocess.run with inherited
+    # stdio so the monitor owns the terminal. The action menu
+    # blocks here for the lifetime of the monitor session.
+    try:
+        completed = subprocess.run(cmd)
+    except FileNotFoundError as e:
+        # The ``maestro`` interpreter or ``maestro.py`` could
+        # not be found on disk. The error message is
+        # operator-facing: "monitor command not found: ...".
+        return LaunchResult(
+            started=False,
+            returncode=None,
+            error=f"monitor command not found: {e}",
+        )
+    except KeyboardInterrupt:
+        # The parent (action menu) caught a ctrl-c. In
+        # practice this should not happen — the terminal
+        # delivers ctrl-c to the foreground process group,
+        # which is the monitor — but if it does (e.g. the
+        # monitor exited faster than the kernel could
+        # deliver the signal), we treat it as a clean exit
+        # and return so the menu reappears.
+        return LaunchResult(
+            started=True,
+            returncode=None,
+            error=None,
+        )
+    except OSError as e:
+        # Catch-all for any other OS-level failure (e.g.
+        # permission denied on the script, EACCES on the
+        # shebang). The action menu surfaces this in the
+        # error message.
+        return LaunchResult(
+            started=False,
+            returncode=None,
+            error=f"failed to launch monitor: {e}",
+        )
+
+    return LaunchResult(
+        started=True,
+        returncode=int(completed.returncode),
+        error=None,
+    )
+
+
 # ─── Top-level state machine ────────────────────────────────────────────
 
 
@@ -800,6 +977,8 @@ def run_action_menu(
     spawn_fn: Optional[Callable[[int, str], SpawnResult]] = None,
     console: Optional[Console] = None,
     config_path: Optional[Path] = None,
+    launch_fn: Optional[Callable[[list[str]], int]] = None,
+    monitor_args: Optional[list[str]] = None,
 ) -> int:
     """Run the top-level action menu loop.
 
@@ -807,8 +986,9 @@ def run_action_menu(
 
       1. Show the top-level menu.
       2. Dispatch to "Start single issue" / "Start batch" /
-         "Quit".
-      3. After a single or batch operation, return to step 1.
+         "Launch monitor" / "Quit".
+      3. After a single or batch operation (or after the
+         monitor exits), return to step 1.
       4. On ``Quit`` (or :class:`KeyboardInterrupt` /
          :class:`EOFError`), return ``0``.
 
@@ -832,6 +1012,16 @@ def run_action_menu(
         available_flows: The list of available flow names.
             ``None`` reads it from the ``flows/`` directory via
             :func:`load_available_flows`. Tests pass a literal.
+        launch_fn: Optional callable ``(argv) -> int`` that
+            replaces :func:`subprocess.run` for the monitor
+            launch. ``None`` uses the real subprocess. Tests
+            pass a fake that returns a predetermined exit code
+            without forking a real process.
+        monitor_args: Optional override for the monitor's argv.
+            ``None`` (default) builds the canonical
+            ``[python, maestro.py, monitor]`` argv via
+            :func:`_default_monitor_command`. Tests pass a
+            custom argv (e.g. ``["true"]``).
 
     Returns:
         ``0`` on a clean exit (operator chose Quit, or pressed
