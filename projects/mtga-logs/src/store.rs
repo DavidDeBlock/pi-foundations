@@ -163,6 +163,17 @@ pub struct IngestStats {
 pub fn maybe_ingest(log_path: &Path) -> Result<IngestStats, String> {
     let conn = open_db()?;
 
+    // If the log file doesn't exist (e.g. MTGA isn't running, or the user
+    // passed a bogus path), warn and return a zeroed result so the caller
+    // can still render from the DB.
+    if !log_path.exists() {
+        eprintln!(
+            "warning: log not found at {} — rendering from cache",
+            log_path.display()
+        );
+        return Ok(IngestStats::default());
+    }
+
     // Build candidate file list.
     let old_path = log_path.with_file_name("Player.log.old");
     let mut candidates: Vec<PathBuf> = vec![log_path.to_path_buf()];
