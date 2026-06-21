@@ -880,3 +880,188 @@ table.matches td.detail-link a:hover {
 table.matches tr:hover td.detail-link a {
   color: var(--accent);
 }
+table.matches td.opp {
+  color: var(--text-1);
+  font-weight: 500;
+}
+table.matches td.opp .muted {
+  color: var(--text-2);
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* =========================================================================
+   Opponent identity card (match detail page)
+   ========================================================================= */
+section.match-deck.opponent {
+  border-left: 3px solid var(--accent-warm);
+}
+table.player-info {
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+table.player-info th {
+  text-align: right;
+  padding: 0.2em 0.6em 0.2em 0;
+  color: var(--text-2);
+  font-weight: 500;
+  white-space: nowrap;
+  vertical-align: top;
+}
+table.player-info td {
+  padding: 0.2em 0 0.2em 0.6em;
+  color: var(--text-1);
+}
+table.player-info td.avatar {
+  color: var(--accent-warm);
+  font-weight: 500;
+}
+.muted.small {
+  font-size: 0.8em;
+  color: var(--text-2);
+  margin: 0.4em 0 0 0;
+}
+.muted.small code {
+  font-size: 0.95em;
+  color: var(--text-1);
+  word-break: break-all;
+}
+
+/* =========================================================================
+   Life totals chart (match detail page)
+   ========================================================================= */
+section.match-life {
+  margin-top: 1.4em;
+}
+.life-chart {
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.6em;
+  margin: 0.4em 0;
+}
+.life-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+}
+.life-chart .grid {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+.life-chart .y-label {
+  fill: var(--text-2);
+  text-anchor: end;
+  font-size: 0.85em;
+}
+.life-chart .end-label {
+  fill: var(--text-1);
+  font-size: 0.85em;
+  font-weight: 600;
+}
+.life-chart .life-line.you {
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 4px rgba(94, 167, 230, 0.3));
+}
+.life-chart .life-line.opp {
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+}
+.life-totals {
+  display: flex;
+  gap: 1.2em;
+  flex-wrap: wrap;
+  margin-top: 0.6em;
+  font-size: 0.9em;
+  color: var(--text-2);
+}
+.life-totals .life-row b {
+  color: var(--text-1);
+}
+.life-totals .life-row.died b {
+  color: #e06070;
+}
+
+/* =========================================================================
+   Plays log (match detail page)
+   ========================================================================= */
+section.match-plays {
+  margin-top: 1.4em;
+}
+.plays-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em;
+  margin: 0.4em 0 0.8em 0;
+}
+.chip {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.2em 0.7em;
+  font-size: 0.8em;
+  color: var(--text-2);
+}
+.chip b {
+  color: var(--text-1);
+  font-weight: 600;
+  margin-left: 0.3em;
+}
+.chip-land   { border-color: var(--accent-warm); color: var(--accent-warm); }
+.chip-spell  { border-color: var(--accent); color: var(--accent); }
+.chip-draw   { border-color: var(--text-2); }
+.chip-removal { border-color: #e06070; color: #e06070; }
+.chip-other  { border-color: var(--line); }
+
+table.plays {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88em;
+  background: var(--bg-1);
+  border-radius: 6px;
+  overflow: hidden;
+}
+table.plays thead th {
+  text-align: left;
+  padding: 0.5em 0.7em;
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--line);
+}
+table.plays tbody td {
+  padding: 0.35em 0.7em;
+  border-bottom: 1px solid var(--line);
+}
+table.plays tbody tr:last-child td {
+  border-bottom: none;
+}
+table.plays td.player {
+  font-weight: 600;
+  white-space: nowrap;
+  width: 4em;
+}
+table.plays td.player.you { color: var(--accent); }
+table.plays td.player.opp { color: var(--text-2); }
+table.plays td.player.?   { color: var(--text-2); opacity: 0.5; }
+table.plays .act {
+  display: inline-block;
+  padding: 0.1em 0.5em;
+  border-radius: 4px;
+  font-size: 0.85em;
+  font-weight: 500;
+}
+table.plays .act-land    { background: rgba(214, 165, 94, 0.18); color: var(--accent-warm); }
+table.plays .act-cast    { background: rgba(94, 167, 230, 0.18); color: var(--accent); }
+table.plays .act-resolve { background: rgba(94, 167, 230, 0.10); color: var(--accent); }
+table.plays .act-draw    { background: var(--bg-2); color: var(--text-2); }
+table.plays .act-discard { background: rgba(224, 96, 112, 0.15); color: #e06070; }
+table.plays .act-other   { background: var(--bg-2); color: var(--text-2); }
+table.plays td.card {
+  color: var(--text-1);
+}

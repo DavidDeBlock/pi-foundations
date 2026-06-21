@@ -20,6 +20,16 @@
 //!   match. Captured by bracketing GameState events to the surrounding
 //!   GameOver state (which has `game_info.matchID`). Used for per-match step
 //!   timelines.
+//! - `match_players` — both players (seat 1 = local, seat 2 = opponent) from
+//!   `matchGameRoomStateChangedEvent.reservedPlayers`. Includes opponent
+//!   `playerName`, avatar `courseId`, and `platformId` (when present in log).
+//! - `match_life_changes` — `AnnotationType_ModifiedLife` deltas per seat.
+//!   `affectedIds[0]` is the player seat (1 or 2); the `life` detail is the
+//!   delta vs previous life total.
+//! - `match_zone_transfers` — `AnnotationType_ZoneTransfer` events. The
+//!   `affectedIds[0]` game-object instance ID is resolved against the same
+//!   `GameStateMessage.gameObjects` array to attribute the move to a player
+//!   and look up the card's `grpId`.
 //!
 //! ## Conflict resolution
 //!
@@ -30,7 +40,7 @@
 //!   log, so first-write-wins is safe.
 //! - **Inventory**: pure append. Every snapshot is preserved.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -41,7 +51,7 @@ use serde_json::{json, Value};
 
 use crate::{DeckSummary, InventorySnapshot, MatchRecord};
 
-const SCHEMA_VERSION: &str = "2";
+const SCHEMA_VERSION: &str = "3";
 
 // ============================================================================
 // paths
@@ -151,6 +161,57 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
         );
         CREATE INDEX IF NOT EXISTS idx_match_states_ts
             ON match_states(match_id, ts);
+
+        -- match_players: one row per (match, seat) — both players recorded
+        -- from the matchGameRoomStateChangedEvent. `is_local` marks the
+        -- first player in the MatchState.players[] array (the local user
+        -- running the MTGA client).
+        CREATE TABLE IF NOT EXISTS match_players (
+            match_id    TEXT    NOT NULL,
+            seat_id     INTEGER NOT NULL,
+            team_id     INTEGER NOT NULL,
+            player_name TEXT    NOT NULL,
+            user_id     TEXT    NOT NULL,
+            course_id   TEXT,
+            platform_id TEXT,
+            is_local    INTEGER NOT NULL DEFAULT 0,
+            event_id    TEXT,
+            PRIMARY KEY (match_id, seat_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_match_players_user
+            ON match_players(user_id);
+
+        -- match_life_changes: AnnotationType_ModifiedLife deltas. `seat_id`
+        -- is 1 (us) or 2 (opponent). `delta` is the change vs the previous
+        -- life total (negative = damage, positive = lifegain).
+        CREATE TABLE IF NOT EXISTS match_life_changes (
+            match_id      TEXT    NOT NULL,
+            annotation_id INTEGER NOT NULL,
+            ts            INTEGER NOT NULL,
+            seat_id       INTEGER NOT NULL,
+            delta         INTEGER NOT NULL,
+            PRIMARY KEY (match_id, annotation_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_life_match
+            ON match_life_changes(match_id, annotation_id);
+
+        -- match_zone_transfers: AnnotationType_ZoneTransfer events. `seat_id`
+        -- is the owner_seat_id of the affected game object (NULL if the
+        -- object wasn't in the same GameStateMessage's gameObjects array).
+        -- `grp_id` is the card ID (NULL if unresolved).
+        CREATE TABLE IF NOT EXISTS match_zone_transfers (
+            match_id      TEXT    NOT NULL,
+            annotation_id INTEGER NOT NULL,
+            ts            INTEGER NOT NULL,
+            seat_id       INTEGER,
+            grp_id        INTEGER,
+            category      TEXT    NOT NULL,
+            zone_src      INTEGER,
+            zone_dest     INTEGER,
+            PRIMARY KEY (match_id, annotation_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_zone_match
+            ON match_zone_transfers(match_id, annotation_id);
         "#,
     )
     .map_err(|e| format!("init schema: {}", e))?;
@@ -303,6 +364,29 @@ fn ingest_one_file(conn: &Connection, path: &Path) -> Result<IngestStats, String
     }
 
     // 3. Matches — single pass to track deck_id/event_name/local_team context.
+    //    Local team is the team of the player whose userId appears in
+    //    `authenticateResponse` events (the user running the MTGA client).
+    //    Tracking by index in `players[0]` is wrong: the local user can
+    //    be in either position (we've seen both seat 1 and seat 2 in the
+    //    same log).
+    let local_user_ids: HashSet<String> = events
+        .iter()
+        .filter_map(|e| match e {
+            GameEvent::Session(s) => {
+                let p = s.payload();
+                if p.get("type").and_then(Value::as_str) == Some("session_authenticate") {
+                    p.get("raw_response")
+                        .and_then(|r| r.get("authenticateResponse"))
+                        .and_then(|r| r.get("clientId"))
+                        .and_then(Value::as_str)
+                        .map(String::from)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+        .collect();
     let mut last_deck_id: Option<String> = None;
     let mut last_event_name: Option<String> = None;
     let mut last_local_team: Option<i64> = None;
@@ -319,10 +403,19 @@ fn ingest_one_file(conn: &Connection, path: &Path) -> Result<IngestStats, String
             }
             GameEvent::MatchState(e) => {
                 let p = e.payload();
+                // Set last_local_team to the team of the player whose
+                // userId is one of our local user IDs. Fall back to the
+                // previous value if no match (shouldn't happen in a well-
+                // formed log).
                 if let Some(players) = p.get("players").and_then(Value::as_array) {
-                    if let Some(first) = players.first() {
-                        if let Some(team) = first.get("team_id").and_then(Value::as_i64) {
-                            last_local_team = Some(team);
+                    for player in players {
+                        if let Some(uid) = player.get("user_id").and_then(Value::as_str) {
+                            if local_user_ids.contains(uid) {
+                                if let Some(team) = player.get("team_id").and_then(Value::as_i64) {
+                                    last_local_team = Some(team);
+                                }
+                                break;
+                            }
                         }
                     }
                 }
@@ -397,6 +490,7 @@ fn ingest_one_file(conn: &Connection, path: &Path) -> Result<IngestStats, String
     //    picking up matchID from game_info and propagating it to subsequent
     //    events until the next game_info.matchID overwrites it.
     ingest_game_states(conn, &events)?;
+    ingest_match_context(conn, &events)?;
 
     stats.files_ingested = 1;
     Ok(stats)
@@ -500,6 +594,291 @@ fn ingest_game_states(conn: &Connection, events: &[GameEvent]) -> Result<(), Str
         .map_err(|e| format!("commit match_states: {}", e))?;
     if states_inserted > 0 {
         eprintln!("(inserted {} match_states)", states_inserted);
+    }
+    Ok(())
+}
+
+/// Ingest opponent-identity, life-delta, and zone-transfer events.
+///
+/// Walks every event once, branching on type:
+///
+/// - **`MatchState`** (from `matchGameRoomStateChangedEvent`): inserts
+///   `match_players` rows. The first player in `payload.players[]` is
+///   treated as the local user (`is_local=1`) — the manasight parser
+///   preserves source order from `reservedPlayers`, and MTGA emits the
+///   local player first. The richer fields (`courseId`, `platformId`,
+///   `sessionId`) live in `payload.raw_match_state.gameRoomInfo...`
+///   and are pulled from there.
+///
+/// - **`GameState`**: walks `payload.annotations` for
+///   `AnnotationType_ModifiedLife` (inserts `match_life_changes`) and
+///   `AnnotationType_ZoneTransfer` (inserts `match_zone_transfers`).
+///   For zone transfers, the affected game-object instance ID is
+///   resolved against the same message's `payload.game_objects` array
+///   to attribute the move to a player and read the card's `grpId`.
+///
+/// `current_match` is carried forward from any source that yields one
+/// (MatchState.Playing and `game_info.matchID`) so events between match
+/// boundaries are still tagged.
+fn ingest_match_context(conn: &Connection, events: &[GameEvent]) -> Result<(), String> {
+    let mut current_match: Option<String> = None;
+    let mut players_inserted = 0usize;
+    let mut life_inserted = 0usize;
+    let mut zone_inserted = 0usize;
+
+    // Track local userIds collected from `authenticateResponse` Session
+    // events. The user running the MTGA client can be in any position
+    // inside `reservedPlayers[]` (we've seen seat 1 AND seat 2 in the same
+    // log), so the correct way to identify the local user is by their
+    // `clientId`, not by index. The parser exposes the screen name as
+    // `payload.screen_name` and the full response (with `clientId`) as
+    // `payload.raw_response.authenticateResponse.clientId`.
+    let mut local_user_ids: HashSet<String> = HashSet::new();
+    for event in events {
+        if let GameEvent::Session(s) = event {
+            let p = s.payload();
+            if p.get("type").and_then(Value::as_str) == Some("session_authenticate") {
+                if let Some(uid) = p
+                    .get("raw_response")
+                    .and_then(|r| r.get("authenticateResponse"))
+                    .and_then(|r| r.get("clientId"))
+                    .and_then(Value::as_str)
+                {
+                    local_user_ids.insert(uid.to_string());
+                }
+            }
+        }
+    }
+
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("begin match_context tx: {}", e))?;
+
+    for event in events {
+        // 1. MatchState — player identity + final results.
+        if let GameEvent::MatchState(ms) = event {
+            let p = ms.payload();
+            let match_id = p
+                .get("match_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            if match_id.is_empty() {
+                continue;
+            }
+            current_match = Some(match_id.clone());
+
+            // Map user_id -> (courseId, platformId, sessionId) from
+            // the rich reservedPlayers array. The parser exposes
+            // user_id/player_name/system_seat_id/team_id in the
+            // `players` field, but the extras (courseId, platformId)
+            // are only in raw_match_state.
+            let mut rich: HashMap<String, (Option<String>, Option<String>, Option<String>)> =
+                HashMap::new();
+            if let Some(rs) = p
+                .get("raw_match_state")
+                .and_then(|r| r.get("gameRoomInfo"))
+                .and_then(|g| g.get("gameRoomConfig"))
+                .and_then(|c| c.get("reservedPlayers"))
+                .and_then(Value::as_array)
+            {
+                for player in rs {
+                    if let Some(uid) = player.get("userId").and_then(Value::as_str) {
+                        let course = player
+                            .get("courseId")
+                            .and_then(Value::as_str)
+                            .map(String::from);
+                        let platform = player
+                            .get("platformId")
+                            .and_then(Value::as_str)
+                            .map(String::from);
+                        let session = player
+                            .get("sessionId")
+                            .and_then(Value::as_str)
+                            .map(String::from);
+                        rich.insert(uid.to_string(), (course, platform, session));
+                    }
+                }
+            }
+
+            // Pull the event_id from the MatchState payload (e.g.
+            // "Jump_In_2024", "Ladder"). We attach it to every player row
+            // — the value is per-match, not per-player, but storing it
+            // here avoids a separate table just for one column.
+            let match_event_id = p
+                .get("event_id")
+                .and_then(Value::as_str)
+                .map(String::from);
+
+            // Insert both players. `is_local` is set by matching user_id
+            // against local userIds collected from authenticateResponse
+            // events. (Index-based assignment is wrong: the local user
+            // can appear in any position in reservedPlayers[].)
+            if let Some(players) = p.get("players").and_then(Value::as_array) {
+                for player in players {
+                    let seat = player
+                        .get("system_seat_id")
+                        .and_then(Value::as_i64)
+                        .unwrap_or(0);
+                    let team = player
+                        .get("team_id")
+                        .and_then(Value::as_i64)
+                        .unwrap_or(0);
+                    let name = player
+                        .get("player_name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string();
+                    let uid = player
+                        .get("user_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string();
+                    let (course, platform, _session) = rich
+                        .get(&uid)
+                        .cloned()
+                        .unwrap_or((None, None, None));
+                    let is_local = if local_user_ids.contains(&uid) {
+                        1
+                    } else {
+                        0
+                    };
+
+                    let n = tx
+                        .execute(
+                            "INSERT OR REPLACE INTO match_players
+                                (match_id, seat_id, team_id, player_name, user_id,
+                                 course_id, platform_id, is_local, event_id)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                            params![
+                                match_id,
+                                seat,
+                                team,
+                                name,
+                                uid,
+                                course,
+                                platform,
+                                is_local,
+                                match_event_id,
+                            ],
+                        )
+                        .map_err(|e| format!("insert match_player: {}", e))?;
+                    players_inserted += n;
+                }
+            }
+
+            // Insert per-game results from finalMatchResult, if present.
+            if let Some(results) = p.get("game_results").and_then(Value::as_array) {
+                for _r in results {
+                    // (game_results is structured for Bo3 breakdown in
+                    // future work; for now the per-game winningTeamId
+                    // surfaces via matches.result from ConnectResp.)
+                }
+            }
+            continue;
+        }
+
+        // 2. GameState — annotations (life deltas + zone transfers).
+        if let GameEvent::GameState(gs) = event {
+            let p = gs.payload();
+
+            // Update current_match from game_info if present.
+            if let Some(gi) = p.get("game_info") {
+                if let Some(mid) = gi.get("matchID").and_then(Value::as_str) {
+                    current_match = Some(mid.to_string());
+                }
+            }
+            let Some(match_id) = current_match.as_deref() else {
+                continue;
+            };
+
+            let ts = gs
+                .metadata()
+                .timestamp()
+                .map(|t| t.timestamp())
+                .unwrap_or(0);
+
+            // Build a map of game-object instance_id -> (owner_seat_id, grp_id)
+            // for resolving zone transfers within this same message.
+            let mut obj_map: HashMap<i64, (Option<i64>, Option<i64>)> = HashMap::new();
+            if let Some(objects) = p.get("game_objects").and_then(Value::as_array) {
+                for o in objects {
+                    if let Some(iid) = o.get("instance_id").and_then(Value::as_i64) {
+                        let seat = o.get("owner_seat_id").and_then(Value::as_i64);
+                        let grp = o.get("grp_id").and_then(Value::as_i64);
+                        obj_map.insert(iid, (seat, grp));
+                    }
+                }
+            }
+
+            if let Some(anns) = p.get("annotations").and_then(Value::as_array) {
+                for ann in anns {
+                    let ann_id = ann.get("id").and_then(Value::as_i64).unwrap_or(0);
+                    let ann_type = ann.get("type").and_then(Value::as_str).unwrap_or("");
+
+                    match ann_type {
+                        "AnnotationType_ModifiedLife" => {
+                            let seat = ann
+                                .get("affected_ids")
+                                .and_then(|a| a.as_array())
+                                .and_then(|a| a.first())
+                                .and_then(Value::as_i64)
+                                .unwrap_or(0);
+                            let delta = ann.get("life").and_then(Value::as_i64).unwrap_or(0);
+                            let n = tx
+                                .execute(
+                                    "INSERT OR IGNORE INTO match_life_changes
+                                        (match_id, annotation_id, ts, seat_id, delta)
+                                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                                    params![match_id, ann_id, ts, seat, delta],
+                                )
+                                .map_err(|e| format!("insert life_change: {}", e))?;
+                            life_inserted += n;
+                        }
+                        "AnnotationType_ZoneTransfer" => {
+                            let inst_id = ann
+                                .get("affected_ids")
+                                .and_then(|a| a.as_array())
+                                .and_then(|a| a.first())
+                                .and_then(Value::as_i64);
+                            let (seat, grp) = match inst_id {
+                                Some(iid) => obj_map.get(&iid).cloned().unwrap_or((None, None)),
+                                None => (None, None),
+                            };
+                            let category = ann
+                                .get("category")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_string();
+                            let zone_src = ann.get("zone_src").and_then(Value::as_i64);
+                            let zone_dest = ann.get("zone_dest").and_then(Value::as_i64);
+                            let n = tx
+                                .execute(
+                                    "INSERT OR IGNORE INTO match_zone_transfers
+                                        (match_id, annotation_id, ts, seat_id, grp_id,
+                                         category, zone_src, zone_dest)
+                                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                                    params![
+                                        match_id, ann_id, ts, seat, grp, category, zone_src, zone_dest
+                                    ],
+                                )
+                                .map_err(|e| format!("insert zone_transfer: {}", e))?;
+                            zone_inserted += n;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    tx.commit()
+        .map_err(|e| format!("commit match_context: {}", e))?;
+    if players_inserted > 0 || life_inserted > 0 || zone_inserted > 0 {
+        eprintln!(
+            "(match_context: {} players, {} life changes, {} zone transfers)",
+            players_inserted, life_inserted, zone_inserted
+        );
     }
     Ok(())
 }
@@ -937,6 +1316,213 @@ pub fn load_match_payload(conn: &Connection, match_id: &str) -> Result<Option<Va
             .map(Some)
             .map_err(|e| format!("parse match payload: {}", e)),
     }
+}
+
+// ============================================================================
+// match_players — opponent identity
+// ============================================================================
+
+#[derive(Debug, Clone)]
+pub struct MatchPlayer {
+    pub seat_id: i64,
+    pub team_id: i64,
+    pub player_name: String,
+    pub user_id: String,
+    pub course_id: Option<String>,
+    pub platform_id: Option<String>,
+    pub is_local: bool,
+    pub event_id: Option<String>,
+}
+
+/// Load both players (local + opponent) for a match, sorted by seat_id.
+pub fn load_match_players(conn: &Connection, match_id: &str) -> Result<Vec<MatchPlayer>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT seat_id, team_id, player_name, user_id, course_id,
+                    platform_id, is_local, event_id
+             FROM match_players
+             WHERE match_id = ?1
+             ORDER BY seat_id ASC",
+        )
+        .map_err(|e| format!("prepare load_match_players: {}", e))?;
+    let rows = stmt
+        .query_map(params![match_id], |row| {
+            Ok(MatchPlayer {
+                seat_id: row.get(0)?,
+                team_id: row.get(1)?,
+                player_name: row.get(2)?,
+                user_id: row.get(3)?,
+                course_id: row.get(4)?,
+                platform_id: row.get(5)?,
+                is_local: row.get::<_, i64>(6)? != 0,
+                event_id: row.get(7)?,
+            })
+        })
+        .map_err(|e| format!("query load_match_players: {}", e))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| format!("read match_player row: {}", e))?);
+    }
+    Ok(out)
+}
+
+/// Load the opponent name (player where is_local = 0) for many matches at
+/// once. Returns a HashMap keyed by match_id. Used by the matches index
+/// page to show an Opponent column without a per-row N+1 query.
+pub fn load_opponent_names(
+    conn: &Connection,
+    match_ids: &[String],
+) -> Result<HashMap<String, String>, String> {
+    let mut out = HashMap::new();
+    if match_ids.is_empty() {
+        return Ok(out);
+    }
+    // Build the IN clause placeholders.
+    let placeholders: Vec<String> = (0..match_ids.len()).map(|_| "?".to_string()).collect();
+    let sql = format!(
+        "SELECT match_id, player_name FROM match_players
+         WHERE is_local = 0 AND match_id IN ({})",
+        placeholders.join(",")
+    );
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("prepare load_opponent_names: {}", e))?;
+    let params: Vec<&dyn rusqlite::ToSql> =
+        match_ids.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+    let rows = stmt
+        .query_map(&*params, |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| format!("query load_opponent_names: {}", e))?;
+    for r in rows {
+        let (mid, name) = r.map_err(|e| format!("read opponent row: {}", e))?;
+        out.insert(mid, name);
+    }
+    Ok(out)
+}
+
+/// Load the event_id for many matches at once. event_id is the same for
+/// both player rows of a match, so we just take any row's value.
+pub fn load_match_event_ids(
+    conn: &Connection,
+    match_ids: &[String],
+) -> Result<HashMap<String, String>, String> {
+    let mut out = HashMap::new();
+    if match_ids.is_empty() {
+        return Ok(out);
+    }
+    let placeholders: Vec<String> = (0..match_ids.len()).map(|_| "?".to_string()).collect();
+    let sql = format!(
+        "SELECT DISTINCT match_id, event_id FROM match_players
+         WHERE event_id IS NOT NULL AND event_id != '' AND match_id IN ({})",
+        placeholders.join(",")
+    );
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("prepare load_match_event_ids: {}", e))?;
+    let params: Vec<&dyn rusqlite::ToSql> =
+        match_ids.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+    let rows = stmt
+        .query_map(&*params, |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| format!("query load_match_event_ids: {}", e))?;
+    for r in rows {
+        let (mid, eid) = r.map_err(|e| format!("read event_id row: {}", e))?;
+        out.insert(mid, eid);
+    }
+    Ok(out)
+}
+
+// ============================================================================
+// match_life_changes — life total deltas
+// ============================================================================
+
+#[derive(Debug, Clone)]
+pub struct LifeChange {
+    pub annotation_id: i64,
+    pub ts: i64,
+    pub seat_id: i64,
+    pub delta: i64,
+}
+
+/// Load life-total deltas for a match, ordered by annotation_id (event order).
+pub fn load_match_life_changes(
+    conn: &Connection,
+    match_id: &str,
+) -> Result<Vec<LifeChange>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT annotation_id, ts, seat_id, delta
+             FROM match_life_changes
+             WHERE match_id = ?1
+             ORDER BY annotation_id ASC",
+        )
+        .map_err(|e| format!("prepare load_match_life_changes: {}", e))?;
+    let rows = stmt
+        .query_map(params![match_id], |row| {
+            Ok(LifeChange {
+                annotation_id: row.get(0)?,
+                ts: row.get(1)?,
+                seat_id: row.get(2)?,
+                delta: row.get(3)?,
+            })
+        })
+        .map_err(|e| format!("query load_match_life_changes: {}", e))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| format!("read life_change row: {}", e))?);
+    }
+    Ok(out)
+}
+
+// ============================================================================
+// match_zone_transfers — card movement
+// ============================================================================
+
+#[derive(Debug, Clone)]
+pub struct ZoneTransfer {
+    pub annotation_id: i64,
+    pub ts: i64,
+    pub seat_id: Option<i64>,
+    pub grp_id: Option<i64>,
+    pub category: String,
+    pub zone_src: Option<i64>,
+    pub zone_dest: Option<i64>,
+}
+
+/// Load zone-transfer events for a match, ordered by annotation_id.
+pub fn load_match_zone_transfers(
+    conn: &Connection,
+    match_id: &str,
+) -> Result<Vec<ZoneTransfer>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT annotation_id, ts, seat_id, grp_id, category,
+                    zone_src, zone_dest
+             FROM match_zone_transfers
+             WHERE match_id = ?1
+             ORDER BY annotation_id ASC",
+        )
+        .map_err(|e| format!("prepare load_match_zone_transfers: {}", e))?;
+    let rows = stmt
+        .query_map(params![match_id], |row| {
+            Ok(ZoneTransfer {
+                annotation_id: row.get(0)?,
+                ts: row.get(1)?,
+                seat_id: row.get(2)?,
+                grp_id: row.get(3)?,
+                category: row.get(4)?,
+                zone_src: row.get(5)?,
+                zone_dest: row.get(6)?,
+            })
+        })
+        .map_err(|e| format!("query load_match_zone_transfers: {}", e))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| format!("read zone_transfer row: {}", e))?);
+    }
+    Ok(out)
 }
 
 // ============================================================================

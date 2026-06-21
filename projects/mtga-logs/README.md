@@ -117,9 +117,11 @@ Every match row has a **`↗`** link in the rightmost column that opens a per-ma
 
 Clicking the `↗` on any match row opens a dedicated page at `decks-matches/<match_id>.html`:
 
-- **Header** — `Win`/`Loss` badge + deck name, event name, timestamp, and the match UUID
+- **Header** — `Win`/`Loss` badge + opponent name (when known), event name (`Jump_In_2024`, `Ladder`, etc.), timestamp, and the match UUID. If the deck is unknown but the opponent is, the header reads e.g. `Loss · vs KEV3K`.
 - **Your deck** — the deck you played, with full card list (qty, name, mana, type, rarity). Cards resolve from the Scryfall DB; missing ones show as `#<grpId>`. If no deck was submitted before this match, the section is honestly empty.
-- **Opponent** — MTGA does **not** log the opponent's deck contents. The page shows a note explaining this and the opponent's team id (inferred from the GameResult).
+- **Opponent** — name, avatar (e.g. `JaceBeleren` from `Avatar_Basic_JaceBeleren`), platform (`Windows`, `AndroidPhone`, `iPhone`, `SteamWindows`), team id, and a truncated `userId` (full one shown below). Pulled from `matchGameRoomStateChangedEvent.reservedPlayers` in the log.
+- **Life totals** — a 2-line SVG chart of both players' life over time, reconstructed from `AnnotationType_ModifiedLife` deltas (accumulated from the 20-life starting total). `You` is a solid blue line; `Opp` is a dashed grey line. End-of-life labels show each player's final life. A summary line below the chart shows total changes and end life per player.
+- **Plays** — a chronological log of every card movement recorded in the match: `PlayLand`, `CastSpell`, `Resolve`, `Draw`, `Discard`, `Sacrifice`, etc. Card names resolve from the Scryfall DB via `grp_id`. The "Draw" chip shows resolved count vs total, with the unresolved count in parentheses (unresolved = opponent's library cards, which are face-down in the log).
 - **Game steps** — a deduplicated timeline of `(game_number, turn_number, phase, step, active_player)` transitions derived from the 1300+ `GameStateMessage` events per match. `You` rows are blue, `Opp` rows are grey.
 
 All match pages are static HTML files written to `decks-matches/` alongside the index. They work with any static file server (no routing needed).
@@ -133,13 +135,24 @@ All match pages are static HTML files written to `decks-matches/` alongside the 
 # → ...
 ```
 
-#### What we don't know
+#### Opponent info source
 
-- **Opponent deck cards** — MTGA's `ConnectResp.deckMessage` only carries the local player's deck. The opponent's deck contents are private to their client.
+The opponent panel, life chart, and plays log all come from the [manasight arena log format](https://blog.manasight.gg/arena-log-format-guide/):
+
+| Field | Source | Notes |
+|---|---|---|
+| Opponent name / avatar / platform | `matchGameRoomStateChangedEvent.gameRoomInfo.gameRoomConfig.reservedPlayers[]` | Emitted at match start (and at match end) |
+| Life totals | `GameStateMessage.annotations[AnnotationType_ModifiedLife]` | `affectedIds[0]` is the player seat (1=local, 2=opponent); `details[].life` is the **delta** vs the previous life total |
+| Cards played | `GameStateMessage.annotations[AnnotationType_ZoneTransfer]` + `gameObjects[].grpId` | `affectedIds[0]` is the game object instance; resolved against the same message's `gameObjects[]` for the card's `grpId` and `ownerSeatId` |
+| Cards in opponent's hand | `gameObjects[].visibility == "Visibility_Private"` with `ownerSeatId == 2` | Library cards are face-down; we see them when they enter hand |
+
+#### What we still don't know
+
+- **Opponent library contents** — face-down cards are not in `gameObjects[]` (only their instance IDs are listed in the Library zone).
 - **Per-step action log** — `GameStateMessage` carries turn/phase/step but not a separate "actions" feed (the actions are interleaved with state diffs).
-- **Life totals across turns** — `gameStateMessage.players` is only populated on the 8 Full-state events per match, not on the ~1344 Diff events that carry the actual gameplay.
+- **Affecter attribution for life events** — we know *that* the life changed, not always *which card* caused it. The annotation's `affectorId` is the game-object instance of the source, but resolving it to a card name requires more game-state walking.
 
-The data is in `~/.local/share/mtga-logs/events.db` (see [Schema](#schema) below); the `match_states` table holds all captured game state transitions.
+The data is in `~/.local/share/mtga-logs/events.db` (see [Schema](#schema) below); the `match_states`, `match_players`, `match_life_changes`, and `match_zone_transfers` tables hold the captured per-match data.
 
 ### Serving on the network
 
@@ -183,6 +196,9 @@ Result: `web` runs are ~30ms when the log hasn't changed, ~2 seconds on first ru
 | `decks` | One row per `deck_id`; latest `DeckCollection` wins for contents | all decks ever seen |
 | `matches` | One row per `matchID` (from `GameResult.game_info.matchID`) | one per game |
 | `match_states` | One row per `GameStateMessage`; tagged with matchID by bracketing | ~1300 per match |
+| `match_players` | Both players (local + opponent) per match from `matchGameRoomStateChangedEvent` | 2 per match |
+| `match_life_changes` | `AnnotationType_ModifiedLife` deltas (life changes per player) | ~10-50 per match |
+| `match_zone_transfers` | `AnnotationType_ZoneTransfer` events (cards drawn / played / cast / resolved / discarded) | ~50-200 per match |
 | `inventory_snapshots` | Append-only time series of `InventoryInfo` | one per Arena session |
 | `meta` | Schema version | 1 row |
 

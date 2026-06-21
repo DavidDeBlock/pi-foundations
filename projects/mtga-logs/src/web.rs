@@ -99,6 +99,11 @@ pub fn render(store_db: &Connection, card_db: Option<&Connection>, opts: &Render
 
     // Pre-count matches for the summary line.
     let matches = store::load_matches(store_db).expect("load matches from store");
+    let match_ids: Vec<String> = matches.iter().map(|m| m.match_id.clone()).collect();
+    let opponent_names: HashMap<String, String> =
+        store::load_opponent_names(store_db, &match_ids).unwrap_or_default();
+    let event_ids: HashMap<String, String> =
+        store::load_match_event_ids(store_db, &match_ids).unwrap_or_default();
     let match_count = matches.len();
 
     // Count hidden "system" decks (for the toggle label). Only relevant when
@@ -230,7 +235,7 @@ pub fn render(store_db: &Connection, card_db: Option<&Connection>, opts: &Render
     if !matches.is_empty()
         && matches!(opts.sections, Sections::Matches | Sections::Both)
     {
-        write_matches(&mut out, &matches, &opts.match_pages_dir);
+        write_matches(&mut out, &matches, &opponent_names, &event_ids, &opts.match_pages_dir);
     }
 
     // Floating card preview (hidden until JS hovers a card with data-image).
@@ -565,7 +570,13 @@ fn write_deck_stats(out: &mut String, matches: &[MatchRecord]) {
     out.push_str("</tbody>\n</table>\n");
 }
 
-fn write_matches(out: &mut String, matches: &[MatchRecord], match_pages_dir: &str) {
+fn write_matches(
+    out: &mut String,
+    matches: &[MatchRecord],
+    opponent_names: &HashMap<String, String>,
+    event_ids: &HashMap<String, String>,
+    match_pages_dir: &str,
+) {
     // Sort most-recent first.
     let mut sorted: Vec<&MatchRecord> = matches.iter().collect();
     sorted.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
@@ -592,7 +603,7 @@ fn write_matches(out: &mut String, matches: &[MatchRecord], match_pages_dir: &st
     // Original full match log.
     out.push_str("<h3>All matches</h3>\n");
     out.push_str("<table class=\"matches\">\n<thead><tr>");
-    out.push_str("<th>Date</th><th>Result</th><th>Deck</th><th>Event</th><th>Reason</th>");
+    out.push_str("<th>Date</th><th>Result</th><th>Deck</th><th>Opponent</th><th>Event</th><th>Reason</th>");
     out.push_str("</tr></thead>\n<tbody>\n");
 
     for m in &sorted {
@@ -605,12 +616,32 @@ fn write_matches(out: &mut String, matches: &[MatchRecord], match_pages_dir: &st
         let row_id = format!("match-{}", m.match_id);
         // match_pages_dir lives as a sibling to the matches file itself, so
         // the href from here is just `<dir-name>/<match_id>.html`.
+        let opp = opponent_names
+            .get(&m.match_id)
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        // event_name fallback: use event_id from match_players if no
+        // DeckSubmission preceded the GameResult.
+        let event_name_eff = if m.event_name == "?" || m.event_name.is_empty() {
+            event_ids
+                .get(&m.match_id)
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            m.event_name.clone()
+        };
+        let event_html = if event_name_eff.is_empty() {
+            String::from("<span class=\"muted\">?</span>")
+        } else {
+            esc(&event_name_eff)
+        };
         write!(
             out,
             "<tr id=\"{}\">\
              <td class=\"date\">{}</td>\
              <td><span class=\"result {}\">{}</span></td>\
              <td class=\"deck-name\">{}</td>\
+             <td class=\"opp\">{}</td>\
              <td class=\"event\">{}</td>\
              <td class=\"reason\">{}</td>\
              <td class=\"detail-link\"><a href=\"{}/{}.html\" \
@@ -621,7 +652,12 @@ fn write_matches(out: &mut String, matches: &[MatchRecord], match_pages_dir: &st
             result_class,
             esc(&m.result),
             esc(&m.deck_name),
-            esc(&m.event_name),
+            if opp.is_empty() {
+                String::from("<span class=\"muted\">(unknown)</span>")
+            } else {
+                esc(opp)
+            },
+            event_html,
             esc(&m.reason),
             esc(match_pages_dir),
             esc(&m.match_id),
@@ -1010,18 +1046,50 @@ pub fn render_match_detail(
         esc("←"),
     )
     .unwrap();
+    let opp_name = opts
+        .players
+        .iter()
+        .find(|p| !p.is_local)
+        .map(|p| p.player_name.clone());
+    // event_name fallback: if no DeckSubmission preceded the GameResult,
+    // pull the event_id from any match_players row (it's the same per match).
+    let event_name_effective = if opts.event_name == "?" || opts.event_name.is_empty() {
+        opts.players
+            .first()
+            .and_then(|p| p.event_id.clone())
+            .unwrap_or_default()
+    } else {
+        opts.event_name.clone()
+    };
+    // When the deck is unknown, surface the opponent in the header so the
+    // page still says something useful (e.g. "Loss · vs KEV3K" instead of
+    // "Loss · (no deck)"). When the deck is known, the deck name is more
+    // informative; the opponent card below shows their full identity.
+    let deck_part = if opts.deck_name == "(no deck)" || opts.deck_name == "(unknown)" {
+        match &opp_name {
+            Some(name) => format!("vs <b>{}</b>", esc(name)),
+            None => esc(&opts.deck_name),
+        }
+    } else {
+        esc(&opts.deck_name)
+    };
+    // Skip the event pill when the event_name is unknown.
+    let event_pill = if event_name_effective.is_empty() {
+        String::new()
+    } else {
+        format!("<span class=\"event\">{}</span> &middot; ", esc(&event_name_effective))
+    };
     write!(
         &mut out,
         "<h1><span class=\"result {0}\">{1}</span> &middot; {2}</h1>\n\
          <div class=\"meta\">\
-         <span class=\"event\">{3}</span> &middot; \
-         {4} &middot; \
+         {3}{4} &middot; \
          match <code>{5}</code>\
          </div>\n",
         result_class,
         esc(&opts.result),
-        esc(&opts.deck_name),
-        esc(&opts.event_name),
+        deck_part,
+        event_pill,
         esc(&opts.timestamp.format("%Y-%m-%d %H:%M UTC").to_string()),
         esc(&opts.match_id),
     )
@@ -1057,20 +1125,27 @@ pub fn render_match_detail(
     }
     out.push_str("</section>\n");
 
-    // === Opponent deck ===
+    // === Opponent identity (from matchGameRoomStateChangedEvent) ===
     out.push_str("<section class=\"match-deck opponent\">\n");
     out.push_str("<h2>Opponent</h2>\n");
-    write!(
-        &mut out,
-        "<p class=\"muted\">MTGA does not log the opponent's deck contents. \
-         All we know is the event (<code>{}</code>) and the opponent team id ({}).</p>\n",
-        esc(&opts.event_name),
-        opts.opponent_team_id
-            .map(|t| t.to_string())
-            .unwrap_or_else(|| "?".into()),
-    )
-    .unwrap();
+    write_opponent_panel(&mut out, &opts.players);
     out.push_str("</section>\n");
+
+    // === Life totals (both players) ===
+    if !opts.life_changes.is_empty() {
+        out.push_str("<section class=\"match-life\">\n");
+        out.push_str("<h2>Life totals</h2>\n");
+        write_life_chart(&mut out, &opts.life_changes);
+        out.push_str("</section>\n");
+    }
+
+    // === Plays log (cards drawn / played / cast) ===
+    if !opts.zone_transfers.is_empty() {
+        out.push_str("<section class=\"match-plays\">\n");
+        out.push_str("<h2>Plays</h2>\n");
+        write_plays_log(&mut out, &opts.zone_transfers, card_db);
+        out.push_str("</section>\n");
+    }
 
     // === Game steps timeline ===
     out.push_str("<section class=\"match-steps\">\n");
@@ -1277,6 +1352,356 @@ fn write_raw_payload(out: &mut String, payload: &Value) {
     out.push_str("</section>\n");
 }
 
+/// Render the opponent identity card.
+///
+/// The `players` list comes from `matchGameRoomStateChangedEvent`.
+/// We pick the entry with `is_local == false` and show:
+///   - `playerName` (the display name as it appeared in the log)
+///   - `courseId` (avatar — e.g. `Avatar_Basic_Ziatora_SNC`)
+///   - `platformId` (e.g. `Windows`, `AndroidPhone`, `iPhone`, `SteamWindows`)
+///   - `userId` (Arena account hash)
+///   - `teamId` (the team number)
+///
+/// Falls back to a clear "no opponent info" message if the table is empty
+/// (the log was incomplete / truncated before the match-start event).
+fn write_opponent_panel(
+    out: &mut String,
+    players: &[store::MatchPlayer],
+) {
+    let opp = players.iter().find(|p| !p.is_local);
+    match opp {
+        None => {
+            out.push_str(
+                "<p class=\"muted\">No opponent info available. \
+                 (The matchGameRoomStateChangedEvent with reservedPlayers \
+                 was not captured for this match.)</p>\n",
+            );
+        }
+        Some(p) => {
+            out.push_str("<table class=\"player-info\"><tbody>\n");
+            write_player_row(out, "Name", &esc(&p.player_name), None);
+            if let Some(course) = &p.course_id {
+                // Strip the "Avatar_Basic_" prefix for readability.
+                let display = course
+                    .strip_prefix("Avatar_Basic_")
+                    .unwrap_or(course);
+                write_player_row(out, "Avatar", &esc(display), Some("avatar"));
+            }
+            if let Some(platform) = &p.platform_id {
+                let display = match platform.as_str() {
+                    "Windows" => "🖥 Windows",
+                    "SteamWindows" => "🖥 Steam (Windows)",
+                    "AndroidPhone" => "📱 Android",
+                    "iPhone" => "📱 iPhone",
+                    "iPad" => "📱 iPad",
+                    "Mac" => "🖥 Mac",
+                    other => other,
+                };
+                write_player_row(out, "Platform", &esc(display), None);
+            }
+            write_player_row(
+                out,
+                "Team",
+                &format!("{}", p.team_id),
+                None,
+            );
+            // Truncate userId for display; full id in title.
+            let short = if p.user_id.len() > 16 {
+                format!("{}…", &p.user_id[..16])
+            } else {
+                p.user_id.clone()
+            };
+            write_player_row(
+                out,
+                "userId",
+                &esc(&short),
+                None,
+            );
+            out.push_str("</tbody></table>\n");
+            // Show full userId under the table for transparency.
+            if p.user_id.len() > 16 {
+                write!(
+                    out,
+                    "<p class=\"muted small\">Full userId: <code>{}</code></p>\n",
+                    esc(&p.user_id),
+                )
+                .unwrap();
+            }
+        }
+    }
+}
+
+
+fn write_player_row(out: &mut String, label: &str, value: &str, extra_class: Option<&str>) {
+    let cls = extra_class
+        .map(|c| format!(" class=\"{}\"", c))
+        .unwrap_or_default();
+    write!(
+        out,
+        "<tr><th>{}</th><td{}>{}</td></tr>\n",
+        esc(label),
+        cls,
+        value,
+    )
+    .unwrap();
+}
+
+/// Render a small SVG line chart of both players' life totals over time.
+///
+/// Each line starts at 20 (standard starting life) and accumulates deltas
+/// from `life_changes`. The x-axis is annotation order (event order); the
+/// y-axis is life total (0-25). Both lines share the same scale so they're
+/// directly comparable.
+fn write_life_chart(out: &mut String, changes: &[store::LifeChange]) {
+    // Reconstruct the life total over time per seat.
+    // We always know there are 2 seats (1=local, 2=opponent); if the log
+    // is from the local perspective, that's how MTGA emits them.
+    let mut series: [Vec<(usize, i64)>; 2] = [Vec::new(), Vec::new()];
+    let mut totals: [i64; 2] = [20, 20];
+    for (i, c) in changes.iter().enumerate() {
+        if c.seat_id == 1 || c.seat_id == 2 {
+            let idx = (c.seat_id - 1) as usize;
+            totals[idx] += c.delta;
+            series[idx].push((i, totals[idx]));
+        }
+    }
+
+    let w: i64 = 600;
+    let h: i64 = 180;
+    let pad_l: i64 = 36;
+    let pad_r: i64 = 12;
+    let pad_t: i64 = 14;
+    let pad_b: i64 = 24;
+    let plot_w = w - pad_l - pad_r;
+    let plot_h = h - pad_t - pad_b;
+
+    // Determine x range (number of events).
+    let n = changes.len().max(1) as i64;
+    // Determine y range — clamp at [0, 30] to keep negative deaths readable
+    // but not too zoomed-out.
+    let y_min: i64 = 0;
+    let y_max: i64 = 25;
+
+    // Helper to translate (event_idx, life) to (x, y).
+    let x_for = |i: usize| -> f64 {
+        pad_l as f64 + (i as f64 / (n - 1).max(1) as f64) * plot_w as f64
+    };
+    let y_for = |life: i64| -> f64 {
+        let clamped = life.clamp(y_min, y_max) as f64;
+        let t = (clamped - y_min as f64) / (y_max - y_min) as f64;
+        pad_t as f64 + (1.0 - t) * plot_h as f64
+    };
+
+    out.push_str("<div class=\"life-chart\">\n");
+    write!(out, "<svg viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\">\n", w, h)
+        .unwrap();
+
+    // Y-axis gridlines at 0, 5, 10, 15, 20, 25.
+    for y_val in [0_i64, 5, 10, 15, 20, 25] {
+        let y = y_for(y_val);
+        write!(
+            out,
+            "<line class=\"grid\" x1=\"{}\" y1=\"{:.1}\" x2=\"{}\" y2=\"{:.1}\"/>\n",
+            pad_l, y, w - pad_r, y,
+        )
+        .unwrap();
+        write!(
+            out,
+            "<text class=\"y-label\" x=\"{}\" y=\"{:.1}\">{}</text>\n",
+            (pad_l - 4) as f64, y + 3.0, y_val,
+        )
+        .unwrap();
+    }
+
+    // Plot two lines (You=accent, Opp=warn).
+    let line_specs: [(usize, &str, &str); 2] = [
+        (0, "you", "var(--accent)"),
+        (1, "opp", "var(--text-2)"),
+    ];
+    for (idx, path_class, color) in line_specs.iter() {
+        let idx_us = *idx;
+        if series[idx_us].is_empty() {
+            continue;
+        }
+        // Build path
+        let mut d = String::new();
+        for (j, (i, life)) in series[idx_us].iter().enumerate() {
+            let x = x_for(*i);
+            let y = y_for(*life);
+            if j == 0 {
+                write!(d, "M{:.1},{:.1}", x, y).unwrap();
+            } else {
+                write!(d, " L{:.1},{:.1}", x, y).unwrap();
+            }
+        }
+        write!(
+            out,
+            "<path class=\"life-line {}\" d=\"{}\" stroke=\"{}\" fill=\"none\" \
+             stroke-width=\"2\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>\n",
+            path_class, d, color,
+        )
+        .unwrap();
+    }
+
+    // End-of-life labels — placed inside the plot area, right-aligned
+    // so they don't overflow the SVG.
+    let end_specs: [(usize, &str); 2] = [(0, "You"), (1, "Opp")];
+    for (idx, label) in end_specs.iter() {
+        let idx_us = *idx;
+        if let Some((_, final_life)) = series[idx_us].last() {
+            let x = x_for(changes.len().saturating_sub(1));
+            let y = y_for(*final_life);
+            write!(
+                out,
+                "<text class=\"end-label\" x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"end\">{}: {}</text>\n",
+                x - 6.0,
+                y - 4.0,
+                label,
+                final_life,
+            )
+            .unwrap();
+        }
+    }
+
+    out.push_str("</svg>\n");
+
+    // Per-player totals (number of damage / lifegain events)
+    out.push_str("<div class=\"life-totals\">\n");
+    for (idx, label) in [(0, "You"), (1, "Opponent")] {
+        let events = changes.iter().filter(|c| c.seat_id == (idx + 1) as i64).count();
+        let total_delta: i64 = changes
+            .iter()
+            .filter(|c| c.seat_id == (idx + 1) as i64)
+            .map(|c| c.delta)
+            .sum();
+        let final_life = totals[idx];
+        let cls = if final_life <= 0 { " died" } else { "" };
+        write!(
+            out,
+            "<span class=\"life-row{cls}\">\
+             <b>{label}</b>: started 20, <b>{events}</b> changes (&Sigma; {total_delta:+}), \
+             ended at <b>{final_life}</b>\
+             </span>\n",
+            cls = cls,
+            label = label,
+            events = events,
+            total_delta = total_delta,
+            final_life = final_life,
+        )
+        .unwrap();
+    }
+    out.push_str("</div>\n");
+    out.push_str("</div>\n");
+}
+
+/// Render the per-match plays log: cards drawn, lands played, spells cast,
+/// creatures resolved, etc. for both players.
+///
+/// We pull the actual card names from `cards::lookup(grp_id)` so they show
+/// as real names (not `#12345`).
+///
+/// Rows are grouped by `annotation_id` (= event order) so the timeline
+/// reads top-to-bottom in the order the actions actually happened.
+fn write_plays_log(
+    out: &mut String,
+    transfers: &[store::ZoneTransfer],
+    card_db: Option<&Connection>,
+) {
+    // Summary chips: lands / spells cast / creatures resolved / discards.
+    // We track (resolved, total) per category so the chip shows the
+    // count of cards we could identify by name vs the total event count.
+    let mut by_cat: HashMap<&str, (i64, i64)> = HashMap::new();
+    for t in transfers {
+        let entry = by_cat.entry(t.category.as_str()).or_insert((0, 0));
+        entry.0 += 1;
+        if let Some(grp) = t.grp_id {
+            entry.1 += 1;
+        }
+    }
+    out.push_str("<div class=\"plays-summary\">\n");
+    for (cat, (total, resolved)) in by_cat.iter() {
+        let cls = match *cat {
+            "PlayLand" => "chip-land",
+            "CastSpell" | "Resolve" => "chip-spell",
+            "Draw" => "chip-draw",
+            "Discard" | "Exile" | "Destroy" | "Sacrifice" => "chip-removal",
+            _ => "chip-other",
+        };
+        let extra = if *cat == "Draw" && *resolved < *total {
+            format!(
+                " ({} unresolved)",
+                total - resolved
+            )
+        } else {
+            String::new()
+        };
+        write!(
+            out,
+            "<span class=\"chip {cls}\">{cat} <b>{resolved}/{total}</b>{extra}</span>\n",
+        )
+        .unwrap();
+    }
+    out.push_str("</div>\n");
+
+    // The full table.
+    out.push_str("<table class=\"plays\"><thead><tr>");
+    out.push_str("<th>Player</th><th>Action</th><th>Card</th></tr></thead>\n<tbody>\n");
+    for t in transfers {
+        let seat_label = match t.seat_id {
+            Some(1) => ("you", "You"),
+            Some(2) => ("opp", "Opp"),
+            Some(_) => ("?", "?"),
+            None => ("?", "?"),
+        };
+        // Skip pure Draws with no grp_id resolved (library was face-down).
+        if t.category == "Draw" && t.grp_id.is_none() {
+            continue;
+        }
+        let action_cls = match t.category.as_str() {
+            "PlayLand" => "act-land",
+            "CastSpell" => "act-cast",
+            "Resolve" => "act-resolve",
+            "Draw" => "act-draw",
+            "Discard" => "act-discard",
+            _ => "act-other",
+        };
+        let action = t.category.clone();
+        // Resolve card name.
+        let (display_name, image_url) = match (t.grp_id, card_db) {
+            (Some(grp), Some(conn)) => match cards::lookup(conn, grp) {
+                Some(c) => (c.name, c.image_url.unwrap_or_default()),
+                None => (format!("#{}", grp), String::new()),
+            },
+            (Some(grp), None) => (format!("#{}", grp), String::new()),
+            (None, _) => ("(unresolved)".to_string(), String::new()),
+        };
+        let card_html = if image_url.is_empty() {
+            format!("<span class=\"card-name\">{}</span>", esc(&display_name))
+        } else {
+            format!(
+                "<span class=\"card-name\" data-image=\"{}\">{}</span>",
+                esc_attr(&image_url),
+                esc(&display_name)
+            )
+        };
+        write!(
+            out,
+            "<tr>\
+             <td class=\"player {pcls}\">{plabel}</td>\
+             <td><span class=\"act {actcls}\">{act}</span></td>\
+             <td class=\"card\">{card}</td>\
+             </tr>\n",
+            pcls = seat_label.0,
+            plabel = seat_label.1,
+            actcls = action_cls,
+            act = esc(&action),
+            card = card_html,
+        )
+        .unwrap();
+    }
+    out.push_str("</tbody>\n</table>\n");
+}
+
 /// Options for rendering a single match detail page.
 pub struct MatchDetailOptions {
     pub match_id: String,
@@ -1286,13 +1711,20 @@ pub struct MatchDetailOptions {
     pub deck_name: String,
     pub timestamp: DateTime<Utc>,
     pub your_deck: Option<Value>,
-    pub opponent_team_id: Option<i64>,
     pub steps: Vec<store::MatchStep>,
     pub raw_payload: Value,
     pub matches_index: String,
     pub show_raw: bool,
     /// `(card_count, updated_at)` from `cards::status()`, if available.
     pub card_db_summary: Option<(u64, String)>,
+    /// Both players (local + opponent) for the match header / opponent card.
+    pub players: Vec<store::MatchPlayer>,
+    /// Life-total deltas ordered by annotation_id (= event order).
+    pub life_changes: Vec<store::LifeChange>,
+    /// Card-movement events (Draw / PlayLand / CastSpell / etc.) ordered
+    /// by annotation_id. `grp_id` is resolved to a card name in the
+    /// renderer using `card_db`.
+    pub zone_transfers: Vec<store::ZoneTransfer>,
 }
 
 // =============================================================================
@@ -1499,5 +1931,106 @@ mod tests {
         assert_eq!(categorize_event("QuickDraft_2024"), "draft");
         assert_eq!(categorize_event(""), "other");
         assert_eq!(categorize_event("RandomThing"), "other");
+    }
+
+    /// Helper: build a MatchPlayer for tests.
+    fn mp(name: &str, is_local: bool, team: i64, seat: i64) -> store::MatchPlayer {
+        store::MatchPlayer {
+            seat_id: seat,
+            team_id: team,
+            player_name: name.to_string(),
+            user_id: format!("uid-{}", name),
+            course_id: None,
+            platform_id: None,
+            is_local,
+            event_id: Some("Jump_In_2024".to_string()),
+        }
+    }
+
+    #[test]
+    fn opponent_panel_renders_known_opponent() {
+        let players = vec![
+            mp("Faceless", true, 1, 1),
+            mp("KEV3K", false, 2, 2),
+        ];
+        let mut out = String::new();
+        write_opponent_panel(&mut out, &players);
+        assert!(out.contains("KEV3K"), "expected KEV3K in panel: {out}");
+        assert!(!out.contains("Faceless"), "did not expect local name in opp panel: {out}");
+        assert!(out.contains("Team"));
+        assert!(out.contains("userId"));
+    }
+
+    #[test]
+    fn opponent_panel_handles_empty_players() {
+        let players: Vec<store::MatchPlayer> = vec![];
+        let mut out = String::new();
+        write_opponent_panel(&mut out, &players);
+        assert!(out.contains("No opponent info available"));
+    }
+
+    #[test]
+    fn opponent_panel_decorates_platform_names() {
+        // Avatar_Basic_ prefix is stripped; platforms get friendly labels.
+        let mut p = mp("Opp", false, 2, 2);
+        p.course_id = Some("Avatar_Basic_Ziatora_SNC".to_string());
+        p.platform_id = Some("AndroidPhone".to_string());
+        let mut out = String::new();
+        write_opponent_panel(&mut out, &[p]);
+        assert!(out.contains("Ziatora_SNC"), "avatar should be stripped: {out}");
+        assert!(out.contains("Android"), "platform should be humanised: {out}");
+    }
+
+    #[test]
+    fn life_chart_accumulates_deltas() {
+        // Simulate the life-reconstruction logic in write_life_chart
+        // by walking the same algorithm on a fixed input.
+        let changes = vec![
+            store::LifeChange { annotation_id: 1, ts: 1, seat_id: 1, delta: -2 },
+            store::LifeChange { annotation_id: 2, ts: 2, seat_id: 2, delta: -3 },
+            store::LifeChange { annotation_id: 3, ts: 3, seat_id: 1, delta: 1 },
+            store::LifeChange { annotation_id: 4, ts: 4, seat_id: 2, delta: -5 },
+        ];
+        let mut totals = [20i64; 2];
+        for c in &changes {
+            if c.seat_id == 1 || c.seat_id == 2 {
+                totals[(c.seat_id - 1) as usize] += c.delta;
+            }
+        }
+        // You: 20 - 2 + 1 = 19
+        // Opp: 20 - 3 - 5 = 12
+        assert_eq!(totals[0], 19);
+        assert_eq!(totals[1], 12);
+    }
+
+    #[test]
+    fn zone_transfer_chip_aggregates_correctly() {
+        // The plays-summary chip logic aggregates by category.
+        let transfers = vec![
+            store::ZoneTransfer {
+                annotation_id: 1, ts: 1, seat_id: Some(1),
+                grp_id: Some(123), category: "PlayLand".to_string(),
+                zone_src: Some(31), zone_dest: Some(28),
+            },
+            store::ZoneTransfer {
+                annotation_id: 2, ts: 2, seat_id: Some(1),
+                grp_id: Some(124), category: "PlayLand".to_string(),
+                zone_src: Some(31), zone_dest: Some(28),
+            },
+            store::ZoneTransfer {
+                annotation_id: 3, ts: 3, seat_id: Some(2),
+                grp_id: None, category: "Draw".to_string(),
+                zone_src: Some(36), zone_dest: Some(35),
+            },
+        ];
+        // 2 PlayLand (both resolved), 1 Draw (unresolved).
+        let mut by_cat: HashMap<&str, (i64, i64)> = HashMap::new();
+        for t in &transfers {
+            let e = by_cat.entry(t.category.as_str()).or_insert((0, 0));
+            e.0 += 1;
+            if let Some(_) = t.grp_id { e.1 += 1; }
+        }
+        assert_eq!(by_cat["PlayLand"], (2, 2));
+        assert_eq!(by_cat["Draw"], (1, 0));
     }
 }

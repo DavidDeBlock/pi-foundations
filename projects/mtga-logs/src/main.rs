@@ -357,18 +357,12 @@ fn write_match_pages(
 
         let steps = store::load_match_steps(store_conn, &match_id).unwrap_or_default();
         let raw_payload: Value = serde_json::from_str(&payload_json).unwrap_or(Value::Null);
-        let opponent_team_id = raw_payload
-            .get("game_info")
-            .and_then(|gi| gi.get("results"))
-            .and_then(|r| r.as_array())
-            .and_then(|arr| {
-                arr.iter()
-                    .find(|r| r.get("scope").and_then(Value::as_str) == Some("MatchScope_Match"))
-                    .or_else(|| arr.first())
-            })
-            .and_then(|r| r.get("winningTeamId"))
-            .and_then(Value::as_i64)
-            .map(|t| if t == 1 { 2 } else { 1 });
+
+        let players = store::load_match_players(store_conn, &match_id).unwrap_or_default();
+        let life_changes =
+            store::load_match_life_changes(store_conn, &match_id).unwrap_or_default();
+        let zone_transfers =
+            store::load_match_zone_transfers(store_conn, &match_id).unwrap_or_default();
 
         let opts = web::MatchDetailOptions {
             match_id: match_id.clone(),
@@ -378,12 +372,14 @@ fn write_match_pages(
             deck_name,
             timestamp: ts_dt,
             your_deck,
-            opponent_team_id,
             steps,
             raw_payload,
             matches_index: matches_index.clone(),
             show_raw: false,
             card_db_summary: card_db_summary.clone(),
+            players,
+            life_changes,
+            zone_transfers,
         };
         let html = web::render_match_detail(card_db, &opts);
         let file = dir.join(format!("{}.html", match_id));
