@@ -44,6 +44,7 @@ mod web;
 
 use std::env;
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::process;
 
@@ -103,6 +104,17 @@ fn main() {
             *with_cards,
             *with_builder,
         ),
+        Command::Serve { port, all, show_system, output, with_cards, with_builder } => {
+            run_serve(
+                &config.path,
+                *port,
+                *all,
+                *show_system,
+                output,
+                *with_cards,
+                *with_builder,
+            );
+        }
         Command::Events => {
             let text = match fs::read_to_string(&config.path) {
                 Ok(t) => t,
@@ -177,126 +189,384 @@ fn run_web(
     with_cards: bool,
     with_builder: bool,
 ) {
-    // Auto-ingest: parses Player.log (and Player.log.old if present) only if
-    // its fingerprint has changed since last ingest. Free on repeat runs.
-    let stats = store::maybe_ingest(log_path).unwrap_or_else(|e| {
-        eprintln!("ingest error: {}", e);
-        process::exit(1);
-    });
-    if stats.events_seen > 0 {
-        eprintln!("(ingested {} events)", stats.events_seen);
-    }
-
-    let card_db = if cards::db_path().exists() {
-        cards::open_db(&cards::db_path()).ok()
-    } else {
-        None
-    };
-    if card_db.is_none() {
-        eprintln!("(card database not found — cards will show as grpId)");
-    } else {
-        eprintln!("(using card database at {})", cards::db_path().display());
-    }
-
-    let store_conn = store::open_db().expect("open store db");
-    let generated_at = Utc::now().format("%Y-%m-%d %H:%M UTC").to_string();
-    let log_path_str = log_path.display().to_string();
-
     match output {
         Some(path) => {
-            let pages_dir_name = match_pages_dir_for(path)
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("decks-matches")
-                .to_string();
-
-            // Build the landing page first so it always gets written even
-            // if a downstream step fails.
-            let index_stats = collect_index_stats(&store_conn, card_db.as_ref());
-            let index_html = web::render_index(&web::IndexOptions {
-                stats: index_stats,
-                log_path: log_path.display().to_string(),
-                generated_at: generated_at.clone(),
-            });
-            let index_path = index_path_for(path);
-            if let Err(e) = fs::write(&index_path, &index_html) {
-                eprintln!("error writing {}: {}", index_path.display(), e);
-            }
-
-            let decks_opts = web::RenderOptions {
-                include_netdecks: all,
-                show_system_decks: show_system,
-                log_path: log_path_str.clone(),
-                generated_at: generated_at.clone(),
-                sections: web::Sections::Decks,
-                sibling_link: Some(web::SiblingLink {
-                    label: "View recent matches →",
-                    href: sibling_filename(path, true),
-                }),
-                match_pages_dir: pages_dir_name.clone(),
-            };
-            let matches_opts = web::RenderOptions {
-                include_netdecks: all,
-                show_system_decks: show_system,
-                log_path: log_path_str,
-                generated_at,
-                sections: web::Sections::Matches,
-                sibling_link: Some(web::SiblingLink {
-                    label: "← Back to decks",
-                    href: sibling_filename(path, false),
-                }),
-                match_pages_dir: pages_dir_name,
-            };
-
-            let decks_html = web::render(&store_conn, card_db.as_ref(), &decks_opts);
-            let matches_html = web::render(&store_conn, card_db.as_ref(), &matches_opts);
-
-            let matches_path = matches_path_for(path);
-            if let Err(e) = fs::write(path, &decks_html) {
-                eprintln!("error writing {}: {}", path.display(), e);
-                process::exit(1);
-            }
-            if let Err(e) = fs::write(&matches_path, &matches_html) {
-                eprintln!("error writing {}: {}", matches_path.display(), e);
-                process::exit(1);
-            }
-            // Per-match detail pages — one HTML file per match in a sibling
-            // `matches/` directory. The matches table links to them.
-            let (written, errors) = write_match_pages(
-                &store_conn,
-                card_db.as_ref(),
-                path,
+            let (ingest_stats, _idx) = render_all_pages(
+                log_path, path, all, show_system, with_cards, with_builder,
             );
-            eprintln!(
-                "wrote {} ({} KB) and {} ({} KB)",
-                path.display(),
-                decks_html.len() / 1024,
-                matches_path.display(),
-                matches_html.len() / 1024,
-            );
-            if written > 0 || errors > 0 {
-                eprintln!("(match pages: {} written, {} errors)", written, errors);
-            }
-
-            // Catalog + builder pages (opt-in via --cards / --builder; default on).
-            if with_cards {
-                write_catalog_pages(path, &store_conn);
-            }
-            if with_builder {
-                write_builder_pages(path, &store_conn);
+            eprintln!("wrote {}", path.display());
+            if ingest_stats.events_seen > 0 {
+                eprintln!("(ingested {} events)", ingest_stats.events_seen);
             }
         }
         None => {
+            // Stdout mode: just dump combined HTML.
+            let store_conn = store::open_db().expect("open store db");
+            let card_db = open_card_db();
             let opts = web::RenderOptions {
                 include_netdecks: all,
                 show_system_decks: show_system,
-                log_path: log_path_str,
-                generated_at,
+                log_path: log_path.display().to_string(),
+                generated_at: Utc::now().format("%Y-%m-%d %H:%M UTC").to_string(),
                 sections: web::Sections::Both,
                 sibling_link: None,
                 match_pages_dir: "decks-matches".into(),
             };
             print!("{}", web::render(&store_conn, card_db.as_ref(), &opts));
+        }
+    }
+}
+
+/// Open the card DB if present; print a one-line hint about its absence.
+fn open_card_db() -> Option<rusqlite::Connection> {
+    if cards::db_path().exists() {
+        match cards::open_db(&cards::db_path()) {
+            Ok(c) => {
+                eprintln!("(using card database at {})", cards::db_path().display());
+                Some(c)
+            }
+            Err(e) => {
+                eprintln!("(could not open card DB: {e})");
+                None
+            }
+        }
+    } else {
+        eprintln!("(card database not found — cards will show as grpId)");
+        None
+    }
+}
+
+/// Render every page to disk (index, decks, matches, per-match detail pages,
+/// catalog, builder). Returns the ingest stats and the index stats so the
+/// caller can surface them.
+fn render_all_pages(
+    log_path: &std::path::Path,
+    path: &std::path::Path,
+    all: bool,
+    show_system: bool,
+    with_cards: bool,
+    with_builder: bool,
+) -> (store::IngestStats, web::IndexStats) {
+    // Auto-ingest: parses Player.log (and Player.log.old if present) only if
+    // its fingerprint has changed since last ingest. Free on repeat runs.
+    let ingest_stats = store::maybe_ingest(log_path).unwrap_or_else(|e| {
+        eprintln!("ingest error: {}", e);
+        process::exit(1);
+    });
+    if ingest_stats.events_seen > 0 {
+        eprintln!("(ingested {} events)", ingest_stats.events_seen);
+    }
+
+    let card_db = open_card_db();
+    let store_conn = store::open_db().expect("open store db");
+    let generated_at = Utc::now().format("%Y-%m-%d %H:%M UTC").to_string();
+    let log_path_str = log_path.display().to_string();
+    let pages_dir_name = match_pages_dir_for(path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("decks-matches")
+        .to_string();
+
+    // Build the landing page first so it always gets written even
+    // if a downstream step fails.
+    let index_stats = collect_index_stats(&store_conn, card_db.as_ref());
+    let index_html = web::render_index(&web::IndexOptions {
+        stats: index_stats.clone(),
+        log_path: log_path_str.clone(),
+        generated_at: generated_at.clone(),
+    });
+    let index_path = index_path_for(path);
+    if let Err(e) = fs::write(&index_path, &index_html) {
+        eprintln!("error writing {}: {}", index_path.display(), e);
+    }
+
+    let decks_opts = web::RenderOptions {
+        include_netdecks: all,
+        show_system_decks: show_system,
+        log_path: log_path_str.clone(),
+        generated_at: generated_at.clone(),
+        sections: web::Sections::Decks,
+        sibling_link: Some(web::SiblingLink {
+            label: "View recent matches →",
+            href: sibling_filename(path, true),
+        }),
+        match_pages_dir: pages_dir_name.clone(),
+    };
+    let matches_opts = web::RenderOptions {
+        include_netdecks: all,
+        show_system_decks: show_system,
+        log_path: log_path_str,
+        generated_at: generated_at.clone(),
+        sections: web::Sections::Matches,
+        sibling_link: Some(web::SiblingLink {
+            label: "← Back to decks",
+            href: sibling_filename(path, false),
+        }),
+        match_pages_dir: pages_dir_name,
+    };
+
+    let decks_html = web::render(&store_conn, card_db.as_ref(), &decks_opts);
+    let matches_html = web::render(&store_conn, card_db.as_ref(), &matches_opts);
+
+    let matches_path = matches_path_for(path);
+    if let Err(e) = fs::write(path, &decks_html) {
+        eprintln!("error writing {}: {}", path.display(), e);
+    }
+    if let Err(e) = fs::write(&matches_path, &matches_html) {
+        eprintln!("error writing {}: {}", matches_path.display(), e);
+    }
+    // Per-match detail pages — one HTML file per match in a sibling
+    // `matches/` directory. The matches table links to them.
+    let (written, errors) = write_match_pages(
+        &store_conn,
+        card_db.as_ref(),
+        path,
+    );
+    if written > 0 || errors > 0 {
+        eprintln!("(match pages: {} written, {} errors)", written, errors);
+    }
+
+    // Catalog + builder pages (opt-in via --cards / --builder; default on).
+    if with_cards {
+        write_catalog_pages(path, &store_conn);
+    }
+    if with_builder {
+        write_builder_pages(path, &store_conn);
+    }
+
+    (ingest_stats, index_stats)
+}
+
+/// Render once, then serve the output directory over HTTP. `POST /sync`
+/// re-runs the ingest + re-renders all pages. Any other path is served
+/// as a static file from the directory holding `output`.
+fn run_serve(
+    log_path: &std::path::Path,
+    port: u16,
+    all: bool,
+    show_system: bool,
+    output: &std::path::Path,
+    with_cards: bool,
+    with_builder: bool,
+) {
+    // Initial render so /index.html, /decks.html etc. exist before the
+    // first request lands.
+    render_all_pages(log_path, output, all, show_system, with_cards, with_builder);
+
+    let serve_root = output
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .to_path_buf();
+
+    let listener = std::net::TcpListener::bind(("0.0.0.0", port))
+        .unwrap_or_else(|e| {
+            eprintln!("error binding 0.0.0.0:{port}: {e}");
+            process::exit(1);
+        });
+    let local_addr = listener.local_addr().expect("local_addr");
+    eprintln!("serving {} on http://{}/", serve_root.display(), local_addr);
+    eprintln!("  open http://{}/index.html", local_addr);
+    eprintln!("  POST http://{}/sync to re-ingest the log and re-render", local_addr);
+    eprintln!("  Ctrl-C to stop");
+
+    let shared_root = std::sync::Arc::new(serve_root);
+    let shared_log = std::sync::Arc::new(log_path.to_path_buf());
+    // Coarse mutex so two simultaneous /sync calls don't both render at
+    // once. Browsers don't normally fire concurrent sync clicks, but this
+    // is cheap insurance.
+    let render_lock = std::sync::Arc::new(std::sync::Mutex::new(()));
+
+    for stream in listener.incoming() {
+        let stream = match stream {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("accept error: {e}");
+                continue;
+            }
+        };
+        let root = shared_root.clone();
+        let log = shared_log.clone();
+        let lock = render_lock.clone();
+        let out = output.to_path_buf();
+        std::thread::spawn(move || {
+            handle_http(stream, root, log, out, all, show_system, with_cards, with_builder, lock);
+        });
+    }
+}
+
+/// One HTTP connection. Reads request line + headers, dispatches by method
+/// + path, writes a single response. Intentionally minimal: no keep-alive,
+/// no chunked transfer, no MIME map beyond `.html`, `.json`, `.css`, `.js`,
+/// `.png`, `.svg`, `.ico`.
+fn handle_http(
+    mut stream: std::net::TcpStream,
+    serve_root: std::sync::Arc<std::path::PathBuf>,
+    log_path: std::sync::Arc<std::path::PathBuf>,
+    output: std::path::PathBuf,
+    all: bool,
+    show_system: bool,
+    with_cards: bool,
+    with_builder: bool,
+    render_lock: std::sync::Arc<std::sync::Mutex<()>>,
+) {
+    // Read until end of headers. Cap at 16 KiB so a runaway client can't
+    // OOM us.
+    let mut buf = [0u8; 16384];
+    let mut total = 0usize;
+    let header_end = loop {
+        let n = match stream.read(&mut buf[total..]) {
+            Ok(0) => break None,
+            Ok(n) => n,
+            Err(_) => return,
+        };
+        total += n;
+        if let Some(pos) = find_subseq(&buf[..total], b"\r\n\r\n") {
+            break Some(pos + 4);
+        }
+        if total == buf.len() {
+            // Headers too big; bail.
+            write_response(&mut stream, 431, "text/plain", b"header too large");
+            return;
+        }
+    };
+    let header_end = match header_end {
+        Some(n) => n,
+        None => {
+            write_response(&mut stream, 400, "text/plain", b"empty request");
+            return;
+        }
+    };
+    let req = match std::str::from_utf8(&buf[..header_end]) {
+        Ok(s) => s,
+        Err(_) => {
+            write_response(&mut stream, 400, "text/plain", b"bad request");
+            return;
+        }
+    };
+    let mut lines = req.split("\r\n");
+    let request_line = lines.next().unwrap_or("");
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or("");
+    let path = parts.next().unwrap_or("");
+
+    // Strip query string.
+    let path = path.split('?').next().unwrap_or("/");
+
+    eprintln!("{} {}", method, path);
+
+    match (method, path) {
+        ("POST", "/sync") => {
+            let _g = render_lock.lock().unwrap();
+            let (ingest, idx) =
+                render_all_pages(&log_path, &output, all, show_system, with_cards, with_builder);
+            let body = serde_json::json!({
+                "ok": true,
+                "events_seen": ingest.events_seen,
+                "files_ingested": ingest.files_ingested,
+                "files_skipped": ingest.files_skipped,
+                "decks_upserted": ingest.decks_upserted,
+                "matches_inserted": ingest.matches_inserted,
+                "inventory_inserted": ingest.inventory_inserted,
+                "index": {
+                    "user_deck_count": idx.user_deck_count,
+                    "netdeck_count": idx.netdeck_count,
+                    "match_count": idx.match_count,
+                    "user_built_deck_count": idx.user_built_deck_count,
+                    "last_match": idx.last_match,
+                },
+            });
+            let body = body.to_string();
+            write_response(&mut stream, 200, "application/json", body.as_bytes());
+        }
+        ("GET", "/api/status") => {
+            let card_db = open_card_db();
+            let store_conn = store::open_db().expect("open store db");
+            let idx = collect_index_stats(&store_conn, card_db.as_ref());
+            let body = serde_json::to_string(&serde_json::json!({
+                "ok": true,
+                "index": {
+                    "user_deck_count": idx.user_deck_count,
+                    "netdeck_count": idx.netdeck_count,
+                    "match_count": idx.match_count,
+                    "user_built_deck_count": idx.user_built_deck_count,
+                    "last_match": idx.last_match,
+                },
+            }))
+            .unwrap_or_else(|_| "{}".to_string());
+            write_response(&mut stream, 200, "application/json", body.as_bytes());
+        }
+        ("GET", "/") | ("GET", "/index.html") => {
+            serve_file(&mut stream, &serve_root.join("index.html"));
+        }
+        ("GET", p) => {
+            // Strip leading slash, resolve against serve_root, and refuse
+            // anything that escapes the root (no "..").
+            let rel = p.trim_start_matches('/');
+            let candidate = serve_root.join(rel);
+            if !candidate.starts_with(&*serve_root) {
+                write_response(&mut stream, 403, "text/plain", b"forbidden");
+                return;
+            }
+            serve_file(&mut stream, &candidate);
+        }
+        _ => {
+            write_response(&mut stream, 405, "text/plain", b"method not allowed");
+        }
+    }
+}
+
+fn find_subseq(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+fn write_response(
+    stream: &mut std::net::TcpStream,
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+) {
+    let reason = match status {
+        200 => "OK",
+        400 => "Bad Request",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        431 => "Request Header Fields Too Large",
+        500 => "Internal Server Error",
+        _ => "OK",
+    };
+    let header = format!(
+        "HTTP/1.1 {status} {reason}\r\n\
+         Content-Type: {content_type}\r\n\
+         Content-Length: {}\r\n\
+         Connection: close\r\n\
+         \r\n",
+        body.len()
+    );
+    use std::io::Write;
+    let _ = stream.write_all(header.as_bytes());
+    let _ = stream.write_all(body);
+    let _ = stream.flush();
+}
+
+fn serve_file(stream: &mut std::net::TcpStream, path: &std::path::Path) {
+    match std::fs::read(path) {
+        Ok(body) => {
+            let ct = match path.extension().and_then(|s| s.to_str()).unwrap_or("") {
+                "html" => "text/html; charset=utf-8",
+                "json" => "application/json",
+                "css" => "text/css",
+                "js" => "application/javascript",
+                "png" => "image/png",
+                "svg" => "image/svg+xml",
+                "ico" => "image/x-icon",
+                "txt" => "text/plain; charset=utf-8",
+                _ => "application/octet-stream",
+            };
+            write_response(stream, 200, ct, &body);
+        }
+        Err(_) => {
+            write_response(stream, 404, "text/plain", b"not found");
         }
     }
 }
@@ -633,6 +903,7 @@ fn print_usage() {
     eprintln!("  deck <ID>              show one deck's cards (from store)");
     eprintln!("  matches                game results with deck used (from store)");
     eprintln!("  web [--all] [--system] [-o FILE]  render self-contained HTML pages (decks + matches) to FILE (or stdout)");
+    eprintln!("  serve [--port 8000] [--all] [--system] -o FILE  render once then run HTTP server (POST /sync to re-ingest + re-render)");
     eprintln!("  ingest                 force re-ingest the log (usually automatic)");
     eprintln!("  store-info             show DB row counts and last ingestion");
     eprintln!("  sync-cards             download Scryfall card database (~520 MB)");
@@ -656,6 +927,17 @@ enum Command {
         all: bool,
         show_system: bool,
         output: Option<PathBuf>,
+        with_cards: bool,
+        with_builder: bool,
+    },
+    /// Render once, then run an HTTP server. POST /sync triggers a re-render
+    /// from the live log file. Everything else is served as a static file
+    /// from the output directory.
+    Serve {
+        port: u16,
+        all: bool,
+        show_system: bool,
+        output: PathBuf,
         with_cards: bool,
         with_builder: bool,
     },
@@ -725,7 +1007,18 @@ impl Config {
                                 with_builder,
                             }
                         }
-                        _ => return Err("--all is only valid with the decks or web command".to_string()),
+                        Command::Serve { .. } => {
+                            let (port, output, show_system, with_cards, with_builder) = match command {
+                                Command::Serve { port, output, show_system, with_cards, with_builder, .. } => {
+                                    (port, output, show_system, with_cards, with_builder)
+                                }
+                                _ => unreachable!(),
+                            };
+                            Command::Serve {
+                                port, all: true, show_system, output, with_cards, with_builder,
+                            }
+                        }
+                        _ => return Err("--all is only valid with the decks, web, or serve command".to_string()),
                     };
                     i += 1;
                 }
@@ -746,7 +1039,18 @@ impl Config {
                                 with_builder,
                             }
                         }
-                        _ => return Err("--system is only valid with the web command".to_string()),
+                        Command::Serve { .. } => {
+                            let (port, all, output, with_cards, with_builder) = match command {
+                                Command::Serve { port, all, output, with_cards, with_builder, .. } => {
+                                    (port, all, output, with_cards, with_builder)
+                                }
+                                _ => unreachable!(),
+                            };
+                            Command::Serve {
+                                port, all, output, show_system: true, with_cards, with_builder,
+                            }
+                        }
+                        _ => return Err("--system is only valid with the web or serve command".to_string()),
                     };
                     i += 1;
                 }
@@ -771,7 +1075,18 @@ impl Config {
                                 with_builder,
                             }
                         }
-                        _ => return Err(format!("{} is only valid with the web command", arg)),
+                        Command::Serve { .. } => {
+                            let (port, all, show_system, with_cards, with_builder) = match command {
+                                Command::Serve { port, all, show_system, with_cards, with_builder, .. } => {
+                                    (port, all, show_system, with_cards, with_builder)
+                                }
+                                _ => unreachable!(),
+                            };
+                            Command::Serve {
+                                port, all, show_system, output: path, with_cards, with_builder,
+                            }
+                        }
+                        _ => return Err(format!("{} is only valid with the web or serve command", arg)),
                     };
                     i += 2;
                 }
@@ -824,27 +1139,62 @@ impl Config {
                     };
                     i += 1;
                 }
+                "serve" => {
+                    ensure_events(&command, "serve")?;
+                    command = Command::Serve {
+                        port: 8000,
+                        all: false,
+                        show_system: false,
+                        output: PathBuf::from("/tmp/decks.html"),
+                        with_cards: true,
+                        with_builder: true,
+                    };
+                    i += 1;
+                }
+                "--port" => {
+                    let v = args
+                        .get(i + 1)
+                        .ok_or_else(|| "--port requires a value".to_string())?;
+                    let p: u16 = v
+                        .parse()
+                        .map_err(|_| format!("invalid --port value: {}", v))?;
+                    command = match command {
+                        Command::Serve { all, show_system, output, with_cards, with_builder, .. } => {
+                            Command::Serve { port: p, all, show_system, output, with_cards, with_builder }
+                        }
+                        _ => return Err("--port is only valid with the serve command".to_string()),
+                    };
+                    i += 2;
+                }
                 "--cards" => {
-                    if let Command::Web { with_cards, .. } = &mut command {
-                        *with_cards = true;
+                    match &mut command {
+                        Command::Web { with_cards, .. } => *with_cards = true,
+                        Command::Serve { with_cards, .. } => *with_cards = true,
+                        _ => return Err("--cards is only valid with the web or serve command".to_string()),
                     }
                     i += 1;
                 }
                 "--no-cards" => {
-                    if let Command::Web { with_cards, .. } = &mut command {
-                        *with_cards = false;
+                    match &mut command {
+                        Command::Web { with_cards, .. } => *with_cards = false,
+                        Command::Serve { with_cards, .. } => *with_cards = false,
+                        _ => return Err("--no-cards is only valid with the web or serve command".to_string()),
                     }
                     i += 1;
                 }
                 "--builder" => {
-                    if let Command::Web { with_builder, .. } = &mut command {
-                        *with_builder = true;
+                    match &mut command {
+                        Command::Web { with_builder, .. } => *with_builder = true,
+                        Command::Serve { with_builder, .. } => *with_builder = true,
+                        _ => return Err("--builder is only valid with the web or serve command".to_string()),
                     }
                     i += 1;
                 }
                 "--no-builder" => {
-                    if let Command::Web { with_builder, .. } = &mut command {
-                        *with_builder = false;
+                    match &mut command {
+                        Command::Web { with_builder, .. } => *with_builder = false,
+                        Command::Serve { with_builder, .. } => *with_builder = false,
+                        _ => return Err("--no-builder is only valid with the web or serve command".to_string()),
                     }
                     i += 1;
                 }

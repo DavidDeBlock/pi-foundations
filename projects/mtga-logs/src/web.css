@@ -1990,3 +1990,74 @@ table.plays td.card {
   .site-header { flex-direction: column; align-items: flex-start; gap: 0.6em; }
   .site-nav { margin-left: 0; flex-wrap: wrap; }
 }
+
+/* ===== Sync button on landing page ===== */
+.last-match {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8em;
+}
+.sync-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.45em 0.9em;
+  background: var(--bg-2);
+  color: var(--text-0);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 0.9em;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+.sync-btn:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+.sync-btn:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+.sync-icon {
+  display: inline-block;
+  font-size: 1.1em;
+  line-height: 1;
+}
+.sync-icon.spinning {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.sync-status {
+  font-size: 0.85em;
+  color: var(--text-2);
+  min-width: 12em;
+  text-align: left;
+}
+.sync-status.ok { color: var(--win); }
+.sync-status.err { color: var(--loss); }
+.sync-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3em;
+  margin-bottom: 2em;
+  font-size: 0.85em;
+  color: var(--text-2);
+}
+.sync-meta .sm-row {
+  display: flex;
+  gap: 0.5em;
+}
+.sync-meta code {
+  background: var(--bg-1);
+  padding: 0.1em 0.4em;
+  border-radius: 3px;
+  color: var(--text-1);
+}

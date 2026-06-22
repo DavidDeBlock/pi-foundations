@@ -88,6 +88,7 @@ pub fn site_header(active: SitePage, prefix: &str) -> String {
 }
 
 /// Summary stats displayed on the landing page.
+#[derive(Clone)]
 pub struct IndexStats {
     pub user_deck_count: u64,
     pub netdeck_count: u64,
@@ -142,25 +143,25 @@ pub fn render_index(opts: &IndexOptions) -> String {
   </section>
 
   <section class="stats">
-    <div class="stat-card">
+    <div class="stat-card" data-stat="user-decks">
       <div class="stat-num">"#);
     write!(&mut out, "{}", opts.stats.user_deck_count).unwrap();
     out.push_str(r#"</div>
       <div class="stat-label">User decks</div>
     </div>
-    <div class="stat-card">
+    <div class="stat-card" data-stat="matches">
       <div class="stat-num">"#);
     write!(&mut out, "{}", opts.stats.match_count).unwrap();
     out.push_str(r#"</div>
       <div class="stat-label">Matches</div>
     </div>
-    <div class="stat-card">
+    <div class="stat-card" data-stat="built-decks">
       <div class="stat-num">"#);
     write!(&mut out, "{}", opts.stats.user_built_deck_count).unwrap();
     out.push_str(r#"</div>
       <div class="stat-label">Built decks</div>
     </div>
-    <div class="stat-card">
+    <div class="stat-card" data-stat="netdecks">
       <div class="stat-num">"#);
     write!(&mut out, "{}", opts.stats.netdeck_count).unwrap();
     out.push_str(r#"</div>
@@ -173,6 +174,26 @@ pub fn render_index(opts: &IndexOptions) -> String {
     <span class="lm-value">"#);
     out.push_str(&esc(&last_match));
     out.push_str(r#"</span>
+    <button type="button" id="sync-btn" class="sync-btn">
+      <span class="sync-icon" aria-hidden="true">⟳</span>
+      <span class="sync-label">Sync now</span>
+    </button>
+    <span id="sync-status" class="sync-status" role="status" aria-live="polite"></span>
+  </section>
+
+  <section class="sync-meta">
+    <div class="sm-row">
+      <span class="sm-label">Log file:</span>
+      <code class="sm-value">"#);
+    out.push_str(&esc(&opts.log_path));
+    out.push_str(r#"</code>
+    </div>
+    <div class="sm-row">
+      <span class="sm-label">Generated:</span>
+      <span class="sm-value">"#);
+    out.push_str(&esc(&opts.generated_at));
+    out.push_str(r#"</span>
+    </div>
   </section>
 
   <section class="quick-actions">
@@ -200,6 +221,69 @@ pub fn render_index(opts: &IndexOptions) -> String {
     </a>
   </section>
 </main>
+<script>
+(function() {
+  const btn = document.getElementById('sync-btn');
+  const label = btn.querySelector('.sync-label');
+  const icon = btn.querySelector('.sync-icon');
+  const status = document.getElementById('sync-status');
+  const fmt = (n) => Number(n).toLocaleString();
+
+  function setSyncing(on) {
+    btn.disabled = on;
+    if (on) {
+      label.textContent = 'Syncing…';
+      icon.classList.add('spinning');
+      status.textContent = '';
+      status.className = 'sync-status';
+    } else {
+      label.textContent = 'Sync now';
+      icon.classList.remove('spinning');
+    }
+  }
+
+  function applyStats(idx) {
+    const set = (label, val) => {
+      const el = document.querySelector(`[data-stat="${label}"] .stat-num`);
+      if (el) el.textContent = fmt(val);
+    };
+    set('user-decks', idx.user_deck_count);
+    set('matches', idx.match_count);
+    set('built-decks', idx.user_built_deck_count);
+    set('netdecks', idx.netdeck_count);
+    const lm = document.querySelector('.lm-value');
+    if (lm) lm.textContent = idx.last_match || '—';
+  }
+
+  btn.addEventListener('click', async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch('/sync', { method: 'POST' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      applyStats(data.index);
+      const ev = data.events_seen || 0;
+      const sk = data.files_skipped || 0;
+      const parts = [];
+      if (ev > 0) parts.push(`+${fmt(ev)} events`);
+      else parts.push('no new events');
+      parts.push(`${data.files_ingested} file ingested`);
+      if (sk > 0) parts.push(`${fmt(sk)} skipped`);
+      status.textContent = '✓ ' + parts.join(' · ');
+      status.className = 'sync-status ok';
+      // Update the "generated" line too.
+      const ts = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+      const gen = document.querySelector('.sm-row:nth-child(2) .sm-value');
+      if (gen) gen.textContent = ts;
+    } catch (e) {
+      status.textContent = '✗ sync failed: ' + e.message;
+      status.className = 'sync-status err';
+    } finally {
+      setSyncing(false);
+    }
+  });
+})();
+</script>
 </body>
 </html>"#);
     out

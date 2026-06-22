@@ -86,3 +86,6 @@ Since we have all the available cards and we already have a structure in place t
 
 
 Let's create a starting page and add a navigation header to every page, and make sure the navigation works correctly. I've noticed a small bug when we go to the details of a match and we want to go back to the matches, and there is a double dot HTML in the URL. I will show you. http://192.168.0.136:8000/decks-matches.html.html 
+
+
+How can I sync the log files to our database so the new matches and the new decks are in sync? 

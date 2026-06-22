@@ -52,6 +52,25 @@ Binary lands at `target/release/mtga-logs`.
 ./target/release/mtga-logs web --all -o /tmp/decks.html   # include netdecks (140 decks, ~3.4 MB)
 ./target/release/mtga-logs web --system -o /tmp/d.html    # also show precons / world-champ decks ("?=" names)
 ./target/release/mtga-logs web > decks.html               # stdout: single combined page (no nav links)
+
+### Serve (live HTTP server with sync button)
+
+`serve` does what `web` does, then stays running and serves the generated files over HTTP. The landing page gets a **Sync now** button that re-ingests `Player.log` and re-renders all pages without restart.
+
+```bash
+./target/release/mtga-logs serve --port 8000 -o /tmp/decks.html
+# → serving /tmp on http://127.0.0.1:8000/
+# → open http://127.0.0.1:8000/index.html
+# → POST http://127.0.0.1:8000/sync to re-ingest the log and re-render
+# → Ctrl-C to stop
+```
+
+Endpoints:
+- `GET /` and `GET /<file>` — serve any file from the output directory (e.g. `decks.html`, `decks-matches.html`, `cards.html`, `builder.html`, `cards-data.json`, `decks-matches/<uuid>.html`)
+- `GET /api/status` — JSON with current index stats (no re-render)
+- `POST /sync` — re-ingest `Player.log` then re-render every page; returns `{ok, events_seen, files_ingested, files_skipped, decks_upserted, matches_inserted, inventory_inserted, index: {...}}`
+
+The HTML pages are unchanged from `web`; only the server is added. After `POST /sync` the next page load (Decks, Matches, etc.) reflects the freshly parsed data — no server restart needed.
 ```
 
 ### Decks page
