@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#f5f0e6" />
+  <title>Cozy Ledger — Our household notebook</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css?v=2" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%235a7248'%3E%3Cpath d='M3 10.5 12 3l9 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-4v-6h-7v6h-4A1.5 1.5 0 0 1 3 19.5v-9Z'/%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%23faf7f1'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <!-- Subtle background decorations (injected by JS) -->
+  <div class="deco-bg" aria-hidden="true"></div>
+
+  <div class="app" id="app"></div>
+
+  <!-- Floating add button (mobile) -->
+  <button class="fab" id="fab" title="Add transaction" aria-label="Add transaction">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+
+  <script src="data.js?v=2"></script>
+  <script src="utils.js?v=2"></script>
+  <script src="icons.js?v=2"></script>
+  <script src="csv.js?v=2"></script>
+  <script src="app.js?v=2"></script>
+  <script>
+    // Inject decorative SVGs (kept here so icons.js isn't tangled with HTML)
+    (function injectDeco() {
+      const host = document.querySelector('.deco-bg');
+      if (!host) return;
+      const items = [
+        { cls: 'd1', svg: window.Deco ? window.Deco.leaf : '' },
+        { cls: 'd2', svg: window.Deco ? window.Deco.coin : '' },
+        { cls: 'd3', svg: window.Deco ? window.Deco.receipt : '' },
+        { cls: 'd4', svg: window.Deco ? window.Deco.house : '' },
+        { cls: 'd5', svg: window.Deco ? window.Deco.dots : '' },
+      ];
+      host.innerHTML = items.map(i => `<div class="${i.cls}">${i.svg}</div>`).join('');
+    })();
+
+    // FAB quick-add
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('fab').addEventListener('click', () => {
+        document.getElementById('add-txn-btn')?.click();
+      });
+    });
+
+    // Boot
+    App.init();
+  </script>
+</body>
+</html>
