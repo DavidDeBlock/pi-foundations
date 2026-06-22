@@ -51,6 +51,160 @@ pub struct SiblingLink {
     pub href: String,
 }
 
+/// Which top-level page the user is currently viewing. Used by
+/// `site_header` to mark the active link in the shared nav.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SitePage {
+    Home,
+    Decks,
+    Matches,
+    Catalog,
+    Builder,
+}
+
+/// Render the shared `<header class="site-header">` block used by every
+/// page. `prefix` is prepended to every link so callers in subdirectories
+/// (e.g. `decks-matches/<uuid>.html`) can pass `"../"`.
+pub fn site_header(active: SitePage, prefix: &str) -> String {
+    let link = |page: SitePage, href: &str, label: &str| -> String {
+        let cls = if page == active { "active" } else { "" };
+        format!(r#"<a class="{cls}" href="{prefix}{href}">{label}</a>"#)
+    };
+    format!(
+        r#"<header class="site-header">
+  <a class="site-brand" href="{prefix}index.html">MTG Arena Logs</a>
+  <nav class="site-nav">
+    {decks}
+    {matches}
+    {catalog}
+    {builder}
+  </nav>
+</header>"#,
+        decks = link(SitePage::Decks, "decks.html", "Decks"),
+        matches = link(SitePage::Matches, "decks-matches.html", "Matches"),
+        catalog = link(SitePage::Catalog, "cards.html", "Catalog"),
+        builder = link(SitePage::Builder, "builder.html", "Builder"),
+    )
+}
+
+/// Summary stats displayed on the landing page.
+pub struct IndexStats {
+    pub user_deck_count: u64,
+    pub netdeck_count: u64,
+    pub match_count: u64,
+    pub user_built_deck_count: u64,
+    pub last_match: Option<String>,
+    pub card_db_summary: Option<(u64, String)>,
+}
+
+pub struct IndexOptions {
+    pub stats: IndexStats,
+    pub log_path: String,
+    pub generated_at: String,
+}
+
+/// Render the landing page (`index.html`). Quick-glance dashboard with
+/// the same nav header every other page uses.
+pub fn render_index(opts: &IndexOptions) -> String {
+    let last_match = opts.stats.last_match.clone().unwrap_or_else(|| "—".to_string());
+    let (card_count, card_updated) = match opts.stats.card_db_summary.clone() {
+        Some((n, u)) => (Some(n), Some(u)),
+        None => (None, None),
+    };
+    let card_line = match (card_count, card_updated) {
+        (Some(n), Some(u)) => format!("{n} cards in DB (updated {u})"),
+        _ => "card DB not loaded".to_string(),
+    };
+    let mut out = String::new();
+    out.push_str(r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MTG Arena Logs</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+"#);
+    out.push_str(include_str!("web.css"));
+    out.push_str(r#"</style>
+</head>
+<body>
+"#);
+    out.push_str(&site_header(SitePage::Home, ""));
+
+    out.push_str(r#"<main class="landing">
+  <section class="hero">
+    <h1>MTG Arena Logs</h1>
+    <p class="subtitle">"#);
+    out.push_str(&esc(&opts.log_path));
+    out.push_str(" · generated ");
+    out.push_str(&esc(&opts.generated_at));
+    out.push_str(r#"</p>
+  </section>
+
+  <section class="stats">
+    <div class="stat-card">
+      <div class="stat-num">"#);
+    write!(&mut out, "{}", opts.stats.user_deck_count).unwrap();
+    out.push_str(r#"</div>
+      <div class="stat-label">User decks</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">"#);
+    write!(&mut out, "{}", opts.stats.match_count).unwrap();
+    out.push_str(r#"</div>
+      <div class="stat-label">Matches</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">"#);
+    write!(&mut out, "{}", opts.stats.user_built_deck_count).unwrap();
+    out.push_str(r#"</div>
+      <div class="stat-label">Built decks</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">"#);
+    write!(&mut out, "{}", opts.stats.netdeck_count).unwrap();
+    out.push_str(r#"</div>
+      <div class="stat-label">Netdecks (hidden)</div>
+    </div>
+  </section>
+
+  <section class="last-match">
+    <span class="lm-label">Last match:</span>
+    <span class="lm-value">"#);
+    out.push_str(&esc(&last_match));
+    out.push_str(r#"</span>
+  </section>
+
+  <section class="quick-actions">
+    <a class="qa-card" href="decks.html">
+      <div class="qa-icon">⛁</div>
+      <h2>Decks</h2>
+      <p>Browse your played decks with their full card lists, sideboard, color identity, and wildcard cost.</p>
+    </a>
+    <a class="qa-card" href="decks-matches.html">
+      <div class="qa-icon">⚔</div>
+      <h2>Matches</h2>
+      <p>Game-by-game history with W/L, opponent, event, deck used, and clickable detail pages with the full play log.</p>
+    </a>
+    <a class="qa-card" href="cards.html">
+      <div class="qa-icon">✦</div>
+      <h2>Card Catalog</h2>
+      <p>Searchable browser over all "#);
+    out.push_str(&card_line);
+    out.push_str(r#". Filter by name, color, type; click any card to inspect.</p>
+    </a>
+    <a class="qa-card" href="builder.html">
+      <div class="qa-icon">✎</div>
+      <h2>Deck Builder</h2>
+      <p>Build new decks with the inline catalog pane, then export to JSON and import via <code>mtga-logs deck-import</code>.</p>
+    </a>
+  </section>
+</main>
+</body>
+</html>"#);
+    out
+}
+
 /// Render the full HTML page as a String. Output is self-contained (no external
 /// assets); open in any browser or serve with any static file server.
 ///
@@ -134,6 +288,13 @@ pub fn render(store_db: &Connection, card_db: Option<&Connection>, opts: &Render
     out.push_str(include_str!("web.css"));
     out.push_str("</style>\n</head>\n<body>\n");
 
+    // Shared site nav (highlight the right link based on which page this is).
+    let active = match opts.sections {
+        Sections::Matches => SitePage::Matches,
+        _ => SitePage::Decks,
+    };
+    out.push_str(&site_header(active, ""));
+
     // Header.
     let h1 = match opts.sections {
         Sections::Matches => "MTG Arena Matches",
@@ -149,16 +310,8 @@ pub fn render(store_db: &Connection, card_db: Option<&Connection>, opts: &Render
     )
     .unwrap();
 
-    // Optional nav link to the sibling page (e.g. decks.html → matches.html).
-    if let Some(link) = &opts.sibling_link {
-        write!(
-            &mut out,
-            "<nav class=\"tabs\"><a href=\"{}\">{}</a></nav>\n",
-            esc(&link.href),
-            esc(link.label),
-        )
-        .unwrap();
-    }
+    // (Sibling cross-link removed; the persistent site header on every
+    // page already includes a Matches link.)
 
     // DB status banner.
     match card_db {
@@ -190,17 +343,8 @@ pub fn render(store_db: &Connection, card_db: Option<&Connection>, opts: &Render
 
     // Cross-link nav: catalog and deck builder.
     // Only show when this is the "file" output (not stdout).
-    if !matches.is_empty()
-        && matches!(opts.sections, Sections::Decks | Sections::Both)
-        && opts.sibling_link.is_some()
-    {
-        out.push_str(
-            "<nav class=\"page-nav\">\
-             <a class=\"forward\" href=\"cards.html\">Browse card catalog &rarr;</a>\
-             <a class=\"forward\" href=\"builder.html\">Open deck builder &rarr;</a>\
-             </nav>\n",
-        );
-    }
+    // (Cross-link buttons removed; the persistent site header now serves
+    // this purpose on every page.)
 
     // Summary stats + filter toggle (only on decks page).
     if !summaries.is_empty() && matches!(opts.sections, Sections::Decks | Sections::Both) {
@@ -1053,13 +1197,11 @@ pub fn render_match_detail(
         "Loss" => "loss",
         _ => "unknown",
     };
-    write!(
-        &mut out,
-        "<nav class=\"tabs\"><a href=\"../{}.html\">{} Matches</a></nav>\n",
-        esc(&opts.matches_index),
-        esc("←"),
-    )
-    .unwrap();
+    // Shared site header. The match detail page lives in a subdirectory
+    // (`decks-matches/<uuid>.html`), so all nav links need a `../` prefix.
+    // Highlight "Matches" since that's the parent index.
+    out.push_str(&site_header(SitePage::Matches, "../"));
+    // (The "← Matches" tab is now redundant — the site header serves this.)
     let opp_name = opts
         .players
         .iter()
@@ -2176,20 +2318,12 @@ pub fn render_catalog(
     out.push_str(r#"<style>"#);
     out.push_str(include_str!("web.css"));
     out.push_str("</style>\n</head>\n<body>\n");
+    out.push_str(&site_header(SitePage::Catalog, ""));
     out.push_str(r#"<header class="page-header">
   <h1>MTG Arena Card Catalog</h1>
   <p class="subtitle">"#);
     out.push_str(&esc(&updated_line));
     out.push_str(r#"</p>
-  <nav class="page-nav">
-    <a class="back" href=""#);
-    out.push_str(&esc_attr(decks_href));
-    out.push_str(r#"">&larr; Back to decks</a>
-    <a class="forward" href=""#);
-    out.push_str(&esc_attr(matches_href));
-    out.push_str(r#"">Recent matches &rarr;</a>
-    <a class="forward" href="builder.html">Open deck builder &rarr;</a>
-  </nav>
 </header>
 <section class="filter-bar">
   <div class="filter-row">
@@ -2578,6 +2712,7 @@ pub fn render_builder(
     out.push_str(r#"<style>"#);
     out.push_str(include_str!("web.css"));
     out.push_str("</style>\n</head>\n<body class=\"builder-page\">\n");
+    out.push_str(&site_header(SitePage::Builder, ""));
     out.push_str(r#"<header class="page-header builder-header">
   <h1>Deck Builder</h1>
   <p class="subtitle">"#);
@@ -2585,14 +2720,6 @@ pub fn render_builder(
         "Existing user decks: {existing_count}. {card_status}"
     )));
     out.push_str(r#"</p>
-  <nav class="page-nav">
-    <a class="back" href=""#);
-    out.push_str(&esc_attr(decks_href));
-    out.push_str(r#"">&larr; Back to decks</a>
-    <a class="forward" href=""#);
-    out.push_str(&esc_attr(cards_href));
-    out.push_str(r#"">Browse catalog &rarr;</a>
-  </nav>
 </header>
 <section class="builder-shell">
   <aside class="builder-sidebar">

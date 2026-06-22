@@ -209,6 +209,20 @@ fn run_web(
                 .and_then(|s| s.to_str())
                 .unwrap_or("decks-matches")
                 .to_string();
+
+            // Build the landing page first so it always gets written even
+            // if a downstream step fails.
+            let index_stats = collect_index_stats(&store_conn, card_db.as_ref());
+            let index_html = web::render_index(&web::IndexOptions {
+                stats: index_stats,
+                log_path: log_path.display().to_string(),
+                generated_at: generated_at.clone(),
+            });
+            let index_path = index_path_for(path);
+            if let Err(e) = fs::write(&index_path, &index_html) {
+                eprintln!("error writing {}: {}", index_path.display(), e);
+            }
+
             let decks_opts = web::RenderOptions {
                 include_netdecks: all,
                 show_system_decks: show_system,
@@ -299,6 +313,63 @@ fn matches_path_for(decks_path: &std::path::Path) -> std::path::PathBuf {
     parent.join(format!("{}-matches.html", stem))
 }
 
+/// Derive the index page path. Always `<parent>/index.html` — a fixed name
+/// (not derived from `decks_path`) so existing bookmarks keep working.
+fn index_path_for(decks_path: &std::path::Path) -> std::path::PathBuf {
+    let parent = decks_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    parent.join("index.html")
+}
+
+/// Gather the stats displayed on the landing page.
+fn collect_index_stats(
+    store_conn: &Connection,
+    card_db: Option<&Connection>,
+) -> web::IndexStats {
+    // Deck counts: user vs netdeck.
+    let mut user_deck_count: u64 = 0;
+    let mut netdeck_count: u64 = 0;
+    if let Ok(mut stmt) = store_conn.prepare("SELECT is_netdeck FROM decks") {
+        if let Ok(rows) = stmt.query_map([], |row| row.get::<_, i64>(0)) {
+            for r in rows.flatten() {
+                if r != 0 {
+                    netdeck_count += 1;
+                } else {
+                    user_deck_count += 1;
+                }
+            }
+        }
+    }
+    // User-built decks (separate from played decks).
+    let user_built_deck_count: u64 = store_conn
+        .query_row("SELECT COUNT(*) FROM user_decks", [], |r| r.get::<_, i64>(0))
+        .unwrap_or(0) as u64;
+    // Match count.
+    let match_count: u64 = store_conn
+        .query_row("SELECT COUNT(*) FROM matches", [], |r| r.get::<_, i64>(0))
+        .unwrap_or(0) as u64;
+    // Last match timestamp.
+    let last_match = store_conn
+        .query_row(
+            "SELECT ts FROM matches ORDER BY ts DESC LIMIT 1",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .ok()
+        .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
+        .map(|dt| dt.format("%Y-%m-%d %H:%M UTC").to_string());
+    // Card DB summary.
+    let card_db_summary = card_db.and_then(|_| {
+        cards::status().ok().and_then(|s| Some((s.card_count?, s.updated_at?)))
+    });
+    web::IndexStats {
+        user_deck_count,
+        netdeck_count,
+        match_count,
+        user_built_deck_count,
+        last_match,
+        card_db_summary,
+    }
+}
 /// Directory where per-match detail pages are written (sibling to decks/matches
 /// files). Created on demand.
 fn match_pages_dir_for(decks_path: &std::path::Path) -> std::path::PathBuf {

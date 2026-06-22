@@ -85,3 +85,4 @@ Let's work a bit on the visuals of the decks.html. Some decks have a question ma
 Since we have all the available cards and we already have a structure in place to download them and persist them, it would be handy to create some sort of deck builder. We can edit existing decks, we can create new decks, and we need a decent filter to search the Skyfall database. Create a separate HTML for the deck builder. And maybe a separate HTML for the catalog 
 
 
+Let's create a starting page and add a navigation header to every page, and make sure the navigation works correctly. I've noticed a small bug when we go to the details of a match and we want to go back to the matches, and there is a double dot HTML in the URL. I will show you. http://192.168.0.136:8000/decks-matches.html.html 
