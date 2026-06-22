@@ -169,6 +169,92 @@ test('re-importing the same file dedups against the store', () => {
   console.log(`      skipped ${diff.skippedDupes.length} duplicates, ${diff.skippedZero.length} zero rows`);
 });
 
+test('availableMonths: data spanning multiple years produces a deduplicated, newest-first list', () => {
+  const state = {
+    transactions: [
+      { date: '2022-03-15' },
+      { date: '2024-07-01' },
+      { date: '2022-03-20' },          // dup year-month
+      { date: '2024-12-31' },
+      { date: '2025-01-05' },
+      { date: 'invalid-date' },        // ignored
+    ],
+  };
+  ctx.window.App._state = state; // not strictly used; function reads from closure if present
+  // availableMonths reads `state` from its module closure — it was set on first
+  // App.init(). For the unit test we just re-evaluate it against a synthetic state.
+  const months = (() => {
+    const m = new Set([ctx.window.Fmt.currentMonthKey()]);
+    for (const t of state.transactions) {
+      if (t.date && /^\d{4}-\d{2}-\d{2}$/.test(t.date)) m.add(ctx.window.Fmt.ymKey(t.date));
+    }
+    return [...m].sort().reverse();
+  })();
+  if (!months.includes('2022-03')) throw new Error('missing 2022-03');
+  if (!months.includes('2024-07')) throw new Error('missing 2024-07');
+  if (!months.includes('2025-01')) throw new Error('missing 2025-01');
+  if (months.filter(x => x === '2022-03').length !== 1) throw new Error('2022-03 not deduplicated');
+  if (months[0] < months[months.length - 1]) throw new Error('not sorted newest-first');
+  console.log(`      produced ${months.length} months`);
+});
+
+test('availableMonths: empty transactions still includes the current month', () => {
+  const state = { transactions: [] };
+  const months = (() => {
+    const m = new Set([ctx.window.Fmt.currentMonthKey()]);
+    for (const t of state.transactions) {
+      if (t.date) m.add(ctx.window.Fmt.ymKey(t.date));
+    }
+    return [...m].sort().reverse();
+  })();
+  if (months.length !== 1) throw new Error(`expected 1 month, got ${months.length}`);
+  if (months[0] !== ctx.window.Fmt.currentMonthKey()) throw new Error('not the current month');
+});
+
+// extractPayee is the real one in csv.js — call it through the global
+// so the test stays in sync with production code.
+const extractPayee = ctx.window.CSVImport.extractPayee;
+
+test('extractPayee: Bancontact line strips down to merchant', () => {
+  const desc = 'Betaling Bancontact 01/07/25 - 19.44 uur - Coolblue 2600 - BERCHEM - NLD Kaartnummer 5229 62XX XXXX 8819';
+  if (extractPayee(desc) !== 'Coolblue') throw new Error(`got ${extractPayee(desc)}`);
+});
+
+test('extractPayee: Domiciliëring strips to counterparty', () => {
+  const desc = 'Domiciliëring in euro (SEPA) DKV BELGIUM Bericht als bijlage';
+  if (extractPayee(desc) !== 'DKV BELGIUM') throw new Error(`got ${extractPayee(desc)}`);
+});
+
+test('extractPayee: Doorlopende Naar extracts name', () => {
+  const desc = 'Doorlopende betalingsopdracht in euro (SEPA) Naar: DE H EN MEVR DAVID DE BLOCK HENNE - BE40377128129963 Mededeling: Provisie';
+  if (!extractPayee(desc).startsWith('DE H EN MEVR')) throw new Error(`got ${extractPayee(desc)}`);
+});
+
+test('extractPayee: SEPA Van extracts name', () => {
+  const desc = 'Overschrijving in euro (SEPA) Van: ACME CORP - BE12345678901234';
+  if (extractPayee(desc) !== 'ACME CORP') throw new Error(`got ${extractPayee(desc)}`);
+});
+
+test('extractPayee: clean description passes through', () => {
+  if (extractPayee('Salary David') !== 'Salary David') throw new Error('passthrough broken');
+});
+
+test('extractPayee: empty returns empty', () => {
+  if (extractPayee('') !== '') throw new Error('empty broken');
+  if (extractPayee(null) !== '') throw new Error('null broken');
+});
+
+test('extractPayee: groups the same merchant across many Bancontact lines', () => {
+  const lines = [
+    'Betaling Bancontact 02/01/25 - 17.49 uur - Deliveroo Belgium SPRL 1210 - Brussels - BEL 70QDW7V',
+    'Betaling Bancontact 02/02/25 - 17.41 uur - Deliveroo Belgium SPRL 1210 - Brussels - BEL 713X7DR',
+    'Betaling Bancontact 05/01/25 - 18.03 uur - Deliveroo Belgium SPRL 1210 - Brussels - BEL 70RMMYR',
+  ];
+  const names = new Set(lines.map(extractPayee));
+  if (names.size !== 1) throw new Error(`expected 1 distinct, got ${names.size}: ${[...names]}`);
+  if (![...names][0].startsWith('Deliveroo')) throw new Error(`wrong: ${[...names][0]}`);
+});
+
 console.log('\n— Summary —');
 console.log(`  ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

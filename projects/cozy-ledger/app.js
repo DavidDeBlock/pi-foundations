@@ -7,7 +7,7 @@ const App = (() => {
   let state = Store.load();
   let view = 'dashboard';           // current route
   let monthKey = Fmt.currentMonthKey(); // for month-scoped screens
-  let txnFilters = { month: 'all', type: 'all', categoryId: 'all', userId: 'all', sourceId: 'all', scope: 'all' };
+  let txnFilters = { month: 'all', type: 'all', categoryId: 'all', userId: 'all', sourceId: 'all', scope: 'all', payee: 'all' };
 
   // ---- Boot ---------------------------------------------------------
   function init() {
@@ -56,6 +56,7 @@ const App = (() => {
         navItem('categories',  'Categories',    Icons.tags, state.categories.length),
         navItem('sources',     'Sources',       Icons.wallet, state.sources.length),
         navItem('users',       'Users',         Icons.users, state.users.length),
+        navItem('payees',      'Payees',        Icons.store, distinctPayees().filter(p => p.noCategory > 0).length || null),
       ),
       el('div', { class: 'sidebar-foot' },
         el('strong', {}, 'Phase 1'),
@@ -109,6 +110,7 @@ const App = (() => {
       categories:   ['<em>Categories</em>',        'Give every euro a clear home.'],
       sources:      ['Sources & <em>wallets</em>', 'Bank accounts, cash and savings.'],
       users:        ['<em>Users</em>',             'The people sharing this notebook.'],
+      payees:       ['<em>Payees</em>',            'Everyone you have paid — sort by what still needs a category.'],
     };
     $('#page-title').innerHTML = titles[view][0];
     $('#page-sub').textContent = titles[view][1];
@@ -126,6 +128,7 @@ const App = (() => {
     else if (view === 'categories') view_.appendChild(renderCategories());
     else if (view === 'sources') view_.appendChild(renderSources());
     else if (view === 'users') view_.appendChild(renderUsers());
+    else if (view === 'payees') view_.appendChild(renderPayees());
   }
 
   // ---- Month picker -------------------------------------------------
@@ -160,9 +163,10 @@ const App = (() => {
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 6);
 
-    // Monthly trend (last 6 months)
+    // Monthly trend (last 6 months ending at the selected month, so the
+    // chart follows the topbar month filter).
     const months = [];
-    for (let i = 5; i >= 0; i--) months.push(Fmt.shiftMonth(Fmt.currentMonthKey(), -i));
+    for (let i = 5; i >= 0; i--) months.push(Fmt.shiftMonth(monthKey, -i));
     const trend = months.map(m => {
       const mTx = state.transactions.filter(t => Fmt.ymKey(t.date) === m);
       return {
@@ -173,8 +177,7 @@ const App = (() => {
     });
 
     const recent = Store.listTransactions(state)
-      .filter(t => Fmt.inMonth(t.date, monthKey))
-      .slice(0, 6);
+      .filter(t => Fmt.inMonth(t.date, monthKey));
 
     const wrap = el('div', { class: 'view-dashboard' });
 
@@ -338,7 +341,7 @@ const App = (() => {
     f.appendChild(field('Month',
       el('select', { class: 'select', onchange: (e) => { txnFilters.month = e.target.value; renderView(); } },
         option('all', 'All months'),
-        ...lastNMonths(12).map(m => option(m, Fmt.monthLabel(m), txnFilters.month === m)),
+        ...availableMonths().map(m => option(m, Fmt.monthLabel(m), txnFilters.month === m)),
       )));
 
     f.appendChild(field('Type',
@@ -373,8 +376,15 @@ const App = (() => {
         option('shared', 'Shared', txnFilters.scope === 'shared'),
       )));
 
+    const payees = distinctPayees();
+    f.appendChild(field('Payee',
+      el('select', { class: 'select', onchange: (e) => { txnFilters.payee = e.target.value; renderView(); } },
+        option('all', 'All payees'),
+        ...payees.map(p => option(p.name, p.name + (p.noCategory ? ` (${p.noCategory} ✱)` : ''), txnFilters.payee === p.name)),
+      )));
+
     f.appendChild(el('div', { style: { flex: 1 } }));
-    f.appendChild(el('button', { class: 'btn btn-ghost btn-sm', onclick: () => { txnFilters = { month: 'all', type: 'all', categoryId: 'all', userId: 'all', sourceId: 'all', scope: 'all' }; renderView(); } }, 'Reset'));
+    f.appendChild(el('button', { class: 'btn btn-ghost btn-sm', onclick: () => { txnFilters = { month: 'all', type: 'all', categoryId: 'all', userId: 'all', sourceId: 'all', scope: 'all', payee: 'all' }; renderView(); } }, 'Reset'));
 
     return f;
   }
@@ -388,11 +398,35 @@ const App = (() => {
   function option(value, label, selected = false) {
     return el('option', { value, selected }, label);
   }
-  function lastNMonths(n) {
-    const out = [];
-    let cur = Fmt.currentMonthKey();
-    for (let i = 0; i < n; i++) { out.push(cur); cur = Fmt.shiftMonth(cur, -1); }
-    return out;
+  function availableMonths() {
+    // Every year-month that actually has a transaction, plus the current
+    // month (so the picker is usable on a fresh install). Newest first.
+    const months = new Set([Fmt.currentMonthKey()]);
+    for (const t of state.transactions) {
+      if (t.date) months.add(Fmt.ymKey(t.date));
+    }
+    return [...months].sort().reverse();
+  }
+  // Strip the boilerplate off ING Belgium descriptions and return the merchant
+  // or counterparty name. The regex set lives in csv.js so it stays next to
+  // the rest of the ING-format domain knowledge; aliased here for ergonomics.
+  const extractPayee = CSVImport.extractPayee;
+  function distinctPayees() {
+    const map = new Map();
+    for (const t of state.transactions) {
+      const name = extractPayee(t.description) || '—';
+      if (!map.has(name)) {
+        map.set(name, { name, count: 0, noCategory: 0, lastDate: null, lastCategoryId: null });
+      }
+      const p = map.get(name);
+      p.count++;
+      if (!t.categoryId) p.noCategory++;
+      if (!p.lastDate || t.date > p.lastDate) {
+        p.lastDate = t.date;
+        p.lastCategoryId = t.categoryId || null;
+      }
+    }
+    return [...map.values()];
   }
 
   function filteredTxns() {
@@ -404,6 +438,7 @@ const App = (() => {
       if (f.userId !== 'all' && t.paidByUserId !== f.userId) return false;
       if (f.sourceId !== 'all' && t.sourceId !== f.sourceId) return false;
       if (f.scope !== 'all' && t.scope !== f.scope) return false;
+      if (f.payee !== 'all' && extractPayee(t.description) !== f.payee) return false;
       return true;
     });
   }
@@ -434,7 +469,7 @@ const App = (() => {
     const tr = el('tr', {});
     tr.appendChild(el('td', { class: 'txn-date' }, Fmt.date(t.date, { short: !compact })));
     tr.appendChild(el('td', {},
-      el('div', { class: 'txn-desc' }, t.description || (cat ? cat.name : '—')),
+      el('div', { class: 'txn-desc', title: t.description || '' }, extractPayee(t.description) || t.description || (cat ? cat.name : '—')),
       t.notes ? el('div', { class: 'cell-meta' }, t.notes) : null,
     ));
     tr.appendChild(el('td', {},
@@ -567,6 +602,67 @@ const App = (() => {
         el('div', { class: 'muted', style: { fontSize: '.82rem' } }, `${state.users.filter(u => u.active).length} active`)),
       state.users.length ? grid : emptyState('No users yet', 'Add at least one person to start logging transactions.'),
     ));
+    return wrap;
+  }
+  function renderPayees() {
+    const payees = distinctPayees();
+    const needsCount = payees.filter(p => p.noCategory > 0).length;
+    const wrap = el('div', {});
+
+    // Summary header
+    const summary = el('div', { class: 'summary-grid' },
+      el('div', { class: 'summary income' },
+        el('div', { class: 's-label' }, 'Distinct payees'),
+        el('div', { class: 's-value' }, String(payees.length)),
+        el('div', { class: 's-foot' }, 'After extracting merchant names from descriptions'),
+        el('div', { class: 's-icon', html: Icons.store }),
+      ),
+      el('div', { class: 'summary ' + (needsCount > 0 ? 'expense' : 'income') },
+        el('div', { class: 's-label' }, 'Need categorization'),
+        el('div', { class: 's-value' }, String(needsCount)),
+        el('div', { class: 's-foot' }, needsCount > 0 ? 'Click a payee below to see their transactions' : 'All payees are categorized'),
+        el('div', { class: 's-icon', html: Icons.tags }),
+      ),
+    );
+    wrap.appendChild(summary);
+
+    if (payees.length === 0) {
+      wrap.appendChild(emptyState('No payees yet', 'Import a statement or add a transaction to get started.'));
+      return wrap;
+    }
+
+    // Sort: needs-cat first, then by count desc
+    payees.sort((a, b) => (b.noCategory - a.noCategory) || (b.count - a.count) || a.name.localeCompare(b.name));
+
+    const tbl = el('table', { class: 'txn-table' });
+    tbl.innerHTML = `
+      <thead><tr>
+        <th>Payee</th>
+        <th class="right">Transactions</th>
+        <th class="right">Need category</th>
+        <th>Last category</th>
+        <th>Last seen</th>
+      </tr></thead>
+      <tbody></tbody>`;
+    const tb = tbl.querySelector('tbody');
+    for (const p of payees) {
+      const lastCat = p.lastCategoryId ? state.categories.find(c => c.id === p.lastCategoryId) : null;
+      const tr = el('tr', { class: 'clickable', onclick: () => { txnFilters.payee = p.name; goTo('transactions'); } });
+      tr.appendChild(el('td', { title: p.name }, p.name));
+      tr.appendChild(el('td', { class: 'right tabnum' }, String(p.count)));
+      tr.appendChild(el('td', { class: 'right tabnum' + (p.noCategory > 0 ? ' text-neg' : '') }, p.noCategory > 0 ? String(p.noCategory) : '—'));
+      tr.appendChild(el('td', {},
+        lastCat ? el('div', { class: 'cell-cat' },
+          el('div', { class: 'cat-swatch', style: { background: lastCat.color } }, lastCat.icon || '✦'),
+          el('span', {}, lastCat.name),
+        ) : '—',
+      ));
+      tr.appendChild(el('td', { class: 'muted' }, p.lastDate ? Fmt.date(p.lastDate, { short: true }) : '—'));
+      tb.appendChild(tr);
+    }
+    tbl.appendChild(tb);
+    wrap.appendChild(tbl);
+
     return wrap;
   }
   function renderUserCard(u) {

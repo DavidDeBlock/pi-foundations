@@ -5,6 +5,30 @@
 // =====================================================================
 
 const CSVImport = (() => {
+  // Strip the boilerplate off an ING Belgium description and return the
+  // merchant or counterparty name. Falls back to the raw description if
+  // no pattern matches (e.g. manually-typed transactions).
+  function extractPayee(description) {
+    if (!description) return '';
+    let m;
+    // Betaling Bancontact DD/MM/YY - HH.MM uur - MERCHANT POSTAL - CITY - ...
+    m = description.match(/^Betaling Bancontact \d{2}\/\d{2}\/\d{2} - \d{2}\.\d{2} uur - (.+?) \d{4,} - /);
+    if (m) return m[1].trim();
+    // Domiciliëring in euro (SEPA) NAME Bericht als bijlage
+    m = description.match(/^Domicili[ëe]ring in euro \(SEPA\) (.+?) Bericht als bijlage/);
+    if (m) return m[1].trim();
+    // Doorlopende betalingsopdracht in euro (SEPA) Naar: NAME - BE...
+    m = description.match(/^Doorlopende betalingsopdracht in euro \(SEPA\) Naar: (.+?) - BE\d+/);
+    if (m) return m[1].trim();
+    // Overschrijving/Instantoverschrijving in euro (SEPA) [source] Naar: NAME - BE...
+    m = description.match(/(?:Instant)?[Oo]verschrijving in euro (?:\(SEPA\) )?(?:.+? )?Naar: (.+?) - BE\d+/);
+    if (m) return m[1].trim();
+    // SEPA Van: NAME - BE...
+    m = description.match(/(?:Instant)?[Oo]verschrijving in euro (?:\(SEPA\) )?(?:.+? )?Van: (.+?) - BE\d+/);
+    if (m) return m[1].trim();
+    return description;
+  }
+
   // ---- Belgian-locale helpers ----------------------------------------
 
   // "01/01/2025" → "2025-01-01"
@@ -220,6 +244,7 @@ const CSVImport = (() => {
     diffAgainstStore,
     suggestedCategoryFor,
     mapRowToTxn,
+    extractPayee,
   };
 })();
 

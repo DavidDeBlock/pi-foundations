@@ -458,13 +458,12 @@ body::before {
 /* --- Bar chart (income vs expense by month) --- */
 .bar-chart {
   display: flex;
-  align-items: end;
   gap: 14px;
   height: 200px;
   padding: 12px 4px 0;
 }
-.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.bar-pair { display: flex; align-items: end; gap: 4px; height: 100%; width: 100%; justify-content: center; }
+.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 0; }
+.bar-pair { display: flex; align-items: end; gap: 4px; flex: 1 1 0; min-height: 0; width: 100%; justify-content: center; }
 .bar {
   width: 14px;
   border-radius: 6px 6px 2px 2px;
@@ -533,6 +532,7 @@ body::before {
 }
 .txn-table tr:last-child td { border-bottom: 0; }
 .txn-table tr:hover td { background: var(--cream-soft); }
+.txn-table tr.clickable { cursor: pointer; }
 .txn-desc { font-weight: 500; }
 .txn-date { color: var(--ink-soft); font-size: .82rem; white-space: nowrap; }
 .txn-amount { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; white-space: nowrap; }
