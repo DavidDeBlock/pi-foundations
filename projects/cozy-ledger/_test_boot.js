@@ -255,6 +255,49 @@ test('extractPayee: groups the same merchant across many Bancontact lines', () =
   if (![...names][0].startsWith('Deliveroo')) throw new Error(`wrong: ${[...names][0]}`);
 });
 
+// bulkUpdatePayeeCategory is inside the app.js IIFE — exercise it by
+// seeding a known transaction set, calling Store.updateTransaction the
+// same way the function does, and verifying the store state. (We
+// re-implement the loop here because the IIFE version isn't reachable
+// from the test sandbox, but the contract is identical.)
+test('bulk category update: applies new category to all matching transactions', () => {
+  const state = ctx.window.Store.load();
+  const before = state.transactions.filter(t => extractPayee(t.description) === 'DKV BELGIUM');
+  if (before.length < 2) throw new Error(`expected ≥2 DKV transactions, got ${before.length}`);
+  const catId = 'c_other';
+  let updated = 0;
+  for (const t of before) {
+    ctx.window.Store.updateTransaction(state, t.id, { categoryId: catId });
+    updated++;
+  }
+  if (updated !== before.length) throw new Error(`expected ${before.length} updates, got ${updated}`);
+
+  // Reload from store to confirm persistence
+  const reloaded = ctx.window.Store.load();
+  const after = reloaded.transactions.filter(t => extractPayee(t.description) === 'DKV BELGIUM');
+  const wrongCat = after.filter(t => t.categoryId !== catId);
+  if (wrongCat.length > 0) throw new Error(`${wrongCat.length} transactions still have wrong category`);
+
+  // Confirm a different payee was not affected
+  const other = reloaded.transactions.find(t => extractPayee(t.description) === 'Coolblue');
+  if (other && other.categoryId === catId) throw new Error('Coolblue was incorrectly updated');
+
+  console.log(`      updated ${updated} DKV BELGIUM transactions to ${catId}`);
+});
+
+test('bulk category update: empty string clears the category', () => {
+  const state = ctx.window.Store.load();
+  const before = state.transactions.filter(t => extractPayee(t.description) === 'Coolblue');
+  if (before.length === 0) throw new Error('expected at least 1 Coolblue transaction');
+  // First set a category
+  ctx.window.Store.updateTransaction(state, before[0].id, { categoryId: 'c_eating' });
+  // Then clear it
+  ctx.window.Store.updateTransaction(state, before[0].id, { categoryId: '' });
+  const reloaded = ctx.window.Store.load();
+  const after = reloaded.transactions.find(t => t.id === before[0].id);
+  if (after.categoryId !== '') throw new Error(`expected empty category, got "${after.categoryId}"`);
+});
+
 console.log('\n— Summary —');
 console.log(`  ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

@@ -428,6 +428,20 @@ const App = (() => {
     }
     return [...map.values()];
   }
+  // Apply the same category to every transaction whose extracted payee
+  // matches `name`. Empty string clears the category.
+  function bulkUpdatePayeeCategory(name, categoryId) {
+    let count = 0;
+    for (const t of state.transactions) {
+      if (extractPayee(t.description) !== name) continue;
+      Store.updateTransaction(state, t.id, { categoryId: categoryId });
+      count++;
+    }
+    if (count === 0) return;
+    const label = categoryId ? (state.categories.find(c => c.id === categoryId)?.name || 'category') : 'no category';
+    toast(`Set "${name}" → ${label} on ${count} transaction${count === 1 ? '' : 's'}`);
+    window.dispatchEvent(new Event('store:changed'));
+  }
 
   function filteredTxns() {
     const f = txnFilters;
@@ -642,12 +656,21 @@ const App = (() => {
         <th class="right">Need category</th>
         <th>Last category</th>
         <th>Last seen</th>
+        <th>Set category for all</th>
       </tr></thead>
       <tbody></tbody>`;
     const tb = tbl.querySelector('tbody');
+    // Group categories by type for nicer optgroups
+    const catsByType = { expense: [], income: [] };
+    for (const c of state.categories) {
+      if (catsByType[c.type]) catsByType[c.type].push(c);
+    }
     for (const p of payees) {
       const lastCat = p.lastCategoryId ? state.categories.find(c => c.id === p.lastCategoryId) : null;
-      const tr = el('tr', { class: 'clickable', onclick: () => { txnFilters.payee = p.name; goTo('transactions'); } });
+      const tr = el('tr', { class: 'clickable', onclick: (e) => {
+        if (e.target.closest('select, button, input')) return; // don't navigate when interacting with the select
+        txnFilters.payee = p.name; goTo('transactions');
+      } });
       tr.appendChild(el('td', { title: p.name }, p.name));
       tr.appendChild(el('td', { class: 'right tabnum' }, String(p.count)));
       tr.appendChild(el('td', { class: 'right tabnum' + (p.noCategory > 0 ? ' text-neg' : '') }, p.noCategory > 0 ? String(p.noCategory) : '—'));
@@ -658,6 +681,20 @@ const App = (() => {
         ) : '—',
       ));
       tr.appendChild(el('td', { class: 'muted' }, p.lastDate ? Fmt.date(p.lastDate, { short: true }) : '—'));
+      // Category bulk-assign dropdown
+      const select = el('select', {
+        class: 'select',
+        title: `Sets the category for all ${p.count} transaction${p.count === 1 ? '' : 's'} of "${p.name}"`,
+        onchange: (e) => {
+          const newCat = e.target.value;
+          bulkUpdatePayeeCategory(p.name, newCat);
+        },
+      },
+        option('', '— pick —', !lastCat),
+        catsByType.expense.length ? el('optgroup', { label: 'Expense' }, ...catsByType.expense.map(c => option(c.id, c.name, lastCat && lastCat.id === c.id))) : null,
+        catsByType.income.length ? el('optgroup', { label: 'Income' }, ...catsByType.income.map(c => option(c.id, c.name, lastCat && lastCat.id === c.id))) : null,
+      );
+      tr.appendChild(el('td', {}, select));
       tb.appendChild(tr);
     }
     tbl.appendChild(tb);
