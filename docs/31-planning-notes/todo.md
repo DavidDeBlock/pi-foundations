@@ -89,3 +89,22 @@ Let's create a starting page and add a navigation header to every page, and make
 
 
 How can I sync the log files to our database so the new matches and the new decks are in sync? 
+
+
+
+I don't want to change the balance on the dashboard. I like it so I can see, on a         
+monthly basis, where I'm at with income versus expenses. Give the spending share more room and maybe add a graph that illustrates the flow of the balance. If I put a starting amount, the starting amount will be the amount I have currently on my account, and then it should go back in time to calculate it but show it in reverse on a graph, if you know what I mean. 
+
+
+Well, actually, I want my private account, the one I've currently loaded in, and then I want our shared account also loaded in. I like the dashboard view in its current state because it gives an overview of my private account. Give me a suggestion on how we could manage multiple accounts. 
+
+
+1.Trends 
+2.Income versus expenses. Balance over time And top categories will show in both the dashboards. 
+3.Build it now as part of this refactor. 
+4.Current dashboard will have the 4 summary cards:
+- Spending share donut
+- the recent transactions
+- and top categories
+
+I don't understand the graphs in the trends tab, like the balance over time per source and net worth. I don't understand. I think there is a problem in the calculation. It shouldn't be a line. Now it's a line. It should be more like some sort of heartbeat: our balance goes up, goes down, goes up, goes down, and now it's just showing almost a straight line. 

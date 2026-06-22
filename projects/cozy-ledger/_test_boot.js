@@ -10,57 +10,137 @@ const path = require('path');
 const vm = require('vm');
 
 // ---- Stubbed DOM / browser globals -----------------------------------
+// Define StubNode once and share it between the outer test harness and
+// the vm sandbox (where it appears as `Node`). makeEl elements inherit
+// from StubNode.prototype so `c instanceof Node` (used in utils.el) is
+// true and child elements are not collapsed into text nodes.
+class StubNode {}
+
 function makeEl(tag) {
-  return {
-    tagName: (tag || 'div').toUpperCase(),
-    children: [],
-    style: {},
-    dataset: {},
-    classList: {
-      _set: new Set(),
-      add(c) { this._set.add(c); },
-      remove(c) { this._set.delete(c); },
-      contains(c) { return this._set.has(c); },
-      toggle(c) { this._set.has(c) ? this._set.delete(c) : this._set.add(c); },
-    },
-    attributes: {},
-    _listeners: {},
-    appendChild(c) { if (c) this.children.push(c); return c; },
-    removeChild(c) { this.children = this.children.filter(x => x !== c); },
-    remove() {},
-    setAttribute(k, v) { this.attributes[k] = v; },
-    getAttribute(k) { return this.attributes[k]; },
-    addEventListener(ev, fn) { (this._listeners[ev] = this._listeners[ev] || []).push(fn); },
-    dispatchEvent(ev) { (this._listeners[ev.type] || []).forEach(fn => fn(ev)); },
-    querySelector() { return null; },
-    querySelectorAll() { return []; },
-    focus() {},
-    set className(v) { this.attributes.class = v; this.classList._set = new Set(String(v).split(/\s+/).filter(Boolean)); },
-    get className() { return [...this.classList._set].join(' '); },
-    set innerHTML(v) { this.attributes['innerHTML'] = v; },
-    get innerHTML() { return this.attributes['innerHTML'] || ''; },
-    set textContent(v) { this.attributes['textContent'] = v; },
-    get textContent() { return this.attributes['textContent'] || ''; },
+  const obj = Object.create(StubNode.prototype);
+  obj.tagName = (tag || 'div').toUpperCase();
+  obj.children = [];
+  obj.style = {};
+  obj.dataset = {};
+  obj.classList = {
+    _set: new Set(),
+    add(c) { this._set.add(c); },
+    remove(c) { this._set.delete(c); },
+    contains(c) { return this._set.has(c); },
+    toggle(c) { this._set.has(c) ? this._set.delete(c) : this._set.add(c); },
   };
+  obj.attributes = {};
+  obj._listeners = {};
+  obj.appendChild = function (c) { if (c) this.children.push(c); return c; };
+  obj.removeChild = function (c) { this.children = this.children.filter(x => x !== c); };
+  obj.remove = function () {};
+  obj.setAttribute = function (k, v) {
+    this.attributes[k] = v;
+    if (k === 'id') setIdAttr(this, v);
+    if (k === 'class') this.classList._set = new Set(String(v).split(/\s+/).filter(Boolean));
+  };
+  obj.getAttribute = function (k) { return this.attributes[k]; };
+  obj.addEventListener = function (ev, fn) { (this._listeners[ev] = this._listeners[ev] || []).push(fn); };
+  obj.dispatchEvent = function (ev) {
+    // Mimic the browser: set target/currentTarget to the dispatching element.
+    if (!ev.target) ev.target = this;
+    ev.currentTarget = this;
+    (this._listeners[ev.type] || []).forEach(fn => fn(ev));
+  };
+  obj.querySelector = function () { return null; };
+  obj.querySelectorAll = function () { return []; };
+  obj.focus = function () {};
+  Object.defineProperty(obj, 'className', {
+    set(v) { this.attributes.class = v; this.classList._set = new Set(String(v).split(/\s+/).filter(Boolean)); },
+    get() { return [...this.classList._set].join(' '); },
+  });
+  Object.defineProperty(obj, 'innerHTML', {
+    set(v) {
+      this.attributes['innerHTML'] = v;
+      // In a real browser, setting innerHTML replaces all children. The
+      // production code relies on this to re-render views.
+      this.children = [];
+    },
+    get() { return this.attributes['innerHTML'] || ''; },
+  });
+  Object.defineProperty(obj, 'textContent', {
+    set(v) { this.attributes['textContent'] = v; this.children = []; },
+    // Aggregate text content from all descendant text nodes — matches
+    // the browser behaviour that selectors and tests rely on.
+    get() {
+      if (this.children.length === 0) return this.attributes['textContent'] || '';
+      let out = '';
+      for (const c of this.children) {
+        if (c && c.nodeType === 3) out += c.textContent;
+        else if (c && typeof c.textContent === 'string') out += c.textContent;
+      }
+      return out;
+    },
+  });
+  return obj;
 }
 
 const localStorageData = {};
+// Real DOM apps walk the tree via document.querySelector('#id'). The stub
+// below keeps an idMap of every element created with setAttribute('id'),
+// so subsequent #id lookups return the same element the app populated.
+const idMap = {};
+function setIdAttr(obj, id) {
+  if (obj.__id) delete idMap[obj.__id];
+  obj.__id = id;
+  obj.attributes.id = id;
+  if (id) idMap[id] = obj;
+}
+function findById(id) { return idMap[id] || null; }
+function isElement(node) { return node && typeof node.getAttribute === 'function'; }
+function walk(node, predicate) {
+  if (!isElement(node)) return null;
+  if (predicate(node)) return node;
+  for (const c of (node.children || [])) {
+    const hit = walk(c, predicate);
+    if (hit) return hit;
+  }
+  return null;
+}
+function findAll(node, predicate, out = []) {
+  if (!isElement(node)) return out;
+  if (predicate(node)) out.push(node);
+  for (const c of (node.children || [])) findAll(c, predicate, out);
+  return out;
+}
+
+// Drive a real sidebar nav click so the App switches view and re-renders.
+function navigateToView(viewId) {
+  const appRoot = ctx.window.document.querySelector('#app');
+  const navBtn = findAll(appRoot, n =>
+    (n.classList?._set || new Set()).has('nav-item') && n.getAttribute('data-view') === viewId
+  )[0];
+  if (!navBtn) throw new Error(`nav item for view ${viewId} not found`);
+  navBtn.dispatchEvent({ type: 'click' });
+}
 const documentStub = {
   createElement: makeEl,
+  createElementNS: (_ns, tag) => makeEl(tag),
   createTextNode: (s) => ({ nodeType: 3, textContent: String(s) }),
   body: makeEl('body'),
-  querySelector: () => null,
+  // #id selectors return the same element the app created via setAttribute('id')
+  querySelector: (sel) => sel.startsWith('#') ? findById(sel.slice(1)) : null,
   querySelectorAll: () => [],
+  getElementById: (id) => findById(id),
   addEventListener: () => {},
 };
+// Pre-populate #app like the real index.html does, so App.init() finds it.
+setIdAttr(makeEl('div'), 'app');
+const eventLog = [];
 const windowStub = {
   localStorage: {
     getItem: (k) => localStorageData[k] || null,
     setItem: (k, v) => { localStorageData[k] = String(v); },
     removeItem: (k) => { delete localStorageData[k]; },
   },
-  addEventListener: () => {},
-  dispatchEvent: () => {},
+  _listeners: {},
+  addEventListener: (ev, fn) => { (windowStub._listeners[ev] = windowStub._listeners[ev] || []).push(fn); },
+  dispatchEvent: (ev) => { eventLog.push(ev.type); (windowStub._listeners[ev.type] || []).forEach(fn => fn(ev)); },
   confirm: () => true,
 };
 
@@ -71,7 +151,8 @@ const ctx = vm.createContext({
   console,
   setTimeout, clearTimeout,
   Math, Date, JSON, Object, Array, String, Number, Boolean, RegExp, Error, parseFloat, parseInt,
-  Promise,
+  Promise, Event,
+  Node: StubNode, Document: class Document {},
 });
 ctx.window.document = documentStub;
 ctx.globalThis = ctx;
@@ -82,8 +163,8 @@ function test(name, fn) {
   catch (e) { console.log(`  ✗ ${name}\n      ${e.message}`); failed++; }
 }
 
-// ---- Load all 5 scripts in order ------------------------------------
-const scripts = ['data.js', 'utils.js', 'icons.js', 'csv.js', 'app.js'];
+// ---- Load all 6 scripts in order ------------------------------------
+const scripts = ['data.js', 'utils.js', 'icons.js', 'csv.js', 'selectors.js', 'app.js'];
 for (const s of scripts) {
   const code = fs.readFileSync(path.join(__dirname, s), 'utf8');
   vm.runInContext(code, ctx, { filename: s });
@@ -115,6 +196,150 @@ console.log('\n— App boots —');
 
 test('App.init() runs without throwing', () => {
   ctx.window.App.init();
+});
+
+test('scope selector mounts in the topbar with three pills (Private, Shared, All)', () => {
+  const appRoot = ctx.window.document.querySelector('#app');
+  const pills = findAll(appRoot, n => (n.classList?._set || new Set()).has('scope-pill'));
+  if (pills.length !== 3) throw new Error(`expected 3 scope pills, got ${pills.length}`);
+  const scopes = pills.map(p => p.getAttribute('data-scope')).sort();
+  if (scopes[0] !== 'all' || scopes[1] !== 'private' || scopes[2] !== 'shared') {
+    throw new Error(`unexpected scopes: ${scopes.join(',')}`);
+  }
+});
+
+test('balance flow card mounts with chart + per-source inputs (ISSUE-002, now on Trends)', () => {
+  navigateToView('trends');
+  const appRoot = ctx.window.document.querySelector('#app');
+  const card = walk(appRoot, n => n.getAttribute('id') === 'balance-card');
+  if (!card) throw new Error('balance-card not found in DOM');
+  // SVG present
+  const svg = walk(card, n => (n.tagName || '').toLowerCase() === 'svg' && (n.getAttribute('class') || '').includes('balance-svg'));
+  if (!svg) throw new Error('balance-svg not found in card');
+  // One typed-balance input per in-scope source
+  const inputs = findAll(card, n => (n.classList?._set || new Set()).has('balance-input'));
+  if (inputs.length === 0) throw new Error('no balance inputs in card');
+  // View-mode toggle present
+  const toggle = walk(card, n => (n.classList?._set || new Set()).has('view-toggle'));
+  if (!toggle) throw new Error('view-toggle not found in card');
+  // (Strict count check would require knowing the seed; we trust the inputs are present.)
+});
+
+test('Trends nav item is in the sidebar (ISSUE-004)', () => {
+  navigateToView('dashboard'); // reset to dashboard
+  const appRoot = ctx.window.document.querySelector('#app');
+  const trendsNav = findAll(appRoot, n =>
+    (n.classList?._set || new Set()).has('nav-item') &&
+    n.getAttribute('data-view') === 'trends'
+  )[0];
+  if (!trendsNav) throw new Error('Trends nav item not found in sidebar');
+  if (trendsNav.textContent.indexOf('Trends') === -1) throw new Error('Trends label missing');
+});
+
+test('navigating to Trends mounts the balance card and shows "Per source" mode by default', () => {
+  navigateToView('trends');
+  const appRoot = ctx.window.document.querySelector('#app');
+  const card = walk(appRoot, n => n.getAttribute('id') === 'balance-card');
+  if (!card) throw new Error('balance-card not found after navigating to Trends');
+  // Per-source active by default
+  const activePill = findAll(card, n =>
+    (n.classList?._set || new Set()).has('vt-pill') && n.classList._set.has('active')
+  )[0];
+  if (!activePill) throw new Error('no active vt-pill found');
+  if (activePill.getAttribute('data-mode') !== 'sources') {
+    throw new Error(`default mode = ${activePill.getAttribute('data-mode')}, want sources`);
+  }
+});
+
+test('clicking the "Net worth" toggle collapses to a single line and persists the mode', () => {
+  navigateToView('trends');
+  let appRoot = ctx.window.document.querySelector('#app');
+  let card = walk(appRoot, n => n.getAttribute('id') === 'balance-card');
+  // Count bc-line polylines/lines in 'sources' mode.
+  const linesBefore = findAll(card, n =>
+    (n.classList?._set || new Set()).has('bc-line')
+  ).filter(n => n.getAttribute('data-source') && n.getAttribute('data-source') !== '__networth__').length;
+  if (linesBefore < 1) throw new Error(`expected >= 1 source line, got ${linesBefore}`);
+
+  // Click the Net worth pill.
+  const nwPill = findAll(card, n =>
+    (n.classList?._set || new Set()).has('vt-pill') && n.getAttribute('data-mode') === 'networth'
+  )[0];
+  if (!nwPill) throw new Error('net worth pill not found');
+  nwPill.dispatchEvent({ type: 'click' });
+
+  // After re-render, exactly one __networth__ line should be present.
+  appRoot = ctx.window.document.querySelector('#app');
+  card = walk(appRoot, n => n.getAttribute('id') === 'balance-card');
+  const nwLines = findAll(card, n =>
+    (n.classList?._set || new Set()).has('bc-line') && n.getAttribute('data-source') === '__networth__'
+  );
+  if (nwLines.length < 1) throw new Error('no net-worth line drawn');
+  // The toggle should now show networth as active.
+  const activePill = findAll(card, n =>
+    (n.classList?._set || new Set()).has('vt-pill') && n.classList._set.has('active')
+  )[0];
+  if (activePill.getAttribute('data-mode') !== 'networth') {
+    throw new Error('active pill did not switch to networth');
+  }
+});
+
+test('clicking a scope pill updates settings.scope and fires store:changed', () => {
+  const appRoot = ctx.window.document.querySelector('#app');
+  const sharedPill = findAll(appRoot, n =>
+    (n.classList?._set || new Set()).has('scope-pill') && n.getAttribute('data-scope') === 'shared'
+  )[0];
+  if (!sharedPill) throw new Error('shared pill not found');
+  const before = ctx.window.App._state.settings.scope;
+  eventLog.length = 0;
+  // The click handler is bound through addEventListener; dispatch it.
+  sharedPill.dispatchEvent({ type: 'click' });
+  const after = ctx.window.App._state.settings.scope;
+  if (after !== 'shared') throw new Error(`scope did not change: was ${before}, now ${after}`);
+  if (!eventLog.includes('store:changed')) throw new Error('store:changed was not fired');
+  // And the change survives a reload.
+  const reloaded = ctx.window.Store.load();
+  if (reloaded.settings.scope !== 'shared') throw new Error('scope did not persist');
+});
+
+test('typing a new value into a balance input commits to source.balance and persists', () => {
+  navigateToView('trends');
+  const appRoot = ctx.window.document.querySelector('#app');
+  const inputs = findAll(appRoot, n => (n.classList?._set || new Set()).has('balance-input'));
+  if (!inputs.length) throw new Error('no balance inputs');
+  const input = inputs[0];
+  const sourceId = input.getAttribute('data-source-id');
+  input.value = '1234.56';
+  // Capture any error thrown inside the listener.
+  let caught = null;
+  const origDispatch = input.dispatchEvent;
+  input.dispatchEvent = function (ev) {
+    try { return origDispatch.call(this, ev); }
+    catch (e) { caught = e; throw e; }
+  };
+  input.dispatchEvent({ type: 'blur' });
+  input.dispatchEvent = origDispatch;
+  if (caught) throw new Error(`blur handler threw: ${caught.message}`);
+  const src = ctx.window.App._state.sources.find(s => s.id === sourceId);
+  if (src.balance !== 1234.56) throw new Error(`balance not committed, got ${src.balance}`);
+  // Persist across reload.
+  const reloaded = ctx.window.Store.load();
+  const srcReloaded = reloaded.sources.find(s => s.id === sourceId);
+  if (srcReloaded.balance !== 1234.56) throw new Error('balance did not persist');
+});
+
+test('balance input shows the "saved" indicator after commit', () => {
+  navigateToView('trends');
+  const appRoot = ctx.window.document.querySelector('#app');
+  const inputs = findAll(appRoot, n => (n.classList?._set || new Set()).has('balance-input'));
+  const input = inputs[0];
+  const sourceId = input.getAttribute('data-source-id');
+  input.value = '999';
+  input.dispatchEvent({ type: 'blur' });
+  const saved = ctx.window.document.querySelector('#saved-' + sourceId);
+  if (!saved) throw new Error('saved indicator not found');
+  if (saved.textContent.indexOf('saved') === -1) throw new Error(`saved text was: "${saved.textContent}"`);
+  if (!saved.classList.contains('show')) throw new Error('saved indicator not visible');
 });
 
 console.log('\n— End-to-end import flow —');

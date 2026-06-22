@@ -8,6 +8,7 @@ const App = (() => {
   let view = 'dashboard';           // current route
   let monthKey = Fmt.currentMonthKey(); // for month-scoped screens
   let txnFilters = { month: 'all', type: 'all', categoryId: 'all', userId: 'all', sourceId: 'all', scope: 'all', payee: 'all' };
+  let balanceViewMode = 'sources';  // 'sources' (per-source lines) or 'networth' (single aggregate line)
 
   // ---- Boot ---------------------------------------------------------
   function init() {
@@ -34,7 +35,7 @@ const App = (() => {
     document.body.appendChild(back);
 
     const navItem = (id, label, icon, badge) =>
-      el('button', { class: 'nav-item' + (view === id ? ' active' : ''), onclick: () => goTo(id) },
+      el('button', { class: 'nav-item' + (view === id ? ' active' : ''), 'data-view': id, onclick: () => goTo(id) },
         el('span', { class: 'ni-icon', html: icon }),
         label,
         badge != null ? el('span', { class: 'ni-badge' }, String(badge)) : null,
@@ -51,6 +52,7 @@ const App = (() => {
       el('nav', { class: 'nav' },
         el('div', { class: 'nav-label' }, 'Overview'),
         navItem('dashboard',   'Dashboard',     Icons.home),
+        navItem('trends',      'Trends',        Icons.trend),
         navItem('transactions','Transactions',  Icons.list, txCount),
         el('div', { class: 'nav-label' }, 'Manage'),
         navItem('categories',  'Categories',    Icons.tags, state.categories.length),
@@ -73,12 +75,48 @@ const App = (() => {
       ),
       el('div', { class: 'flex center gap-8' },
         el('div', { class: 'month-picker', id: 'month-picker' }),
+        el('div', { class: 'scope-pills', id: 'scope-pills' }),
         el('button', { class: 'btn btn-ghost', onclick: openImportModal, id: 'import-btn', title: 'Import ING Belgium CSV' },
           el('span', { html: Icons.upload }), 'Import'),
         el('button', { class: 'btn btn-primary', onclick: openAddTransaction, id: 'add-txn-btn' },
           el('span', { html: Icons.plus }), 'Add transaction'),
       ),
     );
+  }
+
+  // Scope pills: Private / Shared / All. Writes through Store.setScope
+  // and fires store:changed so every subscriber re-renders.
+  function renderScopeSelector(host) {
+    if (!host) return;
+    host.innerHTML = '';
+    const current = state.settings && state.settings.scope;
+    const opts = [
+      { id: 'private', label: 'Private' },
+      { id: 'shared',  label: 'Shared' },
+      { id: 'all',     label: 'All' },
+    ];
+    for (const o of opts) {
+      const active = current === o.id;
+      host.appendChild(el('button', {
+        class: 'scope-pill' + (active ? ' active' : ''),
+        'data-scope': o.id,
+        title: scopeTitle(o.id),
+        onclick: () => setScope(o.id),
+      }, o.label));
+    }
+  }
+
+  function scopeTitle(id) {
+    if (id === 'private') return 'Your own accounts only';
+    if (id === 'shared')  return 'Household / shared accounts only';
+    return 'Every account';
+  }
+
+  function setScope(id) {
+    if (!window.SelectorScopes.includes(id)) return;
+    if (state.settings && state.settings.scope === id) return;
+    Store.setScope(state, id);
+    window.dispatchEvent(new Event('store:changed'));
   }
 
   function bindGlobal() {
@@ -106,6 +144,7 @@ const App = (() => {
     // Update page title/sub
     const titles = {
       dashboard:    ['Cozy <em>overview</em>',     'Where the money went this month.'],
+      trends:       ['Money <em>trends</em>',       'Multi-month view: balance, income vs expenses, top categories.'],
       transactions: ['All <em>transactions</em>',  'Filter, search, edit and review everything.'],
       categories:   ['<em>Categories</em>',        'Give every euro a clear home.'],
       sources:      ['Sources & <em>wallets</em>', 'Bank accounts, cash and savings.'],
@@ -120,10 +159,16 @@ const App = (() => {
     const mp = $('#month-picker');
     if (showMonth) renderMonthPicker(mp);
     else mp.innerHTML = '';
+
+    // Scope pills live in the topbar; render on every view so the user
+    // can change scope without first navigating somewhere specific.
+    renderScopeSelector($('#scope-pills'));
+
     const at = $('#add-txn-btn');
     at.style.display = (view === 'categories' || view === 'sources' || view === 'users') ? 'none' : 'inline-flex';
 
     if (view === 'dashboard') view_.appendChild(renderDashboard());
+    else if (view === 'trends') view_.appendChild(renderTrends());
     else if (view === 'transactions') view_.appendChild(renderTransactions());
     else if (view === 'categories') view_.appendChild(renderCategories());
     else if (view === 'sources') view_.appendChild(renderSources());
@@ -148,35 +193,18 @@ const App = (() => {
   // SCREEN: DASHBOARD
   // ===================================================================
   function renderDashboard() {
-    const txns = state.transactions.filter(t => Fmt.inMonth(t.date, monthKey));
+    const inScopeTxns = Selectors.transactionsInScope(state);
+    const txns = inScopeTxns.filter(t => Fmt.inMonth(t.date, monthKey));
     const totalIncome  = sum(txns.filter(t => t.type === 'income'),  'amount');
     const totalExpense = sum(txns.filter(t => t.type === 'expense'), 'amount');
     const balance = totalIncome - totalExpense;
     const privateExp = sum(txns.filter(t => t.type === 'expense' && t.scope === 'private'), 'amount');
     const sharedExp  = sum(txns.filter(t => t.type === 'expense' && t.scope === 'shared'),  'amount');
 
-    // Category breakdown (expense)
-    const expByCat = aggregateBy(txns.filter(t => t.type === 'expense'), 'categoryId');
-    const topCats = Object.entries(expByCat)
-      .map(([k, v]) => ({ cat: state.categories.find(c => c.id === k), amount: v }))
-      .filter(x => x.cat)
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 6);
+    const topCats = topCategories(txns, totalExpense);
 
-    // Monthly trend (last 6 months ending at the selected month, so the
-    // chart follows the topbar month filter).
-    const months = [];
-    for (let i = 5; i >= 0; i--) months.push(Fmt.shiftMonth(monthKey, -i));
-    const trend = months.map(m => {
-      const mTx = state.transactions.filter(t => Fmt.ymKey(t.date) === m);
-      return {
-        m,
-        income: sum(mTx.filter(t => t.type === 'income'), 'amount'),
-        expense: sum(mTx.filter(t => t.type === 'expense'), 'amount'),
-      };
-    });
-
-    const recent = Store.listTransactions(state)
+    const recent = [...inScopeTxns]
+      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
       .filter(t => Fmt.inMonth(t.date, monthKey));
 
     const wrap = el('div', { class: 'view-dashboard' });
@@ -199,30 +227,16 @@ const App = (() => {
     const summary = el('div', { class: 'summary-grid' }, sIncome, sExpense, sBalance, sShared);
     wrap.appendChild(summary);
 
-    // Trend + breakdown
-    const trendCard = el('div', { class: 'card' },
-      el('div', { class: 'card-head' },
-        el('div', { class: 'card-title', html: Icons.receipt }),
-        'Income vs expenses — last 6 months'),
-      renderBarChart(trend),
-    );
-    const breakCard = el('div', { class: 'card' },
-      el('div', { class: 'card-head' },
-        el('div', { class: 'card-title', html: Icons.tags }),
-        'Top categories this month'),
-      topCats.length
-        ? renderCatList(topCats, totalExpense)
-        : emptyState('No expenses yet', 'Once you log one, it shows up here.'),
-    );
-    wrap.appendChild(el('div', { class: 'dash-grid' }, trendCard, breakCard));
-
-    // Donut + recent
-    const donutCard = el('div', { class: 'card' },
+    // Donut — given its own full-width row so it has visual room to breathe.
+    const donutCard = el('div', { class: 'card donut-card' },
       el('div', { class: 'card-head' },
         el('div', { class: 'card-title', html: Icons.coffee }),
         'Spending share'),
       topCats.length ? renderDonut(topCats, totalExpense) : emptyState('Nothing to plot yet', 'Log a few expenses to see the picture.'),
     );
+    wrap.appendChild(donutCard);
+
+    // Recent — full width below the donut.
     const recentCard = el('div', { class: 'card recent-list' },
       el('div', { class: 'card-head' },
         el('div', { class: 'card-title', html: Icons.list }),
@@ -232,7 +246,74 @@ const App = (() => {
         ? renderTxnTable(recent, { compact: true })
         : emptyState('No transactions this month', 'Tap the + button to add your first one.'),
     );
-    wrap.appendChild(el('div', { class: 'dash-grid-2' }, donutCard, recentCard));
+    wrap.appendChild(recentCard);
+
+    // Top categories — shared with the Trends view.
+    wrap.appendChild(renderTopCategoriesCard(txns, totalExpense));
+
+    return wrap;
+  }
+
+  // ---- Shared helpers used by both Dashboard and Trends --------------
+  // Top 6 expense categories for a given (already month-scoped) transaction set.
+  function topCategories(txns, totalExpense) {
+    const expByCat = aggregateBy(txns.filter(t => t.type === 'expense'), 'categoryId');
+    return Object.entries(expByCat)
+      .map(([k, v]) => ({ cat: state.categories.find(c => c.id === k), amount: v }))
+      .filter(x => x.cat)
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 6);
+  }
+
+  // The "Top categories this month" card. Reused on both views.
+  function renderTopCategoriesCard(txns, totalExpense) {
+    const topCats = topCategories(txns, totalExpense);
+    return el('div', { class: 'card' },
+      el('div', { class: 'card-head' },
+        el('div', { class: 'card-title', html: Icons.tags }),
+        'Top categories this month'),
+      topCats.length
+        ? renderCatList(topCats, totalExpense)
+        : emptyState('No expenses yet', 'Once you log one, it shows up here.'),
+    );
+  }
+
+  // ---- Trends view (ISSUE-004) ---------------------------------------
+  function renderTrends() {
+    const inScopeTxns = Selectors.transactionsInScope(state);
+
+    // Top categories reflect the selected month (no separate picker on Trends).
+    const monthTxns = inScopeTxns.filter(t => Fmt.inMonth(t.date, monthKey));
+    const totalExpense = sum(monthTxns.filter(t => t.type === 'expense'), 'amount');
+
+    // Income vs expenses: last 6 months ending at the selected month.
+    const months = [];
+    for (let i = 5; i >= 0; i--) months.push(Fmt.shiftMonth(monthKey, -i));
+    const trend = months.map(m => {
+      const mTx = inScopeTxns.filter(t => Fmt.ymKey(t.date) === m);
+      return {
+        m,
+        income: sum(mTx.filter(t => t.type === 'income'), 'amount'),
+        expense: sum(mTx.filter(t => t.type === 'expense'), 'amount'),
+      };
+    });
+
+    const wrap = el('div', { class: 'view-trends' });
+
+    // Balance over time — the centrepiece, with the per-source ↔ net-worth toggle.
+    wrap.appendChild(renderBalanceFlow());
+
+    // Income vs expenses — full width.
+    const trendCard = el('div', { class: 'card' },
+      el('div', { class: 'card-head' },
+        el('div', { class: 'card-title', html: Icons.receipt }),
+        'Income vs expenses — last 6 months'),
+      renderBarChart(trend),
+    );
+    wrap.appendChild(trendCard);
+
+    // Top categories — full width.
+    wrap.appendChild(renderTopCategoriesCard(monthTxns, totalExpense));
 
     return wrap;
   }
@@ -277,6 +358,316 @@ const App = (() => {
       el('div', {}, el('span', { class: 'legend-dot', style: { background: 'var(--terra)' } }), 'Expenses'),
     ));
     return wrap;
+  }
+
+  // ===================================================================
+  // BALANCE FLOW CHART (ISSUE-002)
+  // ===================================================================
+  // Per-source step-line chart. The user types their current bank
+  // balance for each source once, and we walk the source's transactions
+  // backwards from that anchor to draw the line.
+  function renderBalanceFlow() {
+    const sources = Selectors.sourcesInScope(state);
+    if (!sources.length) {
+      return el('div', { class: 'card balance-card', id: 'balance-card' },
+        el('div', { class: 'card-head' },
+          el('div', { class: 'card-title', html: Icons.piggy }),
+          'Balance over time',
+        ),
+        el('div', { class: 'balance-empty' },
+          'No sources in the current scope. Switch scope or add a source to begin.'),
+      );
+    }
+
+    // chartHost owns the SVG only. Re-rendering just this host leaves
+    // the typed-balance inputs and their focus intact while the user
+    // is typing.
+    const chartHost = el('div', { class: 'chart-wrap', id: 'balance-chart-wrap' });
+    chartHost.appendChild(renderBalanceChart(sources));
+
+    return el('div', { class: 'card balance-card', id: 'balance-card' },
+      el('div', { class: 'card-head' },
+        el('div', { class: 'card-title', html: Icons.piggy }),
+        'Balance over time',
+        el('div', { class: 'card-sub' },
+          'Type your current bank balance for each account. History walks backwards from there.'),
+        renderViewToggle(),
+      ),
+      chartHost,
+      el('div', { class: 'balance-inputs', id: 'balance-inputs' },
+        ...sources.map(src => renderBalanceInput(src, chartHost)),
+      ),
+    );
+  }
+
+  // -- Per-source ↔ Net-worth toggle ---------------------------------
+  function renderViewToggle() {
+    return el('div', { class: 'view-toggle', id: 'balance-view-toggle' },
+      el('button', {
+        class: 'vt-pill' + (balanceViewMode === 'sources' ? ' active' : ''),
+        'data-mode': 'sources',
+        onclick: () => setBalanceViewMode('sources'),
+      }, 'Per source'),
+      el('button', {
+        class: 'vt-pill' + (balanceViewMode === 'networth' ? ' active' : ''),
+        'data-mode': 'networth',
+        onclick: () => setBalanceViewMode('networth'),
+      }, 'Net worth'),
+    );
+  }
+  function setBalanceViewMode(mode) {
+    if (mode === balanceViewMode) return;
+    if (mode !== 'sources' && mode !== 'networth') return;
+    balanceViewMode = mode;
+    renderView();
+  }
+
+  // -- Chart SVG ------------------------------------------------------
+  const CHART_W = 800, CHART_H = 280;
+  const CHART_M = { top: 18, right: 20, bottom: 36, left: 64 };
+
+  function renderBalanceChart(sources) {
+    const innerW = CHART_W - CHART_M.left - CHART_M.right;
+    const innerH = CHART_H - CHART_M.top - CHART_M.bottom;
+
+    const range = Selectors.balanceChartDateRange(state);
+    const fromMs = Date.parse(range.from);
+    const toMs = Date.parse(range.to);
+    const xSpan = Math.max(toMs - fromMs, 86400000);
+
+    // Two display modes:
+    //   'sources'  → one step line per in-scope source (colored by owner)
+    //   'networth' → one aggregate step line summing every in-scope source
+    const isNetWorth = balanceViewMode === 'networth';
+    const NW_COLOR = 'var(--charcoal)';
+
+    // Build the set of series to render. Net-worth collapses to one entry.
+    let series;
+    if (isNetWorth) {
+      const points = Selectors.netWorthSeries(state);
+      series = [{ source: { id: '__networth__', name: 'Net worth' }, color: NW_COLOR, points }];
+    } else {
+      series = sources.map(src => ({
+        source: src,
+        color: colorForSource(src),
+        points: Selectors.balanceSeries(state, src.id),
+      }));
+    }
+
+    // Y-axis range: union of every plotted balance.
+    const ys = [];
+    for (const s of series) for (const p of s.points) ys.push(p.balance);
+    if (isNetWorth) {
+      // Also include the (degenerate) flat pair from netWorthSeries when empty.
+      const flatSources = sources.reduce((s, src) => s + (Number(src.balance) || 0), 0);
+      ys.push(flatSources);
+    } else {
+      for (const s of series) ys.push(Number(s.source.balance) || 0);
+    }
+    let yMin = Math.min(0, ...ys);
+    let yMax = Math.max(0, ...ys);
+    if (yMin === yMax) { yMin -= 100; yMax += 100; }
+    const yPad = (yMax - yMin) * 0.1;
+    yMin -= yPad; yMax += yPad;
+
+    const xToPx = (date) => CHART_M.left + ((Date.parse(date) - fromMs) / xSpan) * innerW;
+    const yToPx = (bal) => CHART_M.top + (1 - (bal - yMin) / (yMax - yMin)) * innerH;
+
+    const svg = el('svg', {
+      class: 'balance-svg' + (isNetWorth ? ' bc-networth' : ''),
+      viewBox: `0 0 ${CHART_W} ${CHART_H}`,
+      preserveAspectRatio: 'xMidYMid meet',
+      role: 'img',
+      'aria-label': isNetWorth ? 'Net worth over time' : 'Balance over time per source',
+    });
+
+    // -- Y grid lines + labels (5 horizontal slices) -----------------
+    for (let i = 0; i <= 4; i++) {
+      const yVal = yMin + (yMax - yMin) * (i / 4);
+      const yPx = yToPx(yVal);
+      svg.appendChild(el('line', {
+        x1: CHART_M.left, x2: CHART_W - CHART_M.right,
+        y1: yPx, y2: yPx, class: 'bc-grid',
+      }));
+      svg.appendChild(el('text', {
+        x: CHART_M.left - 8, y: yPx + 4,
+        'text-anchor': 'end', class: 'bc-axis',
+      }, Fmt.moneyShort(yVal)));
+    }
+    if (yMin < 0 && yMax > 0) {
+      svg.appendChild(el('line', {
+        x1: CHART_M.left, x2: CHART_W - CHART_M.right,
+        y1: yToPx(0), y2: yToPx(0), class: 'bc-zero',
+      }));
+    }
+
+    // -- X axis labels: from, middle, to -----------------------------
+    const midIso = new Date((fromMs + toMs) / 2).toISOString().slice(0, 10);
+    const xLabels = [
+      { date: range.from, anchor: 'start' },
+      { date: midIso,    anchor: 'middle' },
+      { date: range.to,   anchor: 'end' },
+    ];
+    for (const lbl of xLabels) {
+      svg.appendChild(el('text', {
+        x: xToPx(lbl.date), y: CHART_H - 12,
+        'text-anchor': lbl.anchor, class: 'bc-axis',
+      }, Fmt.date(lbl.date, { short: true })));
+    }
+
+    // -- Step lines --------------------------------------------------
+    for (const s of series) {
+      if (!s.points.length) {
+        const y = yToPx(Number(s.source.balance) || 0);
+        svg.appendChild(el('line', {
+          x1: CHART_M.left, x2: CHART_W - CHART_M.right,
+          y1: y, y2: y,
+          class: 'bc-line bc-line-flat' + (isNetWorth ? ' bc-nw-flat' : ''),
+          stroke: s.color,
+          'stroke-dasharray': '4 4',
+          'data-source': s.source.id,
+        }));
+        continue;
+      }
+      // Step-after polyline: horizontal segment to next x, then drop to next y.
+      const pts = [];
+      for (let i = 0; i < s.points.length; i++) {
+        const x = xToPx(s.points[i].date);
+        const y = yToPx(s.points[i].balance);
+        if (i > 0) pts.push(x, yToPx(s.points[i - 1].balance));
+        pts.push(x, y);
+      }
+      svg.appendChild(el('polyline', {
+        class: 'bc-line' + (isNetWorth ? ' bc-nw' : ''),
+        stroke: s.color,
+        fill: 'none',
+        'stroke-width': isNetWorth ? 3 : 2,
+        'stroke-linejoin': 'round',
+        'stroke-linecap': 'round',
+        'data-source': s.source.id,
+        points: pts.map(v => v.toFixed(1)).join(' '),
+      }));
+      const last = s.points[s.points.length - 1];
+      svg.appendChild(el('circle', {
+        cx: xToPx(last.date), cy: yToPx(last.balance),
+        r: isNetWorth ? 4.5 : 3.5,
+        class: 'bc-end', fill: s.color,
+        'data-source': s.source.id,
+      }));
+    }
+
+    // -- Hover overlay + tooltip -------------------------------------
+    const tooltip = el('div', { class: 'bc-tooltip', id: 'balance-tooltip' });
+    svg.appendChild(tooltip);
+
+    const overlay = el('rect', {
+      x: CHART_M.left, y: CHART_M.top,
+      width: innerW, height: innerH,
+      fill: 'transparent', class: 'bc-overlay',
+    });
+    svg.appendChild(overlay);
+
+    function showTooltip(clientX, clientY) {
+      const rect = svg.getBoundingClientRect();
+      const scaleX = rect.width ? rect.width / CHART_W : 1;
+      const px = (clientX - rect.left) / scaleX;
+      const ms = fromMs + ((px - CHART_M.left) / innerW) * xSpan;
+      let best = null, bestDist = Infinity;
+      for (const s of series) {
+        for (const p of s.points) {
+          const d = Math.abs(Date.parse(p.date) - ms);
+          if (d < bestDist) { bestDist = d; best = { point: p, source: s.source, color: s.color }; }
+        }
+      }
+      if (!best) { tooltip.style.display = 'none'; return; }
+      const nameHtml = isNetWorth
+        ? `<span class="bc-tt-name">Net worth</span>`
+        : `<span class="bc-tt-dot" style="background:${best.color}"></span>` +
+          `<span class="bc-tt-name">${escapeText(best.source.name)}</span>`;
+      tooltip.innerHTML =
+        nameHtml +
+        `<span class="bc-tt-date">${escapeText(Fmt.date(best.point.date, { short: true }))}</span>` +
+        `<span class="bc-tt-bal">${escapeText(Fmt.money(best.point.balance))}</span>`;
+      tooltip.style.display = 'flex';
+      const tipLeft = (xToPx(best.point.date) / CHART_W) * 100;
+      const tipTop  = (yToPx(best.point.balance) / CHART_H) * 100;
+      tooltip.style.left = tipLeft + '%';
+      tooltip.style.top = tipTop + '%';
+    }
+
+    overlay.addEventListener('mousemove', (e) => showTooltip(e.clientX, e.clientY));
+    overlay.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+
+    return svg;
+  }
+
+  // -- Per-source typed-balance row ----------------------------------
+  let _balDebounce = null;
+  function renderBalanceInput(src, chartHost) {
+    const value = (Number(src.balance) || 0);
+    return el('div', { class: 'balance-input-row', 'data-source': src.id },
+      el('span', { class: 'balance-input-dot', style: { background: colorForSource(src) } }),
+      el('label', { for: `bal-${src.id}`, class: 'balance-input-label' }, src.name),
+      el('input', {
+        type: 'number', step: '0.01',
+        id: `bal-${src.id}`,
+        class: 'balance-input', value: value.toFixed(2),
+        'data-source-id': src.id,
+        'data-prev-value': String(value),
+        oninput: (e) => onBalanceInput(e, chartHost),
+        onblur:  (e) => onBalanceBlur(e, chartHost),
+        onkeydown: (e) => { if (e.key === 'Enter') e.target.blur(); },
+      }),
+      el('span', { class: 'balance-saved', id: `saved-${src.id}` }),
+    );
+  }
+
+  function parseBalanceValue(s) {
+    if (s == null || s === '') return 0;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : NaN;
+  }
+  function onBalanceInput(e, chartHost) {
+    clearTimeout(_balDebounce);
+    const input = e.target;
+    _balDebounce = setTimeout(() => commitBalance(input, chartHost), 350);
+  }
+  function onBalanceBlur(e, chartHost) {
+    clearTimeout(_balDebounce);
+    commitBalance(e.target, chartHost);
+  }
+  function commitBalance(input, chartHost) {
+    if (!input) return;
+    const sourceId = input.getAttribute('data-source-id');
+    const value = parseBalanceValue(input.value);
+    if (!Number.isFinite(value)) return; // ignore garbage
+    Store.updateSource(state, sourceId, { balance: value });
+    // Re-render just the chart so the line picks up the new anchor.
+    chartHost.innerHTML = '';
+    chartHost.appendChild(renderBalanceChart(Selectors.sourcesInScope(state)));
+    // Flash the "saved" hint beside the input.
+    const saved = $('#saved-' + sourceId);
+    if (saved) {
+      saved.textContent = '✓ saved';
+      saved.classList.add('show');
+      setTimeout(() => {
+        if (saved) { saved.textContent = ''; saved.classList.remove('show'); }
+      }, 1500);
+    }
+  }
+
+  // -- Source color picker -------------------------------------------
+  const SHARED_PALETTE = ['#7a8b94', '#9a6b8a', '#c2714f', '#a4926b', '#8a6340'];
+  function colorForSource(src) {
+    if (src.ownerId) {
+      const u = state.users.find(x => x.id === src.ownerId);
+      if (u && u.color) return u.color;
+    }
+    // Shared sources: assign by position in the in-scope list so colors
+    // stay stable across renders but still distinguish between them.
+    const shared = Selectors.sourcesInScope(state).filter(s => s.ownerId == null);
+    const idx = shared.findIndex(s => s.id === src.id);
+    return SHARED_PALETTE[Math.max(0, idx) % SHARED_PALETTE.length];
   }
 
   function renderDonut(items, total) {
@@ -336,7 +727,7 @@ const App = (() => {
     const f = el('div', { class: 'filters' });
     const cats = state.categories;
     const users = state.users;
-    const sources = state.sources;
+    const sources = Selectors.sourcesInScope(state);
 
     f.appendChild(field('Month',
       el('select', { class: 'select', onchange: (e) => { txnFilters.month = e.target.value; renderView(); } },
@@ -399,10 +790,10 @@ const App = (() => {
     return el('option', { value, selected }, label);
   }
   function availableMonths() {
-    // Every year-month that actually has a transaction, plus the current
-    // month (so the picker is usable on a fresh install). Newest first.
+    // Every year-month that actually has an in-scope transaction, plus the
+    // current month (so the picker is usable on a fresh install). Newest first.
     const months = new Set([Fmt.currentMonthKey()]);
-    for (const t of state.transactions) {
+    for (const t of Selectors.transactionsInScope(state)) {
       if (t.date) months.add(Fmt.ymKey(t.date));
     }
     return [...months].sort().reverse();
@@ -413,7 +804,7 @@ const App = (() => {
   const extractPayee = CSVImport.extractPayee;
   function distinctPayees() {
     const map = new Map();
-    for (const t of state.transactions) {
+    for (const t of Selectors.transactionsInScope(state)) {
       const name = extractPayee(t.description) || '—';
       if (!map.has(name)) {
         map.set(name, { name, count: 0, noCategory: 0, lastDate: null, lastCategoryId: null });
@@ -429,10 +820,12 @@ const App = (() => {
     return [...map.values()];
   }
   // Apply the same category to every transaction whose extracted payee
-  // matches `name`. Empty string clears the category.
+  // matches `name`. Empty string clears the category. Operates only on
+  // in-scope transactions so the bulk edit never crosses the scope the
+  // user is currently looking at.
   function bulkUpdatePayeeCategory(name, categoryId) {
     let count = 0;
-    for (const t of state.transactions) {
+    for (const t of Selectors.transactionsInScope(state)) {
       if (extractPayee(t.description) !== name) continue;
       Store.updateTransaction(state, t.id, { categoryId: categoryId });
       count++;
@@ -445,16 +838,19 @@ const App = (() => {
 
   function filteredTxns() {
     const f = txnFilters;
-    return Store.listTransactions(state).filter(t => {
-      if (f.month !== 'all' && !Fmt.inMonth(t.date, f.month)) return false;
-      if (f.type !== 'all' && t.type !== f.type) return false;
-      if (f.categoryId !== 'all' && t.categoryId !== f.categoryId) return false;
-      if (f.userId !== 'all' && t.paidByUserId !== f.userId) return false;
-      if (f.sourceId !== 'all' && t.sourceId !== f.sourceId) return false;
-      if (f.scope !== 'all' && t.scope !== f.scope) return false;
-      if (f.payee !== 'all' && extractPayee(t.description) !== f.payee) return false;
-      return true;
-    });
+    // Base set respects the active scope; txnFilters apply on top.
+    return [...Selectors.transactionsInScope(state)]
+      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
+      .filter(t => {
+        if (f.month !== 'all' && !Fmt.inMonth(t.date, f.month)) return false;
+        if (f.type !== 'all' && t.type !== f.type) return false;
+        if (f.categoryId !== 'all' && t.categoryId !== f.categoryId) return false;
+        if (f.userId !== 'all' && t.paidByUserId !== f.userId) return false;
+        if (f.sourceId !== 'all' && t.sourceId !== f.sourceId) return false;
+        if (f.scope !== 'all' && t.scope !== f.scope) return false;
+        if (f.payee !== 'all' && extractPayee(t.description) !== f.payee) return false;
+        return true;
+      });
   }
 
   function renderTxnTable(txns, { compact } = {}) {
@@ -1351,6 +1747,6 @@ const App = (() => {
   function escapeAttr(s) { return String(s ?? '').replace(/"/g, '&quot;'); }
   function escapeText(s) { return String(s ?? '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
-  return { init };
+  return { init, get _state() { return state; } };
 })();
 window.App = App;

@@ -60,12 +60,18 @@ const Fmt = {
 };
 
 // ---- DOM helpers ----
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const SVG_TAGS = new Set(['svg', 'g', 'line', 'rect', 'circle', 'ellipse', 'polyline', 'polygon', 'path', 'text', 'tspan', 'defs', 'use', 'image', 'foreignObject', 'marker', 'pattern', 'clipPath', 'mask', 'filter']);
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 function el(tag, props = {}, ...children) {
-  const node = document.createElement(tag);
+  // SVG elements need the SVG namespace or browsers silently treat them
+  // as HTMLUnknownElement and ignore the positioning attributes.
+  const node = SVG_TAGS.has(tag)
+    ? document.createElementNS(SVG_NS, tag)
+    : document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
-    if (k === 'class') node.className = v;
+    if (k === 'class') node.setAttribute('class', v);
     else if (k === 'style' && typeof v === 'object') Object.assign(node.style, v);
     else if (k === 'dataset' && typeof v === 'object') Object.assign(node.dataset, v);
     else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2).toLowerCase(), v);
@@ -76,7 +82,20 @@ function el(tag, props = {}, ...children) {
   }
   for (const c of children.flat()) {
     if (c == null || c === false) continue;
-    node.appendChild(c instanceof Node ? c : document.createTextNode(String(c)));
+    if (c instanceof Node) {
+      // When appending into an SVG element, text/element children must
+      // be in the SVG namespace too — text nodes in SVG need createTextNodeNS.
+      if (node.namespaceURI === SVG_NS && c.nodeType === 3) {
+        node.appendChild(document.createTextNode(c.textContent));
+      } else {
+        node.appendChild(c);
+      }
+    } else {
+      const text = (node.namespaceURI === SVG_NS)
+        ? document.createTextNode(String(c))
+        : document.createTextNode(String(c));
+      node.appendChild(text);
+    }
   }
   return node;
 }
