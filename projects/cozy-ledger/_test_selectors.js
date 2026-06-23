@@ -565,6 +565,29 @@ test('monthlyNetFlow: respects scope filter', () => {
 // positive regardless of direction. The selector MUST honour `type`
 // to put the value on the correct side — otherwise expenses would be
 // counted as income and every month would net positive.
+test('monthlyNetFlow: months parameter widens the window', () => {
+  const today = new Date();
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  const old = new Date(today.getFullYear() - 2, today.getMonth(), 15);
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [{ id: 'sd', ownerId: 'u_david', active: true, balance: 0 }],
+    transactions: [
+      { sourceId: 'sd', date: fmt(old), amount: 100, type: 'income' },
+    ],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  // Default 12-month window skips a transaction 2 years ago.
+  const flow1y = Selectors.monthlyNetFlow(state);
+  if (flow1y.some(m => m.income > 0)) throw new Error('1y window should not reach 2-year-old txn');
+  // 36-month window picks it up.
+  const flow3y = Selectors.monthlyNetFlow(state, 36);
+  const oldMonth = old.toISOString().slice(0, 7);
+  if (!flow3y.some(m => m.month === oldMonth && m.income === 100)) {
+    throw new Error(`3y window should include ${oldMonth}`);
+  }
+});
+
 test('monthlyNetFlow: uses type, not amount sign, to bucket income vs expense', () => {
   const state = {
     users: [{ id: 'u_david' }],

@@ -9,6 +9,7 @@ const App = (() => {
   let monthKey = Fmt.currentMonthKey(); // for month-scoped screens
   let txnFilters = { month: 'all', type: 'all', categoryId: 'all', userId: 'all', sourceId: 'all', scope: 'all', payee: 'all' };
   let balanceViewMode = 'sources';  // 'sources' (per-source lines) or 'networth' (single aggregate line)
+  let trendRange = '1y';  // '1y' | '2y' | '3y' | 'all' — window for the trends charts
 
   // ---- Boot ---------------------------------------------------------
   function init() {
@@ -337,8 +338,8 @@ const App = (() => {
 
     // chartHost owns both SVGs (monthly flow + balance trajectory).
     const chartHost = el('div', { class: 'chart-wrap', id: 'balance-chart-wrap' });
-    chartHost.appendChild(renderMonthlyFlowChart(sources));
-    chartHost.appendChild(renderBalanceTrajectoryChart(sources));
+    chartHost.appendChild(renderMonthlyFlowChart(sources, monthsForRange(trendRange)));
+    chartHost.appendChild(renderBalanceTrajectoryChart(sources, monthsForRange(trendRange)));
 
     return el('div', { class: 'card balance-card', id: 'balance-card' },
       el('div', { class: 'card-head' },
@@ -377,6 +378,51 @@ const App = (() => {
     renderView();
   }
 
+  // Resolve the active range ('1y' | '2y' | '3y' | 'all') into a month
+  // count. For 'all' we use the oldest in-scope transaction so the
+  // chart naturally grows with the user's history. Capped at 240 months
+  // (20 years) so the SVG can't blow up.
+  function monthsForRange(range) {
+    if (range === 'all') {
+      const sources = Selectors.sourcesInScope(state);
+      const inScope = new Set(sources.map(s => s.id));
+      const txns = (state.transactions || []).filter(t => inScope.has(t.sourceId));
+      if (!txns.length) return 12;
+      const oldest = txns.reduce((m, t) => t.date < m ? t.date : m, txns[0].date);
+      const oldestDate = new Date(oldest);
+      const now = new Date();
+      const n = (now.getFullYear() - oldestDate.getFullYear()) * 12
+              + (now.getMonth() - oldestDate.getMonth()) + 1;
+      return Math.max(12, Math.min(240, n));
+    }
+    return { '1y': 12, '2y': 24, '3y': 36 }[range] || 12;
+  }
+  function setTrendRange(range) {
+    if (!['1y', '2y', '3y', 'all'].includes(range)) return;
+    if (range === trendRange) return;
+    trendRange = range;
+    renderView();
+  }
+  function renderRangeButtons() {
+    const opts = [
+      { id: '1y',  label: '1 year' },
+      { id: '2y',  label: '2 years' },
+      { id: '3y',  label: '3 years' },
+      { id: 'all', label: 'All' },
+    ];
+    return el('div', { class: 'range-buttons' },
+      ...opts.map(o => {
+        const btn = el('button', {
+          type: 'button',
+          class: 'range-btn' + (trendRange === o.id ? ' active' : ''),
+          'data-range': o.id,
+        }, o.label);
+        btn.addEventListener('click', () => setTrendRange(o.id));
+        return btn;
+      }),
+    );
+  }
+
   // -- Charts (heartbeat + trend) -----------------------------------
   // Two complementary visualizations replace the old step-line chart:
   //   • Heartbeat — daily net-flow bars. Reads as up/down/up/down
@@ -393,17 +439,20 @@ const App = (() => {
   const POS_COLOR = '#5a7248'; // sage for income
   const NEG_COLOR = '#b85c4a'; // terra for expense
 
-  function renderMonthlyFlowChart(sources) {
+  function renderMonthlyFlowChart(sources, trendMonths) {
     const isNetWorth = balanceViewMode === 'networth';
-    const months = Selectors.monthlyNetFlow(state, 12);
+    const months = Selectors.monthlyNetFlow(state, trendMonths);
     const innerW = CHART_W - CHART_M_HB.left - CHART_M_HB.right;
     const innerH = HB_H - CHART_M_HB.top - CHART_M_HB.bottom;
 
     const wrap = el('div', { class: 'chart-section' },
       el('div', { class: 'chart-section-head' },
-        'Income vs expenses by month',
-        el('span', { class: 'chart-section-sub' },
-          'green = saved that month, red = spent more than earned'),
+        el('span', { class: 'chart-section-title' },
+          'Income vs expenses by month',
+          el('span', { class: 'chart-section-sub' },
+            'green = saved that month, red = spent more than earned'),
+        ),
+        renderRangeButtons(),
       ),
     );
 
@@ -452,8 +501,14 @@ const App = (() => {
       }, Fmt.moneyShort(v)));
     }
 
-    // X labels: show ~6 month ticks so they don't overlap.
-    const tickStep = N <= 6 ? 1 : (N <= 12 ? 2 : 3);
+    // X labels: keep ~6–8 visible ticks regardless of how many months are
+    // shown. For >12 months show one tick per quarter; for >36 months
+    // show one per half-year so labels don't collide.
+    const tickStep = N <= 6 ? 1
+                   : N <= 12 ? 2
+                   : N <= 24 ? 3
+                   : N <= 48 ? 6
+                   : 12;
     for (let i = 0; i < N; i += tickStep) {
       const m = months[i];
       svg.appendChild(el('text', {
@@ -535,24 +590,27 @@ const App = (() => {
 
   // (Removed local monthLabel helper — use Fmt.monthLabel for "June 2026".)
 
-  function renderBalanceTrajectoryChart(sources) {
+  function renderBalanceTrajectoryChart(sources, trendMonths) {
     const isNetWorth = balanceViewMode === 'networth';
     const innerW = CHART_W - CHART_M_TR.left - CHART_M_TR.right;
     const innerH = TR_H - CHART_M_TR.top - CHART_M_TR.bottom;
 
     const wrap = el('div', { class: 'chart-section' },
       el('div', { class: 'chart-section-head' },
-        isNetWorth ? 'Net worth trajectory' : 'Balance trajectory per source',
-        el('span', { class: 'chart-section-sub' },
-          isNetWorth
-            ? 'walks back from the total of your typed balances \u2014 see if you had more in the past'
-            : 'walks back from each source\u2019s typed balance \u2014 line above today\u2019s value = had more'),
+        el('span', { class: 'chart-section-title' },
+          isNetWorth ? 'Net worth trajectory' : 'Balance trajectory per source',
+          el('span', { class: 'chart-section-sub' },
+            isNetWorth
+              ? 'walks back from the total of your typed balances \u2014 see if you had more in the past'
+              : 'walks back from each source\u2019s typed balance \u2014 line above today\u2019s value = had more'),
+        ),
+        renderRangeButtons(),
       ),
     );
 
     let series;
     if (isNetWorth) {
-      const pts = Selectors.monthlyNetWorth(state, 12);
+      const pts = Selectors.monthlyNetWorth(state, trendMonths);
       if (!pts.length) {
         wrap.appendChild(el('div', { class: 'balance-empty' },
           'No sources to chart. Add or enable a source to see your balance trajectory.'));
@@ -561,7 +619,7 @@ const App = (() => {
       series = [{ id: '__networth__', name: 'Net worth', color: NW_COLOR, points: pts, today: pts[pts.length - 1].balance }];
     } else {
       series = sources.map(src => {
-        const points = Selectors.monthlyBalance(state, src.id, 12);
+        const points = Selectors.monthlyBalance(state, src.id, trendMonths);
         // "Flat" = every historical point equals today's typed balance.
         // That means no transactions on this source in the window — the
         // trajectory line would be a horizontal line sitting exactly on
@@ -783,8 +841,8 @@ const App = (() => {
     // Re-render just the charts so the trend line picks up the new anchor.
     const sources = Selectors.sourcesInScope(state);
     chartHost.innerHTML = '';
-    chartHost.appendChild(renderMonthlyFlowChart(sources));
-    chartHost.appendChild(renderBalanceTrajectoryChart(sources));
+    chartHost.appendChild(renderMonthlyFlowChart(sources, monthsForRange(trendRange)));
+    chartHost.appendChild(renderBalanceTrajectoryChart(sources, monthsForRange(trendRange)));
     // Flash the "saved" hint beside the input.
     const saved = $('#saved-' + sourceId);
     if (saved) {

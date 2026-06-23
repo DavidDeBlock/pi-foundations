@@ -565,11 +565,48 @@ body::before {
   font-weight: 600;
   font-size: .85rem;
   color: var(--ink);
+  justify-content: space-between;
+}
+.chart-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
 }
 .chart-section-sub {
   font-weight: 400;
   font-size: .72rem;
   color: var(--ink-mute);
+}
+
+/* Year / range filter buttons next to chart titles. */
+.range-buttons {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--cream);
+  border: 1px solid var(--paper-edge);
+  border-radius: 999px;
+}
+.range-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--ink-mute);
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.range-btn:hover {
+  color: var(--ink);
+}
+.range-btn.active {
+  background: var(--sage);
+  color: var(--paper);
 }
 .hb-bar { transition: opacity .15s; }
 .hb-bar:hover { opacity: .78; }

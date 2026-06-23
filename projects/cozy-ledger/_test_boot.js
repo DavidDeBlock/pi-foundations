@@ -290,6 +290,37 @@ test('monthly flow bars are POS_COLOR for net ≥ 0 and NEG_COLOR for net < 0 (n
   }
 });
 
+test('range buttons widen the chart when clicked', () => {
+  navigateToView('trends');
+  let card = walk(ctx.window.document.querySelector('#app'), n => n.getAttribute('id') === 'balance-card');
+  // Default '1y' should give exactly 12 monthly-flow bars.
+  const initialBars = findAll(card, n => (n.classList?._set || new Set()).has('mf-bar'));
+  if (initialBars.length !== 12) throw new Error(`expected 12 bars in 1y, got ${initialBars.length}`);
+  // Click '3 years' — should give 36 bars.
+  const btn3y = findAll(card, n =>
+    (n.classList?._set || new Set()).has('range-btn') && n.getAttribute('data-range') === '3y'
+  )[0];
+  if (!btn3y) throw new Error('3y button not found');
+  btn3y.dispatchEvent({ type: 'click' });
+  card = walk(ctx.window.document.querySelector('#app'), n => n.getAttribute('id') === 'balance-card');
+  const afterBars = findAll(card, n => (n.classList?._set || new Set()).has('mf-bar'));
+  if (afterBars.length !== 36) throw new Error(`expected 36 bars in 3y, got ${afterBars.length}`);
+  // Active pill must reflect the choice. (Each chart section renders
+  // its own button row, so we expect >= 1 with data-range='3y'.)
+  const active = findAll(card, n =>
+    (n.classList?._set || new Set()).has('range-btn')
+    && (n.classList?._set || new Set()).has('active')
+    && n.getAttribute('data-range') === '3y'
+  );
+  if (active.length < 1) throw new Error('expected 3y button to be active after click');
+  const stillOne = findAll(card, n =>
+    (n.classList?._set || new Set()).has('range-btn')
+    && (n.classList?._set || new Set()).has('active')
+    && n.getAttribute('data-range') !== '3y'
+  );
+  if (stillOne.length > 0) throw new Error('expected no other range button to be active');
+});
+
 test('Trends nav item is in the sidebar (ISSUE-004)', () => {
   navigateToView('dashboard'); // reset to dashboard
   const appRoot = ctx.window.document.querySelector('#app');
