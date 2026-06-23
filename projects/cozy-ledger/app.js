@@ -286,31 +286,10 @@ const App = (() => {
     const monthTxns = inScopeTxns.filter(t => Fmt.inMonth(t.date, monthKey));
     const totalExpense = sum(monthTxns.filter(t => t.type === 'expense'), 'amount');
 
-    // Income vs expenses: last 6 months ending at the selected month.
-    const months = [];
-    for (let i = 5; i >= 0; i--) months.push(Fmt.shiftMonth(monthKey, -i));
-    const trend = months.map(m => {
-      const mTx = inScopeTxns.filter(t => Fmt.ymKey(t.date) === m);
-      return {
-        m,
-        income: sum(mTx.filter(t => t.type === 'income'), 'amount'),
-        expense: sum(mTx.filter(t => t.type === 'expense'), 'amount'),
-      };
-    });
-
     const wrap = el('div', { class: 'view-trends' });
 
     // Balance over time — the centrepiece, with the per-source ↔ net-worth toggle.
     wrap.appendChild(renderBalanceFlow());
-
-    // Income vs expenses — full width.
-    const trendCard = el('div', { class: 'card' },
-      el('div', { class: 'card-head' },
-        el('div', { class: 'card-title', html: Icons.receipt }),
-        'Income vs expenses — last 6 months'),
-      renderBarChart(trend),
-    );
-    wrap.appendChild(trendCard);
 
     // Top categories — full width.
     wrap.appendChild(renderTopCategoriesCard(monthTxns, totalExpense));
@@ -337,29 +316,6 @@ const App = (() => {
     return list;
   }
 
-  function renderBarChart(data) {
-    const max = Math.max(1, ...data.map(d => Math.max(d.income, d.expense)));
-    const wrap = el('div', {});
-    const chart = el('div', { class: 'bar-chart' });
-    data.forEach(d => {
-      const hInc = (d.income / max) * 100;
-      const hExp = (d.expense / max) * 100;
-      chart.appendChild(el('div', { class: 'bar-col' },
-        el('div', { class: 'bar-pair' },
-          el('div', { class: 'bar income', style: { height: hInc + '%' }, title: Fmt.money(d.income) }),
-          el('div', { class: 'bar expense', style: { height: hExp + '%' }, title: Fmt.money(d.expense) }),
-        ),
-        el('div', { class: 'bar-label' }, Fmt.monthLabel(d.m).split(' ')[0].slice(0, 3)),
-      ));
-    });
-    wrap.appendChild(chart);
-    wrap.appendChild(el('div', { class: 'chart-legend' },
-      el('div', {}, el('span', { class: 'legend-dot', style: { background: 'var(--sage)' } }), 'Income'),
-      el('div', {}, el('span', { class: 'legend-dot', style: { background: 'var(--terra)' } }), 'Expenses'),
-    ));
-    return wrap;
-  }
-
   // ===================================================================
   // BALANCE FLOW CHART (ISSUE-002)
   // ===================================================================
@@ -379,11 +335,10 @@ const App = (() => {
       );
     }
 
-    // chartHost owns the SVG only. Re-rendering just this host leaves
-    // the typed-balance inputs and their focus intact while the user
-    // is typing.
+    // chartHost owns both SVGs (monthly flow + balance trajectory).
     const chartHost = el('div', { class: 'chart-wrap', id: 'balance-chart-wrap' });
-    chartHost.appendChild(renderBalanceChart(sources));
+    chartHost.appendChild(renderMonthlyFlowChart(sources));
+    chartHost.appendChild(renderBalanceTrajectoryChart(sources));
 
     return el('div', { class: 'card balance-card', id: 'balance-card' },
       el('div', { class: 'card-head' },
@@ -422,183 +377,366 @@ const App = (() => {
     renderView();
   }
 
-  // -- Chart SVG ------------------------------------------------------
-  const CHART_W = 800, CHART_H = 280;
-  const CHART_M = { top: 18, right: 20, bottom: 36, left: 64 };
+  // -- Charts (heartbeat + trend) -----------------------------------
+  // Two complementary visualizations replace the old step-line chart:
+  //   • Heartbeat — daily net-flow bars. Reads as up/down/up/down
+  //     rhythm (income vs expense days), the actual "heartbeat".
+  //   • Trend — end-of-month balance points joined by a smooth line.
+  //     Reads as the trajectory: where balance was N months ago and
+  //     where it is now (rightmost = typed current balance).
+  const CHART_W = 800;
+  const HB_H = 200;
+  const TR_H = 160;
+  const CHART_M_HB = { top: 14, right: 16, bottom: 28, left: 56 };
+  const CHART_M_TR = { top: 14, right: 16, bottom: 28, left: 56 };
+  const NW_COLOR = '#3a3a3a'; // charcoal for net-worth trend line
+  const POS_COLOR = '#5a7248'; // sage for income
+  const NEG_COLOR = '#b85c4a'; // terra for expense
 
-  function renderBalanceChart(sources) {
-    const innerW = CHART_W - CHART_M.left - CHART_M.right;
-    const innerH = CHART_H - CHART_M.top - CHART_M.bottom;
-
-    const range = Selectors.balanceChartDateRange(state);
-    const fromMs = Date.parse(range.from);
-    const toMs = Date.parse(range.to);
-    const xSpan = Math.max(toMs - fromMs, 86400000);
-
-    // Two display modes:
-    //   'sources'  → one step line per in-scope source (colored by owner)
-    //   'networth' → one aggregate step line summing every in-scope source
+  function renderMonthlyFlowChart(sources) {
     const isNetWorth = balanceViewMode === 'networth';
-    const NW_COLOR = 'var(--charcoal)';
+    const months = Selectors.monthlyNetFlow(state, 12);
+    const innerW = CHART_W - CHART_M_HB.left - CHART_M_HB.right;
+    const innerH = HB_H - CHART_M_HB.top - CHART_M_HB.bottom;
 
-    // Build the set of series to render. Net-worth collapses to one entry.
-    let series;
-    if (isNetWorth) {
-      const points = Selectors.netWorthSeries(state);
-      series = [{ source: { id: '__networth__', name: 'Net worth' }, color: NW_COLOR, points }];
-    } else {
-      series = sources.map(src => ({
-        source: src,
-        color: colorForSource(src),
-        points: Selectors.balanceSeries(state, src.id),
-      }));
+    const wrap = el('div', { class: 'chart-section' },
+      el('div', { class: 'chart-section-head' },
+        'Income vs expenses by month',
+        el('span', { class: 'chart-section-sub' },
+          'green = saved that month, red = spent more than earned'),
+      ),
+    );
+
+    // Even if no months have data, draw the empty grid so the card
+    // doesn't collapse, but show a helpful message.
+    const hasAnyActivity = months.some(m => m.income !== 0 || m.expense !== 0);
+    if (!hasAnyActivity) {
+      wrap.appendChild(el('div', { class: 'balance-empty' },
+        'No transactions yet. Once you log a few, you’ll see which months saved (green) vs spent (red).'));
+      return wrap;
     }
 
-    // Y-axis range: union of every plotted balance.
-    const ys = [];
-    for (const s of series) for (const p of s.points) ys.push(p.balance);
-    if (isNetWorth) {
-      // Also include the (degenerate) flat pair from netWorthSeries when empty.
-      const flatSources = sources.reduce((s, src) => s + (Number(src.balance) || 0), 0);
-      ys.push(flatSources);
-    } else {
-      for (const s of series) ys.push(Number(s.source.balance) || 0);
-    }
-    let yMin = Math.min(0, ...ys);
-    let yMax = Math.max(0, ...ys);
-    if (yMin === yMax) { yMin -= 100; yMax += 100; }
-    const yPad = (yMax - yMin) * 0.1;
-    yMin -= yPad; yMax += yPad;
+    // X axis is by month slot (12 evenly spaced).
+    const N = months.length;
+    const colW = innerW / N;
 
-    const xToPx = (date) => CHART_M.left + ((Date.parse(date) - fromMs) / xSpan) * innerW;
-    const yToPx = (bal) => CHART_M.top + (1 - (bal - yMin) / (yMax - yMin)) * innerH;
+    // Y axis: max abs net across months (centered on 0).
+    let maxAbs = 1;
+    for (const m of months) maxAbs = Math.max(maxAbs, Math.abs(m.net));
+    const yMax = maxAbs;
+    const yMin = -maxAbs;
+
+    const xToPx = (i) => CHART_M_HB.left + (i + 0.5) * colW;
+    const yToPx = (val) => CHART_M_HB.top + (1 - (val - yMin) / (yMax - yMin)) * innerH;
+    const zeroY = yToPx(0);
 
     const svg = el('svg', {
-      class: 'balance-svg' + (isNetWorth ? ' bc-networth' : ''),
-      viewBox: `0 0 ${CHART_W} ${CHART_H}`,
+      class: 'balance-svg monthly-flow-svg',
+      viewBox: `0 0 ${CHART_W} ${HB_H}`,
       preserveAspectRatio: 'xMidYMid meet',
       role: 'img',
-      'aria-label': isNetWorth ? 'Net worth over time' : 'Balance over time per source',
+      'aria-label': 'Income vs expenses per month',
     });
 
-    // -- Y grid lines + labels (5 horizontal slices) -----------------
-    for (let i = 0; i <= 4; i++) {
-      const yVal = yMin + (yMax - yMin) * (i / 4);
-      const yPx = yToPx(yVal);
-      svg.appendChild(el('line', {
-        x1: CHART_M.left, x2: CHART_W - CHART_M.right,
-        y1: yPx, y2: yPx, class: 'bc-grid',
-      }));
+    // Zero baseline
+    svg.appendChild(el('line', {
+      x1: CHART_M_HB.left, x2: CHART_W - CHART_M_HB.right,
+      y1: zeroY, y2: zeroY, class: 'bc-zero',
+    }));
+
+    // Y ticks: top / 0 / bottom
+    for (const v of [yMax, 0, yMin]) {
       svg.appendChild(el('text', {
-        x: CHART_M.left - 8, y: yPx + 4,
+        x: CHART_M_HB.left - 8, y: yToPx(v) + 4,
         'text-anchor': 'end', class: 'bc-axis',
-      }, Fmt.moneyShort(yVal)));
-    }
-    if (yMin < 0 && yMax > 0) {
-      svg.appendChild(el('line', {
-        x1: CHART_M.left, x2: CHART_W - CHART_M.right,
-        y1: yToPx(0), y2: yToPx(0), class: 'bc-zero',
-      }));
+      }, Fmt.moneyShort(v)));
     }
 
-    // -- X axis labels: from, middle, to -----------------------------
-    const midIso = new Date((fromMs + toMs) / 2).toISOString().slice(0, 10);
-    const xLabels = [
-      { date: range.from, anchor: 'start' },
-      { date: midIso,    anchor: 'middle' },
-      { date: range.to,   anchor: 'end' },
-    ];
-    for (const lbl of xLabels) {
+    // X labels: show ~6 month ticks so they don't overlap.
+    const tickStep = N <= 6 ? 1 : (N <= 12 ? 2 : 3);
+    for (let i = 0; i < N; i += tickStep) {
+      const m = months[i];
       svg.appendChild(el('text', {
-        x: xToPx(lbl.date), y: CHART_H - 12,
-        'text-anchor': lbl.anchor, class: 'bc-axis',
-      }, Fmt.date(lbl.date, { short: true })));
+        x: xToPx(i), y: HB_H - 8,
+        'text-anchor': 'middle', class: 'bc-axis',
+      }, Fmt.monthLabel(m.month)));
     }
 
-    // -- Step lines --------------------------------------------------
-    for (const s of series) {
-      if (!s.points.length) {
-        const y = yToPx(Number(s.source.balance) || 0);
-        svg.appendChild(el('line', {
-          x1: CHART_M.left, x2: CHART_W - CHART_M.right,
-          y1: y, y2: y,
-          class: 'bc-line bc-line-flat' + (isNetWorth ? ' bc-nw-flat' : ''),
-          stroke: s.color,
-          'stroke-dasharray': '4 4',
-          'data-source': s.source.id,
+    // Bars. Same in both modes: one bar per month, colour = sign of net
+    // (green if net ≥ 0, red if net < 0). Per-source breakdown is shown
+    // only on hover so the user reads the rhythm at a glance.
+    const BAR_GAP = 4;
+    const barWidth = Math.max(8, colW - BAR_GAP);
+
+    months.forEach((m, i) => {
+      const cx = xToPx(i);
+      const v = m.net;
+      const color = v >= 0 ? POS_COLOR : NEG_COLOR;
+      if (v >= 0) {
+        const top = yToPx(v);
+        svg.appendChild(el('rect', {
+          x: cx - barWidth / 2, y: top,
+          width: barWidth, height: zeroY - top,
+          fill: color, class: 'mf-bar',
+          'data-month': m.month, 'data-value': v,
         }));
-        continue;
+      } else {
+        const bottom = yToPx(v);
+        svg.appendChild(el('rect', {
+          x: cx - barWidth / 2, y: zeroY,
+          width: barWidth, height: bottom - zeroY,
+          fill: color, class: 'mf-bar',
+          'data-month': m.month, 'data-value': v,
+        }));
       }
-      // Step-after polyline: horizontal segment to next x, then drop to next y.
-      const pts = [];
-      for (let i = 0; i < s.points.length; i++) {
-        const x = xToPx(s.points[i].date);
-        const y = yToPx(s.points[i].balance);
-        if (i > 0) pts.push(x, yToPx(s.points[i - 1].balance));
-        pts.push(x, y);
-      }
-      svg.appendChild(el('polyline', {
-        class: 'bc-line' + (isNetWorth ? ' bc-nw' : ''),
-        stroke: s.color,
-        fill: 'none',
-        'stroke-width': isNetWorth ? 3 : 2,
-        'stroke-linejoin': 'round',
-        'stroke-linecap': 'round',
-        'data-source': s.source.id,
-        points: pts.map(v => v.toFixed(1)).join(' '),
-      }));
-      const last = s.points[s.points.length - 1];
-      svg.appendChild(el('circle', {
-        cx: xToPx(last.date), cy: yToPx(last.balance),
-        r: isNetWorth ? 4.5 : 3.5,
-        class: 'bc-end', fill: s.color,
-        'data-source': s.source.id,
-      }));
-    }
+    });
 
-    // -- Hover overlay + tooltip -------------------------------------
-    const tooltip = el('div', { class: 'bc-tooltip', id: 'balance-tooltip' });
+    // Hover overlay + tooltip
+    const tooltip = el('div', { class: 'bc-tooltip', id: 'mf-tooltip' });
     svg.appendChild(tooltip);
-
     const overlay = el('rect', {
-      x: CHART_M.left, y: CHART_M.top,
+      x: CHART_M_HB.left, y: CHART_M_HB.top,
       width: innerW, height: innerH,
       fill: 'transparent', class: 'bc-overlay',
     });
     svg.appendChild(overlay);
 
-    function showTooltip(clientX, clientY) {
+    overlay.addEventListener('mousemove', (e) => {
       const rect = svg.getBoundingClientRect();
       const scaleX = rect.width ? rect.width / CHART_W : 1;
-      const px = (clientX - rect.left) / scaleX;
-      const ms = fromMs + ((px - CHART_M.left) / innerW) * xSpan;
+      const px = (e.clientX - rect.left) / scaleX;
+      const col = Math.max(0, Math.min(N - 1, Math.floor((px - CHART_M_HB.left) / colW)));
+      const m = months[col];
+      if (!m) { tooltip.style.display = 'none'; return; }
+      const sign = m.net >= 0 ? '+' : '\u2212';
+      const signClass = m.net >= 0 ? 'hb-pos' : 'hb-neg';
+      const verb = m.net >= 0 ? 'saved' : 'spent';
+      const detail = isNetWorth ? '' :
+        Object.entries(m.perSource)
+          .filter(([, v]) => v)
+          .map(([id, v]) => {
+            const src = sources.find(s => s.id === id);
+            return `<span class="bc-tt-seg"><span class="bc-tt-dot" style="background:${colorForSource(src)}"></span>${escapeText(src.name)}: ${escapeText(Fmt.money(v))}</span>`;
+          }).join('');
+      tooltip.innerHTML =
+        `<span class="bc-tt-name">${escapeText(Fmt.monthLabel(m.month))}</span>` +
+        `<span class="bc-tt-date">${escapeText(Fmt.money(m.income))} in \u00b7 ${escapeText(Fmt.money(m.expense))} out</span>` +
+        `<span class="bc-tt-bal ${signClass}">${verb} ${sign}${escapeText(Fmt.money(Math.abs(m.net)))}</span>` +
+        (detail ? `<span class="bc-tt-detail">${detail}</span>` : '');
+      tooltip.style.display = 'flex';
+      tooltip.style.left = (xToPx(col) / CHART_W * 100) + '%';
+      tooltip.style.top = '8%';
+    });
+    overlay.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+
+    wrap.appendChild(svg);
+    return wrap;
+  }
+
+  // (Removed local monthLabel helper — use Fmt.monthLabel for "June 2026".)
+
+  function renderBalanceTrajectoryChart(sources) {
+    const isNetWorth = balanceViewMode === 'networth';
+    const innerW = CHART_W - CHART_M_TR.left - CHART_M_TR.right;
+    const innerH = TR_H - CHART_M_TR.top - CHART_M_TR.bottom;
+
+    const wrap = el('div', { class: 'chart-section' },
+      el('div', { class: 'chart-section-head' },
+        isNetWorth ? 'Net worth trajectory' : 'Balance trajectory per source',
+        el('span', { class: 'chart-section-sub' },
+          isNetWorth
+            ? 'walks back from the total of your typed balances \u2014 see if you had more in the past'
+            : 'walks back from each source\u2019s typed balance \u2014 line above today\u2019s value = had more'),
+      ),
+    );
+
+    let series;
+    if (isNetWorth) {
+      const pts = Selectors.monthlyNetWorth(state, 12);
+      if (!pts.length) {
+        wrap.appendChild(el('div', { class: 'balance-empty' },
+          'No sources to chart. Add or enable a source to see your balance trajectory.'));
+        return wrap;
+      }
+      series = [{ id: '__networth__', name: 'Net worth', color: NW_COLOR, points: pts, today: pts[pts.length - 1].balance }];
+    } else {
+      series = sources.map(src => {
+        const points = Selectors.monthlyBalance(state, src.id, 12);
+        // "Flat" = every historical point equals today's typed balance.
+        // That means no transactions on this source in the window — the
+        // trajectory line would be a horizontal line sitting exactly on
+        // top of the today reference, which is just visual noise. We
+        // mark it so the renderer can skip the polyline for that case.
+        const flat = points.length > 1
+          && points.every(p => p.balance === points[0].balance);
+        return {
+          id: src.id, name: src.name,
+          color: colorForSource(src),
+          points, today: Number(src.balance) || 0, flat,
+        };
+      }).filter(s => s.points.length);
+      if (!series.length) {
+        wrap.appendChild(el('div', { class: 'balance-empty' },
+          'No transactions in the last 12 months. Log some to see your balance trajectory.'));
+        return wrap;
+      }
+    }
+
+    // X-axis uses the union of dates across all series so per-source
+    // lines share a common axis. Y-axis is the union of balances AND
+    // the today reference line, so the user can see whether each
+    // line ever went above the value they typed.
+    const allDates = new Set();
+    for (const s of series) for (const p of s.points) allDates.add(p.date);
+    const dates = [...allDates].sort();
+    const fromMs = Date.parse(dates[0]);
+    const toMs = Date.parse(dates[dates.length - 1]);
+    const xSpan = Math.max(toMs - fromMs, 86400000);
+
+    const ys = [];
+    for (const s of series) for (const p of s.points) ys.push(p.balance);
+    for (const s of series) ys.push(s.today); // include today reference in y-range
+    let yMin = Math.min(...ys);
+    let yMax = Math.max(...ys);
+    if (yMin === yMax) { yMin -= 100; yMax += 100; }
+    const yPad = (yMax - yMin) * 0.15;
+    yMin -= yPad; yMax += yPad;
+
+    const xToPx = (date) =>
+      CHART_M_TR.left + ((Date.parse(date) - fromMs) / xSpan) * innerW;
+    const yToPx = (bal) =>
+      CHART_M_TR.top + (1 - (bal - yMin) / (yMax - yMin)) * innerH;
+
+    const svg = el('svg', {
+      class: 'balance-svg trajectory-svg',
+      viewBox: `0 0 ${CHART_W} ${TR_H}`,
+      preserveAspectRatio: 'xMidYMid meet',
+      role: 'img',
+      'aria-label': 'Balance trajectory walking back from today',
+    });
+
+    // Y grid (5 slices)
+    for (let i = 0; i <= 4; i++) {
+      const v = yMin + (yMax - yMin) * (i / 4);
+      const y = yToPx(v);
+      svg.appendChild(el('line', {
+        x1: CHART_M_TR.left, x2: CHART_W - CHART_M_TR.right,
+        y1: y, y2: y, class: 'bc-grid',
+      }));
+      svg.appendChild(el('text', {
+        x: CHART_M_TR.left - 8, y: y + 4,
+        'text-anchor': 'end', class: 'bc-axis',
+      }, Fmt.moneyShort(v)));
+    }
+
+    // X labels: first / middle / last
+    const midIso = new Date((fromMs + toMs) / 2).toISOString().slice(0, 10);
+    const xLabels = [
+      { date: dates[0], anchor: 'start' },
+      { date: midIso,   anchor: 'middle' },
+      { date: dates[dates.length - 1], anchor: 'end' },
+    ];
+    for (const lbl of xLabels) {
+      svg.appendChild(el('text', {
+        x: xToPx(lbl.date), y: TR_H - 8,
+        'text-anchor': lbl.anchor, class: 'bc-axis',
+      }, Fmt.date(lbl.date, { short: true })));
+    }
+
+    // "Today" reference line: a dashed horizontal at each series'
+    // typed balance. The trajectory line being above it means "you had
+    // more money then". The label "today" sits at the right edge.
+    // For sources with no transactions (flat series) the reference is
+    // drawn solid — it IS the trajectory.
+    const todayX = CHART_W - CHART_M_TR.right - 4;
+    for (const s of series) {
+      const y = yToPx(s.today);
+      const isFlat = !!s.flat;
+      svg.appendChild(el('line', {
+        x1: CHART_M_TR.left, x2: CHART_W - CHART_M_TR.right,
+        y1: y, y2: y,
+        class: 'bc-ref-today' + (isFlat ? ' bc-ref-flat' : ''),
+        stroke: s.color,
+        'stroke-dasharray': isFlat ? null : '3 4',
+        'data-source': s.id,
+      }));
+      svg.appendChild(el('text', {
+        x: todayX, y: y - 4,
+        'text-anchor': 'end', class: 'bc-ref-label',
+        fill: s.color,
+      }, isFlat ? `${escapeText(s.name)} \u00b7 ${Fmt.moneyShort(s.today)}` : `today ${Fmt.moneyShort(s.today)}`));
+    }
+
+    // Smooth polylines (straight segments connecting points; the
+    // gentle curve is implicit because month-ends are evenly spaced).
+    // Skip the polyline for flat series — the reference line above is
+    // already the full trajectory for them.
+    for (const s of series) {
+      if (s.flat) continue;
+      const pts = s.points.map(p => [xToPx(p.date), yToPx(p.balance)]);
+      if (pts.length === 1) {
+        svg.appendChild(el('circle', {
+          cx: pts[0][0], cy: pts[0][1], r: 4,
+          fill: s.color, class: 'tr-end',
+          'data-source': s.id,
+        }));
+        continue;
+      }
+      svg.appendChild(el('polyline', {
+        class: 'tr-line' + (isNetWorth ? ' tr-nw' : ''),
+        stroke: s.color, fill: 'none',
+        'stroke-width': isNetWorth ? 2.5 : 1.6,
+        'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+        'data-source': s.id,
+        points: pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '),
+      }));
+      const last = pts[pts.length - 1];
+      svg.appendChild(el('circle', {
+        cx: last[0], cy: last[1],
+        r: isNetWorth ? 4 : 3,
+        fill: s.color, class: 'tr-end',
+        'data-source': s.id,
+      }));
+    }
+
+    // Hover overlay + tooltip
+    const tooltip = el('div', { class: 'bc-tooltip', id: 'tr-tooltip' });
+    svg.appendChild(tooltip);
+    const overlay = el('rect', {
+      x: CHART_M_TR.left, y: CHART_M_TR.top,
+      width: innerW, height: innerH,
+      fill: 'transparent', class: 'bc-overlay',
+    });
+    svg.appendChild(overlay);
+
+    overlay.addEventListener('mousemove', (e) => {
+      const rect = svg.getBoundingClientRect();
+      const scaleX = rect.width ? rect.width / CHART_W : 1;
+      const px = (e.clientX - rect.left) / scaleX;
+      const ms = fromMs + ((px - CHART_M_TR.left) / innerW) * xSpan;
       let best = null, bestDist = Infinity;
       for (const s of series) {
         for (const p of s.points) {
           const d = Math.abs(Date.parse(p.date) - ms);
-          if (d < bestDist) { bestDist = d; best = { point: p, source: s.source, color: s.color }; }
+          if (d < bestDist) { bestDist = d; best = { point: p, source: s }; }
         }
       }
       if (!best) { tooltip.style.display = 'none'; return; }
-      const nameHtml = isNetWorth
-        ? `<span class="bc-tt-name">Net worth</span>`
-        : `<span class="bc-tt-dot" style="background:${best.color}"></span>` +
-          `<span class="bc-tt-name">${escapeText(best.source.name)}</span>`;
       tooltip.innerHTML =
-        nameHtml +
+        (isNetWorth
+          ? `<span class="bc-tt-name">Net worth</span>`
+          : `<span class="bc-tt-dot" style="background:${best.source.color}"></span>` +
+            `<span class="bc-tt-name">${escapeText(best.source.name)}</span>`) +
         `<span class="bc-tt-date">${escapeText(Fmt.date(best.point.date, { short: true }))}</span>` +
         `<span class="bc-tt-bal">${escapeText(Fmt.money(best.point.balance))}</span>`;
       tooltip.style.display = 'flex';
-      const tipLeft = (xToPx(best.point.date) / CHART_W) * 100;
-      const tipTop  = (yToPx(best.point.balance) / CHART_H) * 100;
-      tooltip.style.left = tipLeft + '%';
-      tooltip.style.top = tipTop + '%';
-    }
-
-    overlay.addEventListener('mousemove', (e) => showTooltip(e.clientX, e.clientY));
+      tooltip.style.left = (xToPx(best.point.date) / CHART_W * 100) + '%';
+      tooltip.style.top = '8%';
+    });
     overlay.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
 
-    return svg;
+    wrap.appendChild(svg);
+    return wrap;
   }
 
   // -- Per-source typed-balance row ----------------------------------
@@ -642,9 +780,11 @@ const App = (() => {
     const value = parseBalanceValue(input.value);
     if (!Number.isFinite(value)) return; // ignore garbage
     Store.updateSource(state, sourceId, { balance: value });
-    // Re-render just the chart so the line picks up the new anchor.
+    // Re-render just the charts so the trend line picks up the new anchor.
+    const sources = Selectors.sourcesInScope(state);
     chartHost.innerHTML = '';
-    chartHost.appendChild(renderBalanceChart(Selectors.sourcesInScope(state)));
+    chartHost.appendChild(renderMonthlyFlowChart(sources));
+    chartHost.appendChild(renderBalanceTrajectoryChart(sources));
     // Flash the "saved" hint beside the input.
     const saved = $('#saved-' + sourceId);
     if (saved) {
@@ -855,18 +995,19 @@ const App = (() => {
 
   function renderTxnTable(txns, { compact } = {}) {
     const tbl = el('table', { class: 'txn-table' });
-    tbl.innerHTML = `
-      <thead><tr>
-        <th>Date</th>
-        <th>Description</th>
-        <th>Category</th>
-        <th>User / Source</th>
-        <th>Scope</th>
-        <th class="right">Amount</th>
-        <th></th>
-      </tr></thead>
-      <tbody></tbody>`;
-    const tb = tbl.querySelector('tbody');
+    const thead = el('thead', null,
+      el('tr', null,
+        el('th', null, 'Date'),
+        el('th', null, 'Description'),
+        el('th', null, 'Category'),
+        el('th', null, 'User / Source'),
+        el('th', null, 'Scope'),
+        el('th', { class: 'right' }, 'Amount'),
+        el('th', null, ''),
+      ));
+    const tb = el('tbody');
+    tbl.appendChild(thead);
+    tbl.appendChild(tb);
     txns.forEach(t => tb.appendChild(renderTxnRow(t, compact)));
     return tbl;
   }

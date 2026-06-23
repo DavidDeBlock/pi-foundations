@@ -547,6 +547,83 @@ body::before {
 .bc-end { stroke: var(--paper); stroke-width: 1.5; }
 .bc-overlay { cursor: crosshair; }
 
+/* --- Heartbeat bar chart (daily net flow) --- */
+.chart-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.chart-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chart-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-weight: 600;
+  font-size: .85rem;
+  color: var(--ink);
+}
+.chart-section-sub {
+  font-weight: 400;
+  font-size: .72rem;
+  color: var(--ink-mute);
+}
+.hb-bar { transition: opacity .15s; }
+.hb-bar:hover { opacity: .78; }
+.heartbeat-svg .hb-pos { fill-opacity: .9; }
+.heartbeat-svg .hb-neg { fill-opacity: .78; }
+
+/* --- Monthly flow chart --- */
+.mf-bar { transition: opacity .15s; }
+.mf-bar:hover { opacity: .8; }
+
+/* --- Balance trajectory chart --- */
+.bc-ref-today {
+  stroke-width: 1.2;
+  opacity: .65;
+}
+/* Flat series (no transactions) — solid, slightly bolder so it reads
+   as "this is the whole trajectory for this source". */
+.bc-ref-flat {
+  stroke-width: 2;
+  opacity: .9;
+}
+.bc-ref-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: lowercase;
+  fill-opacity: .75;
+}
+
+/* --- Monthly trend line chart --- */
+.tr-line { transition: opacity .2s; }
+.tr-line:hover { opacity: .8; }
+.tr-nw { filter: drop-shadow(0 1px 0 rgba(0, 0, 0, .04)); }
+.tr-end { stroke: var(--paper); stroke-width: 1.5; }
+
+/* --- Heartbeat tooltip refinements --- */
+.bc-tt-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: .7rem;
+  color: var(--cream-deep);
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, .12);
+}
+.bc-tt-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bc-tt-bal.hb-pos { color: #b3d4a0; }
+.bc-tt-bal.hb-neg { color: #e8b3a4; }
+
 .bc-tooltip {
   position: absolute;
   display: none;
@@ -701,29 +778,6 @@ body::before {
 }
 .cat-amount { font-variant-numeric: tabular-nums; font-weight: 600; font-size: .9rem; min-width: 78px; text-align: right; }
 .cat-pct { font-size: .76rem; color: var(--ink-mute); min-width: 38px; text-align: right; }
-
-/* --- Bar chart (income vs expense by month) --- */
-.bar-chart {
-  display: flex;
-  gap: 14px;
-  height: 200px;
-  padding: 12px 4px 0;
-}
-.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 0; }
-.bar-pair { display: flex; align-items: end; gap: 4px; flex: 1 1 0; min-height: 0; width: 100%; justify-content: center; }
-.bar {
-  width: 14px;
-  border-radius: 6px 6px 2px 2px;
-  background: var(--sage);
-  transition: height .5s cubic-bezier(.16,1,.3,1);
-  min-height: 2px;
-  position: relative;
-}
-.bar.income { background: var(--sage); }
-.bar.expense { background: var(--terra); }
-.bar-label { font-size: .72rem; color: var(--ink-mute); font-weight: 500; }
-.chart-legend { display: flex; gap: 16px; justify-content: center; margin-top: 8px; font-size: .8rem; color: var(--ink-soft); }
-.legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
 
 /* --- Donut chart --- */
 .donut-wrap { display: flex; align-items: center; gap: 18px; }

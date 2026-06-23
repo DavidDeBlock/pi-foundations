@@ -405,6 +405,190 @@ test('netWorthSeries: respects "all" scope (sums every active source)', () => {
   if (last.balance !== 1000 + 5000 + 8000) throw new Error(`all-scope total = ${last.balance}, want 14000`);
 });
 
+// ---- Heartbeat / monthly trend selectors (ISSUE-004 heartbeat revamp) ---
+
+test('dailyNetFlow: empty when no transactions', () => {
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [{ id: 'sd', name: 'David', ownerId: 'u_david', active: true, balance: 1000 }],
+    transactions: [],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  if (Selectors.dailyNetFlow(state).length !== 0) throw new Error('expected [] for no tx');
+});
+
+test('dailyNetFlow: returns one entry per tx day with perSource breakdown and total', () => {
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [
+      { id: 'sd', name: 'David', ownerId: 'u_david', active: true, balance: 500 },
+      { id: 'sj', name: 'Joint', ownerId: null,     active: true, balance: 100 },
+    ],
+    transactions: [
+      { sourceId: 'sd', date: '2026-05-10', amount: -50 },
+      { sourceId: 'sd', date: '2026-05-10', amount: -30 },   // same day, summed
+      { sourceId: 'sj', date: '2026-05-10', amount: 200 },
+      { sourceId: 'sd', date: '2026-05-12', amount: 1500 },
+    ],
+    settings: { currentUserId: 'u_david', scope: 'all' },
+  };
+  const rows = Selectors.dailyNetFlow(state);
+  if (rows.length !== 2) throw new Error(`rows = ${rows.length}, want 2`);
+  const day1 = rows.find(r => r.date === '2026-05-10');
+  if (day1.perSource.sd !== -80) throw new Error(`day1.sd = ${day1.perSource.sd}, want -80`);
+  if (day1.perSource.sj !== 200) throw new Error(`day1.sj = ${day1.perSource.sj}, want 200`);
+  if (day1.total !== 120) throw new Error(`day1.total = ${day1.total}, want 120`);
+});
+
+test('dailyNetFlow: respects scope filter', () => {
+  const state = {
+    users: [{ id: 'u_david' }, { id: 'u_isabelle' }],
+    sources: [
+      { id: 'sd', name: 'David',    ownerId: 'u_david',    active: true, balance: 100 },
+      { id: 'sj', name: 'Joint',    ownerId: null,        active: true, balance: 100 },
+    ],
+    transactions: [
+      { sourceId: 'sd', date: '2026-05-10', amount: -50 },
+      { sourceId: 'sj', date: '2026-05-10', amount: 200 },
+    ],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  const rows = Selectors.dailyNetFlow(state);
+  if (rows.length !== 1) throw new Error(`rows = ${rows.length}, want 1`);
+  if (rows[0].total !== -50) throw new Error(`private-scope total = ${rows[0].total}, want -50`);
+});
+
+test('monthlyBalance: returns one entry per month-end, rightmost equals typed balance', () => {
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [{ id: 'sd', name: 'David', ownerId: 'u_david', active: true, balance: 1000 }],
+    transactions: [
+      { sourceId: 'sd', date: '2026-03-15', amount: 2000 },
+      { sourceId: 'sd', date: '2026-04-10', amount: -500 },
+      { sourceId: 'sd', date: '2026-05-20', amount: -300 },
+    ],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  const series = Selectors.monthlyBalance(state, 'sd', 12);
+  if (series.length === 0) throw new Error('expected at least 1 point');
+  // Sorted ascending.
+  for (let i = 1; i < series.length; i++) {
+    if (series[i].date <= series[i - 1].date) throw new Error('not sorted ascending');
+  }
+  // Last entry is today's typed balance.
+  const last = series[series.length - 1];
+  if (last.balance !== 1000) throw new Error(`last = ${last.balance}, want 1000 (typed)`);
+});
+
+test('monthlyBalance: respects months cap', () => {
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [{ id: 'sd', name: 'David', ownerId: 'u_david', active: true, balance: 0 }],
+    transactions: [],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  // With no txns, anchor is N months ago. Past month-ends (those <= today)
+  // plus today's typed-balance anchor.
+  const series3 = Selectors.monthlyBalance(state, 'sd', 3);
+  if (series3.length > 4) throw new Error(`3-month series length = ${series3.length}, want <=4`);
+  if (series3.length < 3) throw new Error(`3-month series length = ${series3.length}, want >=3`);
+  const series12 = Selectors.monthlyBalance(state, 'sd', 12);
+  if (series12.length > 13) throw new Error(`12-month series length = ${series12.length}, want <=13`);
+  if (series12.length < 12) throw new Error(`12-month series length = ${series12.length}, want >=12`);
+});
+
+test('monthlyNetWorth: sums every in-scope source per month-end, rightmost is sum of typed', () => {
+  const state = {
+    users: [{ id: 'u_david' }, { id: 'u_isabelle' }],
+    sources: [
+      { id: 'sd', name: 'David',    ownerId: 'u_david',    active: true, balance: 1000 },
+      { id: 'sj', name: 'Joint',    ownerId: null,        active: true, balance: 2500 },
+    ],
+    transactions: [],
+    settings: { currentUserId: 'u_david', scope: 'all' },
+  };
+  const series = Selectors.monthlyNetWorth(state, 6);
+  const last = series[series.length - 1];
+  if (last.balance !== 3500) throw new Error(`net-worth last = ${last.balance}, want 3500`);
+  // No txns → balance is constant across all month-ends.
+  for (const p of series) {
+    if (p.balance !== 3500) throw new Error(`non-constant NW point: ${p.date} = ${p.balance}`);
+  }
+});
+
+test('monthlyNetFlow: returns one entry per of the last N months with correct income/expense/net', () => {
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [{ id: 'sd', name: 'David', ownerId: 'u_david', active: true, balance: 0 }],
+    transactions: [
+      { sourceId: 'sd', date: '2026-04-15', amount: 1000 }, // income
+      { sourceId: 'sd', date: '2026-04-20', amount: -200 },  // expense
+      { sourceId: 'sd', date: '2026-05-10', amount: -800 },  // expense (net negative)
+      { sourceId: 'sd', date: '2026-05-25', amount: 500 },  // income (partial recovery)
+    ],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  const flow = Selectors.monthlyNetFlow(state, 6);
+  if (flow.length !== 6) throw new Error(`expected 6 months, got ${flow.length}`);
+  const apr = flow.find(f => f.month === '2026-04');
+  if (!apr) throw new Error('April missing');
+  if (apr.income !== 1000) throw new Error(`apr.income = ${apr.income}, want 1000`);
+  if (apr.expense !== 200)  throw new Error(`apr.expense = ${apr.expense}, want 200`);
+  if (apr.net !== 800)      throw new Error(`apr.net = ${apr.net}, want 800`);
+  const may = flow.find(f => f.month === '2026-05');
+  if (!may) throw new Error('May missing');
+  if (may.income !== 500)  throw new Error(`may.income = ${may.income}, want 500`);
+  if (may.expense !== 800) throw new Error(`may.expense = ${may.expense}, want 800`);
+  if (may.net !== -300)    throw new Error(`may.net = ${may.net}, want -300`);
+});
+
+test('monthlyNetFlow: respects scope filter', () => {
+  const state = {
+    users: [{ id: 'u_david' }, { id: 'u_isabelle' }],
+    sources: [
+      { id: 'sd', name: 'David',    ownerId: 'u_david',    active: true, balance: 0 },
+      { id: 'sj', name: 'Joint',    ownerId: null,        active: true, balance: 0 },
+    ],
+    transactions: [
+      { sourceId: 'sd', date: '2026-04-15', amount: 1000, type: 'income' },
+      { sourceId: 'sj', date: '2026-04-15', amount: 500,  type: 'expense' },
+    ],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  const flow = Selectors.monthlyNetFlow(state, 6);
+  const apr = flow.find(f => f.month === '2026-04');
+  // Private scope: only David's txn counted.
+  if (apr.net !== 1000) throw new Error(`private-scope apr.net = ${apr.net}, want 1000`);
+});
+
+// CSV imports store amounts as Math.abs(...), so all amounts are
+// positive regardless of direction. The selector MUST honour `type`
+// to put the value on the correct side — otherwise expenses would be
+// counted as income and every month would net positive.
+test('monthlyNetFlow: uses type, not amount sign, to bucket income vs expense', () => {
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [{ id: 'sd', ownerId: 'u_david', active: true, balance: 0 }],
+    transactions: [
+      { sourceId: 'sd', date: '2026-04-05', amount: 1800, type: 'income'  }, // positive amt + type=income → income
+      { sourceId: 'sd', date: '2026-04-10', amount:  600, type: 'expense' }, // positive amt + type=expense → expense (NOT income!)
+      { sourceId: 'sd', date: '2026-05-05', amount: 1800, type: 'income'  },
+      { sourceId: 'sd', date: '2026-05-10', amount: 2200, type: 'expense' }, // 2200 > 1800 → net negative
+    ],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  const flow = Selectors.monthlyNetFlow(state, 6);
+  const apr = flow.find(f => f.month === '2026-04');
+  if (apr.income  !== 1800) throw new Error(`apr.income = ${apr.income}, want 1800`);
+  if (apr.expense !==  600) throw new Error(`apr.expense = ${apr.expense}, want 600`);
+  if (apr.net     !== 1200) throw new Error(`apr.net = ${apr.net}, want 1200`);
+
+  const may = flow.find(f => f.month === '2026-05');
+  if (may.income  !== 1800) throw new Error(`may.income = ${may.income}, want 1800`);
+  if (may.expense !== 2200) throw new Error(`may.expense = ${may.expense}, want 2200`);
+  if (may.net     !== -400) throw new Error(`may.net = ${may.net}, want -400 (May should be a red month)`);
+});
+
 console.log('\n— Summary —');
 console.log(`  ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

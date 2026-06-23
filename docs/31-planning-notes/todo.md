@@ -108,3 +108,6 @@ Well, actually, I want my private account, the one I've currently loaded in, and
 - and top categories
 
 I don't understand the graphs in the trends tab, like the balance over time per source and net worth. I don't understand. I think there is a problem in the calculation. It shouldn't be a line. Now it's a line. It should be more like some sort of heartbeat: our balance goes up, goes down, goes up, goes down, and now it's just showing almost a straight line. 
+
+
+The two graphs in the trend step are not showing correctly. For example, in the first graph, income versus expenses by month, they are all green. If you base the balance track per source and the net worth on the converse, is expensive by month graph, then the line is not showing or the graph is not showing correctly. Verify my problem. 

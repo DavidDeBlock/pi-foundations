@@ -64,13 +64,13 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const SVG_TAGS = new Set(['svg', 'g', 'line', 'rect', 'circle', 'ellipse', 'polyline', 'polygon', 'path', 'text', 'tspan', 'defs', 'use', 'image', 'foreignObject', 'marker', 'pattern', 'clipPath', 'mask', 'filter']);
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
-function el(tag, props = {}, ...children) {
+function el(tag, props, ...children) {
   // SVG elements need the SVG namespace or browsers silently treat them
   // as HTMLUnknownElement and ignore the positioning attributes.
   const node = SVG_TAGS.has(tag)
     ? document.createElementNS(SVG_NS, tag)
     : document.createElement(tag);
-  for (const [k, v] of Object.entries(props)) {
+  for (const [k, v] of Object.entries(props || {})) {
     if (k === 'class') node.setAttribute('class', v);
     else if (k === 'style' && typeof v === 'object') Object.assign(node.style, v);
     else if (k === 'dataset' && typeof v === 'object') Object.assign(node.dataset, v);

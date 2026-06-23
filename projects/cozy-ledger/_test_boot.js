@@ -123,9 +123,22 @@ const documentStub = {
   createElementNS: (_ns, tag) => makeEl(tag),
   createTextNode: (s) => ({ nodeType: 3, textContent: String(s) }),
   body: makeEl('body'),
-  // #id selectors return the same element the app created via setAttribute('id')
-  querySelector: (sel) => sel.startsWith('#') ? findById(sel.slice(1)) : null,
-  querySelectorAll: () => [],
+  // #id selectors return the same element the app created via setAttribute('id').
+  // Tag selectors (e.g. 'tbody') walk the tree under <body> and return the
+  // first match. Production code uses these to find table sections.
+  querySelector: (sel) => {
+    if (typeof sel !== 'string') return null;
+    if (sel.startsWith('#')) return findById(sel.slice(1));
+    return findAll(documentStub.body, n => (n.tagName || '').toLowerCase() === sel.toLowerCase())[0] || null;
+  },
+  querySelectorAll: (sel) => {
+    if (typeof sel !== 'string') return [];
+    if (sel.startsWith('#')) {
+      const el = findById(sel.slice(1));
+      return el ? [el] : [];
+    }
+    return findAll(documentStub.body, n => (n.tagName || '').toLowerCase() === sel.toLowerCase());
+  },
   getElementById: (id) => findById(id),
   addEventListener: () => {},
 };
@@ -213,16 +226,68 @@ test('balance flow card mounts with chart + per-source inputs (ISSUE-002, now on
   const appRoot = ctx.window.document.querySelector('#app');
   const card = walk(appRoot, n => n.getAttribute('id') === 'balance-card');
   if (!card) throw new Error('balance-card not found in DOM');
-  // SVG present
-  const svg = walk(card, n => (n.tagName || '').toLowerCase() === 'svg' && (n.getAttribute('class') || '').includes('balance-svg'));
-  if (!svg) throw new Error('balance-svg not found in card');
+  // Either the chart sections exist (with empty seed, only the trend
+  // section has a chart; heartbeat shows the empty state).
+  const sections = findAll(card, n => (n.classList?._set || new Set()).has('chart-section'));
+  if (sections.length < 2) throw new Error(`expected 2 chart sections (heartbeat + trend), got ${sections.length}`);
+  const svgs = findAll(card, n => (n.tagName || '').toLowerCase() === 'svg' && (n.getAttribute('class') || '').includes('balance-svg'));
+  if (svgs.length === 0) throw new Error('no SVG rendered for trend chart');
   // One typed-balance input per in-scope source
   const inputs = findAll(card, n => (n.classList?._set || new Set()).has('balance-input'));
   if (inputs.length === 0) throw new Error('no balance inputs in card');
   // View-mode toggle present
   const toggle = walk(card, n => (n.classList?._set || new Set()).has('view-toggle'));
   if (!toggle) throw new Error('view-toggle not found in card');
-  // (Strict count check would require knowing the seed; we trust the inputs are present.)
+});
+
+test('balance card renders monthly-flow bars + trajectory lines after adding transactions', () => {
+  // Inject transactions across two months so the trajectory chart has
+  // multi-point series (one point → renders as a dot, not a line).
+  const state = ctx.window.App._state;
+  const today = new Date();
+  const iso = (n) => new Date(today.getTime() - n * 86400000).toISOString().slice(0, 10);
+  state.transactions.push(
+    { id: 'b1', sourceId: 's_david',    date: iso(5),   amount: 1500, type: 'income',  description: 'Salary',      categoryId: 'c_salary',    scope: 'private', paidByUserId: 'u_david', createdAt: new Date().toISOString() },
+    { id: 'b2', sourceId: 's_david',    date: iso(10),  amount: -45,  type: 'expense', description: 'Groceries',   categoryId: 'c_groceries', scope: 'private', paidByUserId: 'u_david', createdAt: new Date().toISOString() },
+    { id: 'b3', sourceId: 's_joint',    date: iso(8),   amount: -300, type: 'expense', description: 'Electricity', categoryId: 'c_utilities', scope: 'shared',  paidByUserId: 'u_david', createdAt: new Date().toISOString() },
+    { id: 'b4', sourceId: 's_david',    date: iso(60),  amount: -200, type: 'expense', description: 'Last month',  categoryId: 'c_other',     scope: 'private', paidByUserId: 'u_david', createdAt: new Date().toISOString() },
+    { id: 'b5', sourceId: 's_joint',    date: iso(70),  amount: -500, type: 'expense', description: 'Last month 2',categoryId: 'c_other',     scope: 'shared',  paidByUserId: 'u_david', createdAt: new Date().toISOString() },
+  );
+  // Trigger a re-render by clicking Trends again.
+  navigateToView('dashboard');
+  navigateToView('trends');
+  const appRoot = ctx.window.document.querySelector('#app');
+  const card = walk(appRoot, n => n.getAttribute('id') === 'balance-card');
+  const bars = findAll(card, n => (n.classList?._set || new Set()).has('mf-bar'));
+  if (bars.length === 0) throw new Error('expected monthly-flow bars after adding txns');
+  // Trajectory: either polyline (multi-point) or circle (single-point).
+  const trLines = findAll(card, n => (n.classList?._set || new Set()).has('tr-line'));
+  const trEnds = findAll(card, n => (n.classList?._set || new Set()).has('tr-end'));
+  if (trLines.length === 0 && trEnds.length === 0) throw new Error('expected trajectory lines or dots after adding txns');
+  // "Today" reference lines must be drawn, one per series.
+  const refLines = findAll(card, n => (n.classList?._set || new Set()).has('bc-ref-today'));
+  if (refLines.length === 0) throw new Error('expected today reference lines on the trajectory chart');
+});
+
+test('monthly flow bars are POS_COLOR for net ≥ 0 and NEG_COLOR for net < 0 (net-worth mode)', () => {
+  navigateToView('trends');
+  let card = walk(ctx.window.document.querySelector('#app'), n => n.getAttribute('id') === 'balance-card');
+  const nwPill = findAll(card, n =>
+    (n.classList?._set || new Set()).has('vt-pill') && n.getAttribute('data-mode') === 'networth'
+  )[0];
+  if (!nwPill) throw new Error('net-worth pill not found');
+  nwPill.dispatchEvent({ type: 'click' });
+  card = walk(ctx.window.document.querySelector('#app'), n => n.getAttribute('id') === 'balance-card');
+  // In net-worth mode each mf-bar's fill must be POS_COLOR (#5a7248)
+  // or NEG_COLOR (#b85c4a) — never an owner color.
+  const bars = findAll(card, n => (n.classList?._set || new Set()).has('mf-bar'));
+  if (bars.length === 0) throw new Error('expected monthly-flow bars in net-worth mode');
+  for (const b of bars) {
+    const fill = b.getAttribute('fill');
+    if (fill !== '#5a7248' && fill !== '#b85c4a') {
+      throw new Error(`mf-bar fill = ${fill}, expected POS or NEG color`);
+    }
+  }
 });
 
 test('Trends nav item is in the sidebar (ISSUE-004)', () => {
@@ -241,8 +306,13 @@ test('navigating to Trends mounts the balance card and shows "Per source" mode b
   const appRoot = ctx.window.document.querySelector('#app');
   const card = walk(appRoot, n => n.getAttribute('id') === 'balance-card');
   if (!card) throw new Error('balance-card not found after navigating to Trends');
-  // Per-source active by default
-  const activePill = findAll(card, n =>
+  // Force the mode to 'sources' (some prior test may have flipped it).
+  const sourcesPill = findAll(card, n =>
+    (n.classList?._set || new Set()).has('vt-pill') && n.getAttribute('data-mode') === 'sources'
+  )[0];
+  sourcesPill.dispatchEvent({ type: 'click' });
+  const card2 = walk(ctx.window.document.querySelector('#app'), n => n.getAttribute('id') === 'balance-card');
+  const activePill = findAll(card2, n =>
     (n.classList?._set || new Set()).has('vt-pill') && n.classList._set.has('active')
   )[0];
   if (!activePill) throw new Error('no active vt-pill found');
@@ -251,15 +321,19 @@ test('navigating to Trends mounts the balance card and shows "Per source" mode b
   }
 });
 
-test('clicking the "Net worth" toggle collapses to a single line and persists the mode', () => {
+test('clicking the "Net worth" toggle collapses the trend to a single line and persists the mode', () => {
   navigateToView('trends');
   let appRoot = ctx.window.document.querySelector('#app');
   let card = walk(appRoot, n => n.getAttribute('id') === 'balance-card');
-  // Count bc-line polylines/lines in 'sources' mode.
+  // In 'sources' mode there should be >= 1 tr-line polylines (one per source)
+  // OR >= 1 tr-end dot (single-point series rendered as a dot).
   const linesBefore = findAll(card, n =>
-    (n.classList?._set || new Set()).has('bc-line')
+    (n.classList?._set || new Set()).has('tr-line')
   ).filter(n => n.getAttribute('data-source') && n.getAttribute('data-source') !== '__networth__').length;
-  if (linesBefore < 1) throw new Error(`expected >= 1 source line, got ${linesBefore}`);
+  const dotsBefore = findAll(card, n =>
+    (n.classList?._set || new Set()).has('tr-end')
+  ).filter(n => n.getAttribute('data-source') && n.getAttribute('data-source') !== '__networth__').length;
+  if (linesBefore < 1 && dotsBefore < 1) throw new Error(`expected >= 1 tr-line or tr-end, got ${linesBefore} lines, ${dotsBefore} dots`);
 
   // Click the Net worth pill.
   const nwPill = findAll(card, n =>
@@ -268,13 +342,16 @@ test('clicking the "Net worth" toggle collapses to a single line and persists th
   if (!nwPill) throw new Error('net worth pill not found');
   nwPill.dispatchEvent({ type: 'click' });
 
-  // After re-render, exactly one __networth__ line should be present.
+  // After re-render, exactly one __networth__ line or dot should be present.
   appRoot = ctx.window.document.querySelector('#app');
   card = walk(appRoot, n => n.getAttribute('id') === 'balance-card');
   const nwLines = findAll(card, n =>
-    (n.classList?._set || new Set()).has('bc-line') && n.getAttribute('data-source') === '__networth__'
+    (n.classList?._set || new Set()).has('tr-line') && n.getAttribute('data-source') === '__networth__'
   );
-  if (nwLines.length < 1) throw new Error('no net-worth line drawn');
+  const nwDots = findAll(card, n =>
+    (n.classList?._set || new Set()).has('tr-end') && n.getAttribute('data-source') === '__networth__'
+  );
+  if (nwLines.length + nwDots.length < 1) throw new Error('no net-worth trend element drawn');
   // The toggle should now show networth as active.
   const activePill = findAll(card, n =>
     (n.classList?._set || new Set()).has('vt-pill') && n.classList._set.has('active')

@@ -75,10 +75,19 @@ const Selectors = {
     const txns = (state.transactions || []).filter(t => t.sourceId === sourceId);
     if (!txns.length) return [];
     // Net flow per day, ISO date as the key (lexicographic sort = chronological).
+    // The CSV import stores amounts as Math.abs(...) — positive for both
+    // income and expense — and uses the `type` field to indicate direction.
+    // We honour `type` first and fall back to the amount sign for manually
+    // entered transactions that may omit `type`.
     const flowByDate = new Map();
     for (const t of txns) {
       if (!t.date) continue;
-      flowByDate.set(t.date, (flowByDate.get(t.date) || 0) + (Number(t.amount) || 0));
+      const mag = Math.abs(Number(t.amount) || 0);
+      let signed;
+      if (t.type === 'income')       signed =  mag;
+      else if (t.type === 'expense') signed = -mag;
+      else                            signed = (Number(t.amount) < 0) ? -mag : mag;
+      flowByDate.set(t.date, (flowByDate.get(t.date) || 0) + signed);
     }
     const dates = [...flowByDate.keys()].sort();
     // Walk backwards from the latest date.
@@ -164,6 +173,162 @@ const Selectors = {
       }
       return { date, balance: round2(nw) };
     });
+  },
+
+  // ---- Heartbeat chart (ISSUE-004) -------------------------------
+  // Per-day net flow breakdown across all in-scope sources. Each
+  // entry: { date, perSource: { srcId: netFlow }, total }. Days with
+  // no transactions are omitted — they render as gaps in the chart.
+  // The chart range (oldest tx → today) is the inclusive window.
+  dailyNetFlow(state) {
+    const range = Selectors.balanceChartDateRange(state);
+    const sources = Selectors.sourcesInScope(state);
+    const srcIds = new Set(sources.map(s => s.id));
+    const byDate = new Map();
+    for (const t of (state.transactions || [])) {
+      if (!t.date) continue;
+      if (!srcIds.has(t.sourceId)) continue;
+      if (t.date < range.from || t.date > range.to) continue;
+      if (!byDate.has(t.date)) byDate.set(t.date, { date: t.date, perSource: {}, total: 0 });
+      const row = byDate.get(t.date);
+      const amt = Number(t.amount) || 0;
+      row.perSource[t.sourceId] = round2((row.perSource[t.sourceId] || 0) + amt);
+      row.total = round2(row.total + amt);
+    }
+    return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  },
+
+  // End-of-month balances for a single source, going back `months`
+  // (default 12). Each entry: { date: 'YYYY-MM-DD', month: 'YYYY-MM',
+  // balance }. The rightmost point is always today's typed balance.
+  monthlyBalance(state, sourceId, months = 12) {
+    const source = (state.sources || []).find(s => s.id === sourceId);
+    if (!source) return [];
+    const srcTxns = (state.transactions || []).filter(t => t.sourceId === sourceId && t.date);
+
+    const today = new Date();
+    const todayIso = today.toISOString().slice(0, 10);
+
+    // Earliest anchor = oldest tx month, capped at N months ago.
+    let oldestMonth = null;
+    if (srcTxns.length) {
+      const oldestIso = srcTxns.reduce((m, t) => t.date < m ? t.date : m, srcTxns[0].date);
+      const od = new Date(oldestIso + 'T00:00:00Z');
+      oldestMonth = new Date(Date.UTC(od.getUTCFullYear(), od.getUTCMonth(), 1));
+    }
+    const startMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - months + 1, 1));
+    const startUtc = oldestMonth && oldestMonth > startMonth ? oldestMonth : startMonth;
+
+    const points = [];
+    let cursor = new Date(Date.UTC(startUtc.getUTCFullYear(), startUtc.getUTCMonth() + 1, 0));
+    while (cursor <= today) {
+      const dateIso = cursor.toISOString().slice(0, 10);
+      const monthIso = cursor.toISOString().slice(0, 7);
+      const bal = Selectors.balanceAtDate(state, sourceId, dateIso);
+      points.push({ date: dateIso, month: monthIso, balance: round2(bal) });
+      cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 2, 0));
+    }
+    // Rightmost point: today's typed balance (anchors the line).
+    points.push({
+      date: todayIso,
+      month: today.toISOString().slice(0, 7),
+      balance: round2(Number(source.balance) || 0),
+    });
+    return points;
+  },
+
+  // Monthly net-worth: same shape as monthlyBalance but summed across
+  // every in-scope source. The rightmost point is the sum of today's
+  // typed balances.
+  monthlyNetWorth(state, months = 12) {
+    const sources = Selectors.sourcesInScope(state);
+    if (!sources.length) return [];
+
+    const today = new Date();
+    const todayIso = today.toISOString().slice(0, 10);
+
+    const srcIds = new Set(sources.map(s => s.id));
+    let oldestIso = null;
+    for (const t of (state.transactions || [])) {
+      if (!t.date || !srcIds.has(t.sourceId)) continue;
+      if (!oldestIso || t.date < oldestIso) oldestIso = t.date;
+    }
+    let oldestMonth = null;
+    if (oldestIso) {
+      const od = new Date(oldestIso + 'T00:00:00Z');
+      oldestMonth = new Date(Date.UTC(od.getUTCFullYear(), od.getUTCMonth(), 1));
+    }
+    const startMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - months + 1, 1));
+    const startUtc = oldestMonth && oldestMonth > startMonth ? oldestMonth : startMonth;
+
+    const points = [];
+    let cursor = new Date(Date.UTC(startUtc.getUTCFullYear(), startUtc.getUTCMonth() + 1, 0));
+    while (cursor <= today) {
+      const dateIso = cursor.toISOString().slice(0, 10);
+      const monthIso = cursor.toISOString().slice(0, 7);
+      let nw = 0;
+      for (const src of sources) nw += Selectors.balanceAtDate(state, src.id, dateIso);
+      points.push({ date: dateIso, month: monthIso, balance: round2(nw) });
+      cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 2, 0));
+    }
+    const total = sources.reduce((s, src) => s + (Number(src.balance) || 0), 0);
+    points.push({
+      date: todayIso,
+      month: today.toISOString().slice(0, 7),
+      balance: round2(total),
+    });
+    return points;
+  },
+
+  // ---- Monthly net flow (bars) ----------------------------------
+  // For each of the last N months, returns:
+  //   { month: 'YYYY-MM', income, expense, net, perSource: { srcId: net } }
+  // Income = sum of positive txns; expense = sum of |negative txns|;
+  // net = income − expense. Today's month is included even if it's
+  // partial, so the user sees their current month's progress.
+  monthlyNetFlow(state, months = 12) {
+    const sources = Selectors.sourcesInScope(state);
+    const srcIds = new Set(sources.map(s => s.id));
+
+    const today = new Date();
+    const monthKeys = [];
+    for (let i = months - 1; i >= 0; i--) {
+      const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - i, 1));
+      monthKeys.push(d.toISOString().slice(0, 7));
+    }
+
+    const byMonth = new Map();
+    for (const k of monthKeys) {
+      byMonth.set(k, {
+        month: k,
+        income: 0,
+        expense: 0,
+        net: 0,
+        perSource: Object.create(null),
+      });
+    }
+
+    for (const t of (state.transactions || [])) {
+      if (!t.date || !srcIds.has(t.sourceId)) continue;
+      const m = t.date.slice(0, 7);
+      if (!byMonth.has(m)) continue;
+      const row = byMonth.get(m);
+      const amt = Math.abs(Number(t.amount) || 0);
+      // The source of truth for income vs expense is `type`. CSV imports
+      // store amounts as positive numbers and rely on `type` to indicate
+      // direction; manually-entered transactions may use a negative
+      // amount for expenses. We honour `type` first and fall back to
+      // sign-of-amount for transactions that don't carry a type.
+      let signed;
+      if (t.type === 'income')       signed =  amt;
+      else if (t.type === 'expense') signed = -amt;
+      else                            signed = (Number(t.amount) < 0) ? -amt : amt;
+      if (signed >= 0) row.income = round2(row.income + signed);
+      else             row.expense = round2(row.expense + Math.abs(signed));
+      row.net = round2(row.income - row.expense);
+      row.perSource[t.sourceId] = round2((row.perSource[t.sourceId] || 0) + signed);
+    }
+    return monthKeys.map(k => byMonth.get(k));
   },
 };
 
