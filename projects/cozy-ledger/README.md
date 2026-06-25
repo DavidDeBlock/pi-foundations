@@ -109,7 +109,11 @@ Transaction {
 Category   { id, name, type: 'income' | 'expense', color, icon, active }
 Source     { id, name, type: 'bank' | 'cash' | 'savings' | 'other', ownerId, active }
 User       { id, name, color, active }
+Group      { id, name, color, icon, order, active }
+Settings   { currentUserId, scope, applyCategoryToPayee, dashboardByGroup }
 ```
+
+The canonical shape of every entity is declared as a JSDoc `@typedef` in `types.js`, with the matching TypeScript declarations in `globals.d.ts`. Editors with `jsconfig.json` (`checkJs: true`) pick those up automatically — hover over any function or parameter for inline type hints.
 
 `ownerId` on a source is optional — a `null` value means the source is shared (e.g. the joint account, cash, savings).
 

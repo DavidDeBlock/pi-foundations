@@ -336,7 +336,7 @@ function test(name, fn) {
 }
 
 // ---- Load all scripts in order --------------------------------------
-const scripts = ['data.js', 'utils.js', 'icons.js', 'csv.js', 'selectors.js', 'i18n.js', 'backup.js', 'router.js', 'shell.js', 'views/_helpers.js', 'views/dashboard.js', 'views/trends.js', 'views/transactions.js', 'views/categories.js', 'views/sources.js', 'views/users.js', 'views/payees.js', 'views/settings.js', 'charts/_helpers.js', 'charts/monthly-flow.js', 'charts/balance-trajectory.js', 'modals/_helper.js', 'modals/import-preview.js', 'modals/transaction.js', 'modals/category.js', 'modals/group.js', 'modals/source.js', 'modals/user.js', 'modals/import.js', 'modals/import-confirm.js', 'app.js'];
+const scripts = ['types.js', 'data.js', 'utils.js', 'icons.js', 'csv.js', 'selectors.js', 'i18n.js', 'backup.js', 'router.js', 'shell.js', 'views/_helpers.js', 'views/dashboard.js', 'views/trends.js', 'views/transactions.js', 'views/categories.js', 'views/sources.js', 'views/users.js', 'views/payees.js', 'views/settings.js', 'charts/_helpers.js', 'charts/monthly-flow.js', 'charts/balance-trajectory.js', 'modals/_helper.js', 'modals/import-preview.js', 'modals/transaction.js', 'modals/category.js', 'modals/group.js', 'modals/source.js', 'modals/user.js', 'modals/import.js', 'modals/import-confirm.js', 'app.js'];
 for (const s of scripts) {
   const code = fs.readFileSync(path.join(__dirname, s), 'utf8');
   vm.runInContext(code, ctx, { filename: s });

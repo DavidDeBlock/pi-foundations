@@ -112,7 +112,9 @@ const CSVImport = (() => {
       return { type: null, scope: null, categoryHint: null, skip: true, skipReason: 'zero-or-info' };
     }
 
+    /** @type {'income'|'expense'} */
     let type;
+    /** @type {string|null} */
     let categoryHint = null;
 
     if (o.startsWith('overschrijving in euro') && o.includes(' van:')) {
@@ -158,7 +160,7 @@ const CSVImport = (() => {
       type = row.bedrag < 0 ? 'expense' : 'income';
     }
 
-    return { type, scope: 'private', categoryHint, skip: false };
+    return /** @type {ReturnType<Window['CSVImport']['classifyRow']>} */ ({ type, scope: 'private', categoryHint, skip: false });
   }
 
   // ---- Dedup ----------------------------------------------------------

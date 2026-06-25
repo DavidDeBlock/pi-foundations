@@ -117,7 +117,8 @@ const Transactions = (() => {
   }
 
   // -- Table + row rendering ----------------------------------------
-  function renderTable(txns, { compact } = {}) {
+  function renderTable(txns, opts) {
+    const compact = (opts || {}).compact;
     const tbl = el('table', { class: 'txn-table' });
     const thead = el('thead', null,
       el('tr', null,

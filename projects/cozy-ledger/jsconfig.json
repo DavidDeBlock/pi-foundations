@@ -1,0 +1,41 @@
+{
+  // jsconfig.json — JSDoc-based type checking for VS Code / TypeScript "Check JS".
+  // Activates inline type hints (hover, autocomplete) sourced from the @typedef
+  // blocks in types.js and per-function @param/@returns blocks in data.js,
+  // selectors.js, utils.js. Editor-only — no runtime cost, no build step.
+  "compilerOptions": {
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "target": "es2022",
+    "lib": ["es2022", "dom"],
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "resolveJsonModule": true
+  },
+  "include": [
+    "types.js",
+    "globals.d.ts",
+    "data.js",
+    "utils.js",
+    "icons.js",
+    "csv.js",
+    "selectors.js",
+    "i18n.js",
+    "backup.js",
+    "router.js",
+    "shell.js",
+    "app.js",
+    "views/**/*.js",
+    "charts/**/*.js",
+    "modals/**/*.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "statements",
+    "docs"
+  ]
+}

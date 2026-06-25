@@ -34,9 +34,25 @@ function readCurrentUserId(state) {
 
 const Selectors = {
   // ---- Scope filter ------------------------------------------------
+  /**
+   * Resolved scope for the current viewer. Defaults to 'private' on missing/invalid.
+   * @param {State} state
+   * @returns {Scope}
+   */
   scope(state) { return readScope(state); },
+
+  /**
+   * Resolved current user id. Falls back to the first user, or '' if none.
+   * @param {State} state
+   * @returns {string}
+   */
   currentUserId(state) { return readCurrentUserId(state); },
 
+  /**
+   * Sources visible in the current scope, ignoring inactive entries.
+   * @param {State} state
+   * @returns {Source[]}
+   */
   sourcesInScope(state) {
     const scope = readScope(state);
     const currentUserId = readCurrentUserId(state);
@@ -48,13 +64,24 @@ const Selectors = {
     return sources.filter(s => s.ownerId === currentUserId);
   },
 
+  /**
+   * Transactions whose source is in the current scope.
+   * @param {State} state
+   * @returns {Transaction[]}
+   */
   transactionsInScope(state) {
     const inScopeSourceIds = new Set(Selectors.sourcesInScope(state).map(s => s.id));
     return (state.transactions || []).filter(t => inScopeSourceIds.has(t.sourceId));
   },
 
   // ---- Source map (handy for O(1) lookups in renderers) ------------
+  /**
+   * Map of source id → source. Includes inactive sources.
+   * @param {State} state
+   * @returns {Record<string,Source>}
+   */
   sourcesById(state) {
+    /** @type {Record<string,Source>} */
     const m = {};
     for (const s of (state.sources || [])) m[s.id] = s;
     return m;
@@ -69,6 +96,12 @@ const Selectors = {
   // Walking rule: `B(d) = B(d+1) - N(d+1)` where N is the day's net
   // flow (income minus expense, signed amount). The rightmost point is
   // therefore `source.balance` by construction.
+  /**
+   * Daily balance for a single source, oldest first, walking back from `source.balance`.
+   * @param {State} state
+   * @param {string} sourceId
+   * @returns {BalancePoint[]}
+   */
   balanceSeries(state, sourceId) {
     const source = (state.sources || []).find(s => s.id === sourceId);
     if (!source) return [];
@@ -104,6 +137,11 @@ const Selectors = {
   // X-axis range for the balance chart: from the oldest date that
   // appears in any in-scope series, to today. If nothing has data,
   // fall back to a 90-day window so the chart still draws.
+  /**
+   * Inclusive chart range: from oldest in-scope tx (or 90 days back) to today.
+   * @param {State} state
+   * @returns {{ from: string, to: string }}
+   */
   balanceChartDateRange(state) {
     const today = new Date();
     const todayIso = today.toISOString().slice(0, 10);
@@ -129,6 +167,13 @@ const Selectors = {
   // leftmost balance is reused (bank balance is constant on non-tx
   // days). Sources with no transactions return the typed balance at
   // every date.
+  /**
+   * Reconstructed balance for a single source on a given date.
+   * @param {State} state
+   * @param {string} sourceId
+   * @param {string} date  ISO YYYY-MM-DD
+   * @returns {number}
+   */
   balanceAtDate(state, sourceId, date) {
     const src = (state.sources || []).find(s => s.id === sourceId);
     if (!src) return 0;
@@ -148,6 +193,11 @@ const Selectors = {
   // single sorted series. Returns `[]` if no in-scope sources exist.
   // When nothing in scope has any transactions, returns a flat pair
   // (from, total) → (to, total) so the renderer draws a flat line.
+  /**
+   * Net-worth series, one point per active date, across all in-scope sources.
+   * @param {State} state
+   * @returns {BalancePoint[]}
+   */
   netWorthSeries(state) {
     const sources = Selectors.sourcesInScope(state);
     if (!sources.length) return [];
@@ -180,6 +230,11 @@ const Selectors = {
   // entry: { date, perSource: { srcId: netFlow }, total }. Days with
   // no transactions are omitted — they render as gaps in the chart.
   // The chart range (oldest tx → today) is the inclusive window.
+  /**
+   * Per-day net flow across in-scope sources, oldest first. Days with no activity are omitted.
+   * @param {State} state
+   * @returns {{ date: string, perSource: Object<string, number>, total: number }[]}
+   */
   dailyNetFlow(state) {
     const range = Selectors.balanceChartDateRange(state);
     const sources = Selectors.sourcesInScope(state);
@@ -201,6 +256,13 @@ const Selectors = {
   // End-of-month balances for a single source, going back `months`
   // (default 12). Each entry: { date: 'YYYY-MM-DD', month: 'YYYY-MM',
   // balance }. The rightmost point is always today's typed balance.
+  /**
+   * End-of-month balance points for one source, oldest first. The final point anchors at the typed current balance.
+   * @param {State} state
+   * @param {string} sourceId
+   * @param {number} [months=12]
+   * @returns {BalancePoint[]}
+   */
   monthlyBalance(state, sourceId, months = 12) {
     const source = (state.sources || []).find(s => s.id === sourceId);
     if (!source) return [];
@@ -240,6 +302,12 @@ const Selectors = {
   // Monthly net-worth: same shape as monthlyBalance but summed across
   // every in-scope source. The rightmost point is the sum of today's
   // typed balances.
+  /**
+   * End-of-month net worth, summed across every in-scope source. Final point = sum of today's typed balances.
+   * @param {State} state
+   * @param {number} [months=12]
+   * @returns {BalancePoint[]}
+   */
   monthlyNetWorth(state, months = 12) {
     const sources = Selectors.sourcesInScope(state);
     if (!sources.length) return [];
@@ -286,6 +354,12 @@ const Selectors = {
   // Income = sum of positive txns; expense = sum of |negative txns|;
   // net = income − expense. Today's month is included even if it's
   // partial, so the user sees their current month's progress.
+  /**
+   * Income / expense / net per month for the last N months. Current (partial) month included.
+   * @param {State} state
+   * @param {number} [months=12]
+   * @returns {MonthFlow[]}
+   */
   monthlyNetFlow(state, months = 12) {
     const sources = Selectors.sourcesInScope(state);
     const srcIds = new Set(sources.map(s => s.id));
@@ -335,4 +409,4 @@ const Selectors = {
 function round2(n) { return Math.round(n * 100) / 100; }
 
 window.Selectors = Selectors;
-window.SelectorScopes = VALID_SCOPES;
+window.SelectorScopes = /** @type {Scope[]} */ (VALID_SCOPES);

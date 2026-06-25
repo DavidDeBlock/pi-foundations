@@ -10,8 +10,10 @@ const Router = (() => {
   let view = 'dashboard';
   let monthKey = Fmt.currentMonthKey();
   let txnFilters = { month: 'all', type: 'all', categoryId: 'all', userId: 'all', sourceId: 'all', scope: 'all', payee: 'all', groupId: 'all' };
-  let balanceViewMode = 'sources'; // 'sources' | 'networth'
-  let trendRange = '1y';           // '1y' | '2y' | '3y' | 'all'
+  /** @type {'sources'|'networth'} */
+  let balanceViewMode = 'sources';
+  /** @type {'1y'|'2y'|'3y'|'all'} */
+  let trendRange = '1y';
 
   // -- Routing -------------------------------------------------------
   function goTo(v) {

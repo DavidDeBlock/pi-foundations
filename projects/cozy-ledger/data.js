@@ -8,13 +8,18 @@ const Store = (() => {
   const KEY = 'cozy-ledger-v1';
 
   // ---- Seed data (first run) -----------------------------------------
+  /**
+   * Build the initial in-memory state. `groups` is intentionally omitted;
+   * `migrate()` backfills it from SEED_GROUPS on every load.
+   * @returns {State}
+   */
   const seed = () => {
     const today = new Date();
     const ym = (y, m, d) => new Date(y, m - 1, d).toISOString().slice(0, 10);
     const yr = today.getFullYear();
     const mo = today.getMonth() + 1;
 
-    return {
+    return /** @type {State} */ ({
       users: [
         { id: 'u_david',    name: 'David',    color: '#5a7248', active: true },
         { id: 'u_isabelle', name: 'Isabelle', color: '#b8895c', active: true },
@@ -74,7 +79,7 @@ const Store = (() => {
       // itself intentionally leaves this undefined — the migration in
       // Store.load() fills it from SEED_GROUPS on first ever load and on
       // every upgrade from a pre-ISSUE-007 install.
-    };
+    });
   };
 
   // ---- Helpers -------------------------------------------------------
@@ -181,11 +186,15 @@ const Store = (() => {
     return state;
   }
 
+  /**
+   * Load the persisted state, applying migrations. Seeds on first run.
+   * @returns {State}
+   */
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) {
-        const s = seed();
+        const s = /** @type {State} */ (seed());
         migrate(s);
         save(s);
         return s;
@@ -193,17 +202,26 @@ const Store = (() => {
       return migrate(JSON.parse(raw));
     } catch (e) {
       console.warn('Store load failed, reseeding', e);
-      const s = seed();
+      const s = /** @type {State} */ (seed());
       migrate(s);
       save(s);
       return s;
     }
   }
 
+  /**
+   * Persist the in-memory state to localStorage.
+   * @param {State} state
+   * @returns {void}
+   */
   function save(state) {
     localStorage.setItem(KEY, JSON.stringify(state));
   }
 
+  /**
+   * Wipe localStorage and reseed. Used by tests and the Settings reset button.
+   * @returns {State}
+   */
   function reset() {
     localStorage.removeItem(KEY);
     return load();
@@ -211,16 +229,65 @@ const Store = (() => {
 
   // ---- Public CRUD API ----------------------------------------------
   return {
-    load, save, reset, uid, now,
+    /**
+     * Load the persisted state, applying migrations. Seeds on first run.
+     * @returns {State}
+     */
+    load,
+
+    /**
+     * Persist state to localStorage.
+     * @param {State} state
+     * @returns {void}
+     */
+    save,
+
+    /**
+     * Wipe localStorage and reseed. Used by tests and the Settings reset button.
+     * @returns {State}
+     */
+    reset,
+
+    /**
+     * Generate a short random id. Useful for tests and ad-hoc inserts.
+     * @returns {string}
+     */
+    uid,
+
+    /**
+     * Current time as an ISO 8601 string.
+     * @returns {string}
+     */
+    now,
 
     // Transactions
+    /**
+     * All transactions, newest first. Does not mutate state.
+     * @param {State} state
+     * @returns {Transaction[]}
+     */
     listTransactions(state) { return [...state.transactions].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)); },
+
+    /**
+     * Append a transaction. Assigns id, createdAt, updatedAt. Persists.
+     * @param {State} state
+     * @param {Partial<Transaction>} t
+     * @returns {Transaction}
+     */
     addTransaction(state, t) {
-      const txn = { id: uid(), createdAt: now(), updatedAt: now(), ...t };
+      const txn = /** @type {Transaction} */ ({ id: uid(), createdAt: now(), updatedAt: now(), ...t });
       state.transactions.push(txn);
       save(state);
       return txn;
     },
+
+    /**
+     * Patch a transaction by id. Stamps updatedAt. Returns null if no match.
+     * @param {State} state
+     * @param {string} id
+     * @param {Partial<Transaction>} patch
+     * @returns {Transaction|null}
+     */
     updateTransaction(state, id, patch) {
       const idx = state.transactions.findIndex(t => t.id === id);
       if (idx === -1) return null;
@@ -228,13 +295,34 @@ const Store = (() => {
       save(state);
       return state.transactions[idx];
     },
+
+    /**
+     * Remove a transaction by id. Persists. No-op if not found.
+     * @param {State} state
+     * @param {string} id
+     * @returns {void}
+     */
     deleteTransaction(state, id) {
       state.transactions = state.transactions.filter(t => t.id !== id);
       save(state);
     },
 
     // Categories
-    addCategory(state, c) { const cat = { id: uid(), active: true, ...c }; state.categories.push(cat); save(state); return cat; },
+    /**
+     * Append a category. Assigns id and active=true. Persists.
+     * @param {State} state
+     * @param {Partial<Category>} c
+     * @returns {Category}
+     */
+    addCategory(state, c) { const cat = /** @type {Category} */ ({ id: uid(), active: true, ...c }); state.categories.push(cat); save(state); return cat; },
+
+    /**
+     * Patch a category by id. Returns null if no match.
+     * @param {State} state
+     * @param {string} id
+     * @param {Partial<Category>} patch
+     * @returns {Category|null}
+     */
     updateCategory(state, id, patch) {
       const idx = state.categories.findIndex(c => c.id === id);
       if (idx === -1) return null;
@@ -242,13 +330,34 @@ const Store = (() => {
       save(state);
       return state.categories[idx];
     },
+
+    /**
+     * Remove a category by id. The UI checks for in-use categories first.
+     * @param {State} state
+     * @param {string} id
+     * @returns {void}
+     */
     deleteCategory(state, id) {
       state.categories = state.categories.filter(c => c.id !== id);
       save(state);
     },
 
     // Sources
-    addSource(state, s) { const src = { id: uid(), active: true, balance: 0, ...s }; state.sources.push(src); save(state); return src; },
+    /**
+     * Append a source. Assigns id, active=true, balance=0. Persists.
+     * @param {State} state
+     * @param {Partial<Source>} s
+     * @returns {Source}
+     */
+    addSource(state, s) { const src = /** @type {Source} */ ({ id: uid(), active: true, balance: 0, ...s }); state.sources.push(src); save(state); return src; },
+
+    /**
+     * Patch a source by id. Returns null if no match.
+     * @param {State} state
+     * @param {string} id
+     * @param {Partial<Source>} patch
+     * @returns {Source|null}
+     */
     updateSource(state, id, patch) {
       const idx = state.sources.findIndex(s => s.id === id);
       if (idx === -1) return null;
@@ -256,10 +365,31 @@ const Store = (() => {
       save(state);
       return state.sources[idx];
     },
+
+    /**
+     * Remove a source by id. Persists. No-op if not found.
+     * @param {State} state
+     * @param {string} id
+     * @returns {void}
+     */
     deleteSource(state, id) { state.sources = state.sources.filter(s => s.id !== id); save(state); },
 
     // Users
-    addUser(state, u) { const usr = { id: uid(), active: true, ...u }; state.users.push(usr); save(state); return usr; },
+    /**
+     * Append a user. Assigns id and active=true. Persists.
+     * @param {State} state
+     * @param {Partial<User>} u
+     * @returns {User}
+     */
+    addUser(state, u) { const usr = /** @type {User} */ ({ id: uid(), active: true, ...u }); state.users.push(usr); save(state); return usr; },
+
+    /**
+     * Patch a user by id. Returns null if no match.
+     * @param {State} state
+     * @param {string} id
+     * @param {Partial<User>} patch
+     * @returns {User|null}
+     */
     updateUser(state, id, patch) {
       const idx = state.users.findIndex(u => u.id === id);
       if (idx === -1) return null;
@@ -267,19 +397,39 @@ const Store = (() => {
       save(state);
       return state.users[idx];
     },
+
+    /**
+     * Remove a user by id. Persists. No-op if not found.
+     * @param {State} state
+     * @param {string} id
+     * @returns {void}
+     */
     deleteUser(state, id) { state.users = state.users.filter(u => u.id !== id); save(state); },
 
     // Settings — scope and current viewer. Validates inputs; no-ops on invalid.
+    /**
+     * Set the dashboard / chart scope. Invalid values are ignored.
+     * @param {State} state
+     * @param {Scope} scope
+     * @returns {State}
+     */
     setScope(state, scope) {
       if (!VALID_SCOPES.includes(scope)) return state;
-      if (!state.settings || typeof state.settings !== 'object') state.settings = {};
+      if (!state.settings || typeof state.settings !== 'object') state.settings = /** @type {Settings} */ ({});
       state.settings.scope = scope;
       save(state);
       return state;
     },
+
+    /**
+     * Set the active viewer. Unknown ids are ignored.
+     * @param {State} state
+     * @param {string} userId
+     * @returns {State}
+     */
     setCurrentUserId(state, userId) {
       if (!state.users || !state.users.some(u => u.id === userId)) return state;
-      if (!state.settings || typeof state.settings !== 'object') state.settings = {};
+      if (!state.settings || typeof state.settings !== 'object') state.settings = /** @type {Settings} */ ({});
       state.settings.currentUserId = userId;
       save(state);
       return state;
@@ -287,8 +437,14 @@ const Store = (() => {
 
     // ISSUE-005: persisted flag that defaults the edit-modal "apply to all"
     // checkbox. Flipped on by ticking the checkbox at least once.
+    /**
+     * Toggle the default value of the edit-modal "apply to all" checkbox.
+     * @param {State} state
+     * @param {boolean} value
+     * @returns {State}
+     */
     setApplyCategoryToPayee(state, value) {
-      if (!state.settings || typeof state.settings !== 'object') state.settings = {};
+      if (!state.settings || typeof state.settings !== 'object') state.settings = /** @type {Settings} */ ({});
       state.settings.applyCategoryToPayee = !!value;
       save(state);
       return state;
@@ -296,6 +452,13 @@ const Store = (() => {
 
     // ISSUE-005: write or clear a payee → category mapping. Empty
     // categoryId deletes the key. Always persists and returns state.
+    /**
+     * Persist a payee → category mapping. Empty categoryId clears the entry.
+     * @param {State} state
+     * @param {string} payeeName
+     * @param {string} categoryId
+     * @returns {State}
+     */
     setPayeeCategory(state, payeeName, categoryId) {
       if (!payeeName) return state;
       if (!state.payeeCategories || typeof state.payeeCategories !== 'object' || Array.isArray(state.payeeCategories)) {
@@ -308,8 +471,14 @@ const Store = (() => {
     },
 
     // ISSUE-007: dashboard toggle persisted across sessions.
+    /**
+     * Toggle the "roll dashboard up at the group level" preference.
+     * @param {State} state
+     * @param {boolean} value
+     * @returns {State}
+     */
     setDashboardByGroup(state, value) {
-      if (!state.settings || typeof state.settings !== 'object') state.settings = {};
+      if (!state.settings || typeof state.settings !== 'object') state.settings = /** @type {Settings} */ ({});
       state.settings.dashboardByGroup = !!value;
       save(state);
       return state;
@@ -318,13 +487,27 @@ const Store = (() => {
     // ISSUE-007: groups CRUD. Groups are an ordered presentation layer
     // over categories; deleting a group is the caller's responsibility
     // (the UI checks for assigned categories before calling delete).
+    /**
+     * Append a group. Assigns id, order, active=true. Persists.
+     * @param {State} state
+     * @param {Partial<Group>} g
+     * @returns {Group}
+     */
     addGroup(state, g) {
-      const grp = { id: uid(), order: (state.groups?.length || 0) + 1, active: true, ...g };
+      const grp = /** @type {Group} */ ({ id: uid(), order: (state.groups?.length || 0) + 1, active: true, ...g });
       if (!Array.isArray(state.groups)) state.groups = [];
       state.groups.push(grp);
       save(state);
       return grp;
     },
+
+    /**
+     * Patch a group by id. Returns null if no match.
+     * @param {State} state
+     * @param {string} id
+     * @param {Partial<Group>} patch
+     * @returns {Group|null}
+     */
     updateGroup(state, id, patch) {
       const idx = (state.groups || []).findIndex(g => g.id === id);
       if (idx === -1) return null;
@@ -332,6 +515,13 @@ const Store = (() => {
       save(state);
       return state.groups[idx];
     },
+
+    /**
+     * Remove a group by id. Persists. Categories retain their (now stale) groupId.
+     * @param {State} state
+     * @param {string} id
+     * @returns {void}
+     */
     deleteGroup(state, id) {
       state.groups = (state.groups || []).filter(g => g.id !== id);
       // Categories keep their (now-stale) groupId; the UI ignores

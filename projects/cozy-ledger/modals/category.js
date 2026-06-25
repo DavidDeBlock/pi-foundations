@@ -47,7 +47,7 @@
     window.dispatchEvent(new Event('store:changed'));
   }
 
-  window.Modals = window.Modals || {};
+  window.Modals = /** @type {Window["Modals"]} */ (window.Modals || {});
   window.Modals.category = open;
   window.Modals.categoryDelete = deleteOne;
 })();

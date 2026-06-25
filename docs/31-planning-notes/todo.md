@@ -173,3 +173,29 @@ Let's completely get rid of the subcategories. It's fine to have the categories 
  No yearly reports for now, i need to think about. 
 
 
+So currently, we have the dashboard, and there we can see what we spend over a period of a month. Then we have the trends, and there we can see the three charts:
+1. One with expenses versus income
+2. The other one gives us an estimate of the amount we got on our accounts
+3. A third one where we can see the top categories of this month
+This one is the third overview, top categories this month, on the trends tab. This one can go. It's the same as we can see on the dashboard.
+
+So I like the two graphs on the trends tab. 
+
+So what do I want? It would be handy to have a different set of filters for the dashboard so we can set a period of a couple of months, and then we have immediately a visualization of our total income, our total expenses, and our total savings or loss we have over a certain period. It would be handy to let's say set a period of:
+- three months
+- six months
+- one year
+- two years
+or an overview of everything.
+
+
+
+1. They should follow The period selector 
+2. Period selector with the drop-down for from-to would be handy
+3. Yeah, for the TrendsView, it has indeed currently range buttons, but it would be nice to have the same sort of a period selector over there so the graphics can follow those filters as well. Let's go for the ranges you suggest and also manual picking from two.  
+4. The top categories should also just follow the period. 
+
+1.A
+2.A
+3.Dashboard keep monthly and trends 1Y 
+4.Persistance yes 

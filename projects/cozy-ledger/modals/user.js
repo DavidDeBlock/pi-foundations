@@ -38,7 +38,7 @@
     window.dispatchEvent(new Event('store:changed'));
   }
 
-  window.Modals = window.Modals || {};
+  window.Modals = /** @type {Window["Modals"]} */ (window.Modals || {});
   window.Modals.user = open;
   window.Modals.userDelete = deleteOne;
 })();

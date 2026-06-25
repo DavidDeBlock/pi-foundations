@@ -74,6 +74,6 @@
     ImportPreview.render(parsedRows, state, refs);
   }
 
-  window.Modals = window.Modals || {};
+  window.Modals = /** @type {Window["Modals"]} */ (window.Modals || {});
   window.Modals.import = open;
 })();

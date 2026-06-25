@@ -2,7 +2,17 @@
 // utils.js — Formatters + small helpers
 // =====================================================================
 
+/**
+ * Formatters + small helpers exposed at `window.Fmt`.
+ * @namespace Fmt
+ */
 const Fmt = {
+  /**
+   * Format a number as a euro string (nl-BE locale).
+   * @param {number|null|undefined} n
+   * @param {{ signed?: boolean }} [opts]
+   * @returns {string}
+   */
   money(n, opts = {}) {
     if (n == null || isNaN(n)) n = 0;
     const sign = opts.signed && n > 0 ? '+' : '';
@@ -11,6 +21,11 @@ const Fmt = {
       maximumFractionDigits: 2,
     });
   },
+  /**
+   * Compact euro formatter for axis labels: €1.2k, €950, etc.
+   * @param {number|null|undefined} n
+   * @returns {string}
+   */
   moneyShort(n) {
     if (n == null || isNaN(n)) n = 0;
     const abs = Math.abs(n);
@@ -19,6 +34,12 @@ const Fmt = {
     else v = n;
     return '€' + v.toLocaleString('nl-BE', { minimumFractionDigits: v < 10 ? 1 : 0, maximumFractionDigits: 1 }) + suf;
   },
+  /**
+   * Format a date for the UI. Returns '—' for null/empty.
+   * @param {string|Date|null|undefined} d
+   * @param {{ month?: boolean }} [opts]  If true, returns 'Month YYYY'.
+   * @returns {string}
+   */
   date(d, opts = {}) {
     if (!d) return '—';
     const dt = new Date(d);
@@ -27,29 +48,65 @@ const Fmt = {
     }
     return dt.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
   },
+  /**
+   * Year-month key, e.g. '2026-06'.
+   * @param {string|Date} d
+   * @returns {string}
+   */
   ymKey(d) {
     const dt = new Date(d);
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
   },
+  /**
+   * Pretty month label for a YYYY-MM key: 'June 2026'.
+   * @param {string} yyyyMm
+   * @returns {string}
+   */
   monthLabel(yyyyMm) {
     const [y, m] = yyyyMm.split('-').map(Number);
     return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   },
+  /**
+   * Today's date as ISO YYYY-MM-DD.
+   * @returns {string}
+   */
   today() {
     return new Date().toISOString().slice(0, 10);
   },
+  /**
+   * Current month key, e.g. '2026-06'.
+   * @returns {string}
+   */
   currentMonthKey() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   },
+  /**
+   * Shift a YYYY-MM key by ±1 months.
+   * @param {string} yyyyMm
+   * @param {number} delta
+   * @returns {string}
+   */
   shiftMonth(yyyyMm, delta) {
     const [y, m] = yyyyMm.split('-').map(Number);
     const dt = new Date(y, m - 1 + delta, 1);
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
   },
+  /**
+   * True if `date` falls in the `yyyyMm` month.
+   * @param {string|Date} date
+   * @param {string} yyyyMm
+   * @returns {boolean}
+   */
   inMonth(date, yyyyMm) {
     return Fmt.ymKey(date) === yyyyMm;
   },
+  /**
+   * part/total as a percentage. Returns 0 when total is falsy.
+   * @param {number} part
+   * @param {number} total
+   * @returns {number}
+   */
   pct(part, total) {
     if (!total) return 0;
     return (part / total) * 100;
