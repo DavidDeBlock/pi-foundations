@@ -79,9 +79,9 @@ const App = (() => {
       el('div', { class: 'flex center gap-8' },
         el('div', { class: 'month-picker', id: 'month-picker' }),
         el('div', { class: 'scope-pills', id: 'scope-pills' }),
-        el('button', { class: 'btn btn-ghost', onclick: openImportModal, id: 'import-btn', title: t('topbar.import.title') },
+        el('button', { class: 'btn btn-ghost', onclick: () => window.Modals.import(), id: 'import-btn', title: t('topbar.import.title') },
           el('span', { html: Icons.upload }), t('topbar.import')),
-        el('button', { class: 'btn btn-primary', onclick: openAddTransaction, id: 'add-txn-btn' },
+        el('button', { class: 'btn btn-primary', onclick: () => window.Modals.transaction(), id: 'add-txn-btn' },
           el('span', { html: Icons.plus }), t('topbar.add')),
       ),
     );
@@ -1204,8 +1204,8 @@ const App = (() => {
       (txn.type === 'income' ? '+ ' : '− ') + Fmt.money(txn.amount)));
     tr.appendChild(el('td', { class: 'txn-actions' },
       el('div', { class: 'txn-row-actions' },
-        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => openEditTransaction(txn.id), html: Icons.edit }),
-        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => deleteTransaction(txn.id), html: Icons.trash }),
+        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => window.Modals.transaction(txn.id), html: Icons.edit }),
+        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => window.Modals.transactionDelete(txn.id), html: Icons.trash }),
       ),
     ));
     return tr;
@@ -1227,7 +1227,7 @@ const App = (() => {
     const groupsHead = el('div', { class: 'section-head' },
       el('div', { class: 'section-label' }, t('cat.section.manage')),
     );
-    const addGrpBtn = el('button', { class: 'btn btn-sage', onclick: () => openGroupModal() });
+    const addGrpBtn = el('button', { class: 'btn btn-sage', onclick: () => window.Modals.group() });
     addGrpBtn.innerHTML = `${Icons.plus} ${escapeText(t('grp.add'))}`;
     groupsHead.appendChild(addGrpBtn);
     const groupsCard = el('div', { class: 'card', style: { marginBottom: '24px' } },
@@ -1250,7 +1250,7 @@ const App = (() => {
     wrap.appendChild(renderIncomeSection(incomes));
 
     // Add-category button (kept below the lists for now)
-    const addBtn = el('button', { class: 'btn btn-sage', onclick: () => openCategoryModal(), style: { marginTop: '16px' } });
+    const addBtn = el('button', { class: 'btn btn-sage', onclick: () => window.Modals.category(), style: { marginTop: '16px' } });
     addBtn.innerHTML = `${Icons.plus} ${escapeText(t('cat.add'))}`;
     wrap.appendChild(addBtn);
 
@@ -1342,8 +1342,8 @@ const App = (() => {
         el('div', { class: 'e-meta' }, c.active ? c.type : t('cat.inactive')),
       ),
       el('div', { class: 'e-actions' },
-        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => openCategoryModal(c.id), html: Icons.edit }),
-        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => deleteCategory(c.id), html: Icons.trash }),
+        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => window.Modals.category(c.id), html: Icons.edit }),
+        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => window.Modals.categoryDelete(c.id), html: Icons.trash }),
       ),
     );
   }
@@ -1359,8 +1359,8 @@ const App = (() => {
         el('div', { class: 'e-meta' }, `${g.icon || '✦'} · ${t('grp.section.title')}`),
       ),
       el('div', { class: 'e-actions' },
-        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => openGroupModal(g.id), html: Icons.edit }),
-        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => deleteGroup(g.id), html: Icons.trash }),
+        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => window.Modals.group(g.id), html: Icons.edit }),
+        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => window.Modals.groupDelete(g.id), html: Icons.trash }),
       ),
     );
   }
@@ -1373,7 +1373,7 @@ const App = (() => {
     const head = el('div', { class: 'section-head' },
       el('div', { class: 'section-label' }, t('src.section.manage')),
     );
-    const addBtn = el('button', { class: 'btn btn-sage', onclick: () => openSourceModal() });
+    const addBtn = el('button', { class: 'btn btn-sage', onclick: () => window.Modals.source() });
     addBtn.innerHTML = `${Icons.plus} ${escapeText(t('src.add'))}`;
     head.appendChild(addBtn);
     wrap.appendChild(head);
@@ -1398,8 +1398,8 @@ const App = (() => {
         el('div', { class: 'e-meta' }, `${s.type}${owner ? ' · ' + owner.name : (sharedTxt ? ' · ' + sharedTxt : '')}${s.active ? '' : ' · ' + t('cat.inactive')}`),
       ),
       el('div', { class: 'e-actions' },
-        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => openSourceModal(s.id), html: Icons.edit }),
-        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => deleteSource(s.id), html: Icons.trash }),
+        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => window.Modals.source(s.id), html: Icons.edit }),
+        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => window.Modals.sourceDelete(s.id), html: Icons.trash }),
       ),
     );
   }
@@ -1412,7 +1412,7 @@ const App = (() => {
     const head = el('div', { class: 'section-head' },
       el('div', { class: 'section-label' }, t('usr.section.manage')),
     );
-    const addBtn = el('button', { class: 'btn btn-sage', onclick: () => openUserModal() });
+    const addBtn = el('button', { class: 'btn btn-sage', onclick: () => window.Modals.user() });
     addBtn.innerHTML = `${Icons.plus} ${escapeText(t('usr.add'))}`;
     head.appendChild(addBtn);
     wrap.appendChild(head);
@@ -1519,25 +1519,10 @@ const App = (() => {
         el('div', { class: 'e-meta' }, u.active ? t('cat.active') : t('cat.inactive')),
       ),
       el('div', { class: 'e-actions' },
-        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => openUserModal(u.id), html: Icons.edit }),
-        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => deleteUser(u.id), html: Icons.trash }),
+        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => window.Modals.user(u.id), html: Icons.edit }),
+        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => window.Modals.userDelete(u.id), html: Icons.trash }),
       ),
     );
-  }
-
-  // ===================================================================
-  // MODALS
-  // ===================================================================
-  function openModal(content) {
-    const back = el('div', { class: 'modal-backdrop', onclick: (e) => { if (e.target === back) closeModal(); } });
-    back.appendChild(content);
-    document.body.appendChild(back);
-    // Focus first input
-    setTimeout(() => content.querySelector('input, select, textarea, button')?.focus(), 50);
-    return back;
-  }
-  function closeModal() {
-    $$('.modal-backdrop').forEach(b => b.remove());
   }
 
   // ===================================================================
@@ -1603,821 +1588,7 @@ const App = (() => {
       toast(result.error);
       return;
     }
-    openImportConfirmModal(result.data);
-  }
-
-  // Dry-run modal: shows counts, exportedAt, schemaVersion, Cancel + Replace.
-  function openImportConfirmModal(parsed) {
-    const counts = Backup.countRecords(parsed);
-    const hasGroups = counts.groups > 0;
-    const backupDate = parsed.exportedAt ? Fmt.date(parsed.exportedAt) : '—';
-
-    const countsParts = [
-      `${counts.transactions} ${t('txn.th.count').toLowerCase()}`,
-      `${counts.categories} ${t('nav.categories').toLowerCase()}`,
-      `${counts.sources} ${t('nav.sources').toLowerCase()}`,
-      `${counts.users} ${t('nav.users').toLowerCase()}`,
-    ];
-    if (hasGroups) countsParts.push(`${counts.groups} ${t('grp.section.title').toLowerCase()}`);
-
-    const modal = el('div', { class: 'modal' });
-    modal.innerHTML = `
-      <div class="modal-head">
-        <div class="modal-title">${escapeText(t('settings.import.title'))}</div>
-        <button class="btn-icon" id="imp-cancel-x" aria-label="${escapeAttr(t('btn.close'))}">${Icons.close}</button>
-      </div>
-      <div class="modal-body">
-        <div class="backup-summary">
-          <p>${t('settings.import.summary', { n: countsParts.join(', ') }).replace('<strong>', '<strong>').replace('</strong>', '</strong>')}</p>
-          <p class="muted" style="font-size:.85rem">
-            ${escapeText(t('settings.import.meta', { date: backupDate, ver: parsed.schemaVersion }))}
-          </p>
-        </div>
-        <div class="backup-warning">
-          <strong>${escapeText(t('settings.import.warn'))}</strong>
-          ${escapeText(t('settings.import.warn2'))}
-        </div>
-      </div>
-      <div class="modal-foot">
-        <div style="flex:1"></div>
-        <button class="btn btn-ghost" id="imp-cancel">${escapeText(t('btn.cancel'))}</button>
-        <button class="btn btn-danger" id="imp-replace">${escapeText(t('btn.replace'))}</button>
-      </div>
-    `;
-
-    const close = () => closeModal();
-    modal.querySelector('#imp-cancel-x').onclick = close;
-    modal.querySelector('#imp-cancel').onclick = close;
-    modal.querySelector('#imp-replace').onclick = () => {
-      const err = Backup.applyImport(state, parsed, Store.save);
-      close();
-      if (err) {
-        toast(err.error);
-        return;
-      }
-      window.dispatchEvent(new Event('store:changed'));
-      toast(t('settings.import.done', { n: counts.transactions }));
-    };
-
-    openModal(modal);
-  }
-
-  // --- Add / edit transaction ---------------------------------------
-  function openAddTransaction() { openTransactionModal(null); }
-  function openEditTransaction(id) { openTransactionModal(id); }
-
-  function openTransactionModal(id) {
-    const isEdit = !!id;
-    const editing = isEdit ? state.transactions.find(t => t.id === id) : null;
-    const t = editing || { type: 'expense', amount: 0, date: Fmt.today(), description: '', categoryId: '', paidByUserId: state.users[0]?.id || '', sourceId: state.sources[0]?.id || '', scope: 'private', notes: '' };
-
-    let cur = { ...t };
-
-    const modal = el('div', { class: 'modal' });
-    modal.innerHTML = `
-      <div class="modal-head">
-        <div class="modal-title">${escapeText(t(isEdit ? 'modal.txn.edit' : 'modal.txn.add'))}</div>
-        <button class="btn-icon" id="m-close" aria-label="${escapeAttr(t('btn.close'))}">${Icons.close}</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-field">
-          <label>${escapeText(t('form.type'))}</label>
-          <div class="tabs" id="type-tabs">
-            <button data-t="expense" class="${cur.type === 'expense' ? 'active expense' : ''}">${escapeText(t('form.type.expense'))}</button>
-            <button data-t="income"  class="${cur.type === 'income'  ? 'active income'  : ''}">${escapeText(t('form.type.income'))}</button>
-          </div>
-        </div>
-        <div class="form-field">
-          <label>${escapeText(t('form.amount'))}</label>
-          <div class="amount-wrap">
-            <span class="currency">€</span>
-            <input class="input amount-input" type="number" min="0" step="0.01" id="f-amount" value="${cur.amount || ''}" placeholder="0.00"/>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label>${escapeText(t('form.date'))}</label>
-            <input class="input" type="date" id="f-date" value="${cur.date}"/>
-          </div>
-          <div class="form-field">
-            <label>${escapeText(t('form.category'))}</label>
-            <select class="select" id="f-cat"></select>
-          </div>
-        </div>
-        <label class="apply-all-opt" id="f-apply-all" style="display:none" title="${escapeAttr(t('applyAll.title'))}">
-          <input type="checkbox" id="f-apply-all-cb"/>
-          <span id="f-apply-all-text"></span>
-        </label>
-        <div class="form-field">
-          <label>${escapeText(t('form.description'))}</label>
-          <input class="input" type="text" id="f-desc" placeholder="${escapeAttr(t('form.descPlaceholder'))}" value="${escapeAttr(cur.description || '')}"/>
-        </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label>${escapeText(t('form.paidBy'))}</label>
-            <select class="select" id="f-user"></select>
-          </div>
-          <div class="form-field">
-            <label>${escapeText(t('form.source'))}</label>
-            <select class="select" id="f-source"></select>
-          </div>
-        </div>
-        <div class="form-field">
-          <label>${escapeText(t('form.scope'))}</label>
-          <div class="scope-pick" id="f-scope">
-            <button data-s="private" class="${cur.scope === 'private' ? 'active' : ''}">${Icons.user} ${escapeText(t('txn.scope.private'))}</button>
-            <button data-s="shared"  class="${cur.scope === 'shared'  ? 'active' : ''}">${Icons.globe} ${escapeText(t('txn.scope.shared'))}</button>
-          </div>
-        </div>
-        <div class="form-field">
-          <label>${escapeText(t('form.notes'))}</label>
-          <textarea class="textarea" id="f-notes" placeholder="${escapeAttr(t('form.notesPh'))}">${escapeText(cur.notes || '')}</textarea>
-        </div>
-      </div>
-      <div class="modal-foot">
-        ${isEdit ? `<button class="btn btn-danger" id="m-delete">${Icons.trash} ${escapeText(t('btn.delete'))}</button>` : ''}
-        <div style="flex:1"></div>
-        <button class="btn btn-ghost" id="m-cancel">${escapeText(t('btn.cancel'))}</button>
-        <button class="btn btn-primary" id="m-save">${escapeText(t(isEdit ? 'btn.saveChanges' : 'modal.txn.add'))}</button>
-      </div>
-    `;
-
-    // Populate selects
-    const catSel = modal.querySelector('#f-cat');
-    state.categories.filter(c => c.type === cur.type).forEach(c => {
-      catSel.appendChild(option(c.id, c.name, c.id === cur.categoryId));
-    });
-    if (!catSel.value && state.categories.filter(c => c.type === cur.type)[0]) {
-      catSel.value = state.categories.filter(c => c.type === cur.type)[0].id;
-    }
-    // Keep JS state in sync with the auto-selected category
-    if (catSel.value) cur.categoryId = catSel.value;
-
-    const userSel = modal.querySelector('#f-user');
-    state.users.filter(u => u.active).forEach(u => {
-      userSel.appendChild(option(u.id, u.name, u.id === cur.paidByUserId));
-    });
-    const srcSel = modal.querySelector('#f-source');
-    state.sources.filter(s => s.active).forEach(s => {
-      srcSel.appendChild(option(s.id, s.name, s.id === cur.sourceId));
-    });
-
-    // Bindings
-    modal.querySelector('#m-close').onclick = closeModal;
-    modal.querySelector('#m-cancel').onclick = closeModal;
-    if (isEdit) modal.querySelector('#m-delete').onclick = () => { closeModal(); deleteTransaction(id); };
-
-    modal.querySelectorAll('#type-tabs button').forEach(b => {
-      b.onclick = () => {
-        cur.type = b.dataset.t;
-        // Re-populate categories for the new type
-        const sel = modal.querySelector('#f-cat');
-        sel.innerHTML = '';
-        state.categories.filter(c => c.type === cur.type).forEach(c => sel.appendChild(option(c.id, c.name)));
-        if (sel.options.length) {
-          sel.value = sel.options[0].value;
-          // Keep JS state in sync (setting .value programmatically does not fire 'change')
-          cur.categoryId = sel.value;
-        } else {
-          cur.categoryId = '';
-        }
-        modal.querySelectorAll('#type-tabs button').forEach(x => x.className = '');
-        b.className = 'active ' + cur.type;
-      };
-    });
-    modal.querySelectorAll('#f-scope button').forEach(b => {
-      b.onclick = () => {
-        cur.scope = b.dataset.s;
-        modal.querySelectorAll('#f-scope button').forEach(x => x.classList.remove('active'));
-        b.classList.add('active');
-      };
-    });
-    modal.querySelector('#f-amount').oninput = e => cur.amount = parseFloat(e.target.value) || 0;
-    modal.querySelector('#f-date').oninput = e => cur.date = e.target.value;
-    modal.querySelector('#f-desc').oninput = e => { cur.description = e.target.value; refreshApplyAll(); };
-    modal.querySelector('#f-cat').onchange = e => cur.categoryId = e.target.value;
-    modal.querySelector('#f-user').onchange = e => cur.paidByUserId = e.target.value;
-    modal.querySelector('#f-source').onchange = e => cur.sourceId = e.target.value;
-    modal.querySelector('#f-notes').oninput = e => cur.notes = e.target.value;
-
-    // ISSUE-005: "apply to all" checkbox is shown only when editing a
-    // transaction with a recognisable payee that has at least one other
-    // in-scope transaction. Ticking persists settings.applyCategoryToPayee
-    // so subsequent modals start checked.
-    const applyAllEl = modal.querySelector('#f-apply-all');
-    const applyAllCb = modal.querySelector('#f-apply-all-cb');
-    const applyAllText = modal.querySelector('#f-apply-all-text');
-    function refreshApplyAll() {
-      const name = extractPayee(cur.description);
-      if (!name) { applyAllEl.style.display = 'none'; return; }
-      const others = Selectors.transactionsInScope(state)
-        .filter(t => t.id !== id && extractPayee(t.description) === name).length;
-      if (others === 0) { applyAllEl.style.display = 'none'; return; }
-      applyAllCb.checked = !!state.settings.applyCategoryToPayee;
-      // The template uses {n}, {name} and {s} (plural). t() substitutes them
-      // and returns the raw string; we render it as HTML because the
-      // template deliberately contains <strong> / <span> markup.
-      applyAllText.innerHTML = t('applyAll.template', { n: others, name });
-      applyAllEl.style.display = '';
-    }
-    applyAllCb.addEventListener('change', () => {
-      Store.setApplyCategoryToPayee(state, applyAllCb.checked);
-    });
-    refreshApplyAll();
-
-    modal.querySelector('#m-save').onclick = () => {
-      if (!cur.amount || cur.amount <= 0) return toast(t('toast.amountRequired'));
-      if (!cur.date) return toast(t('toast.dateRequired'));
-      if (!cur.categoryId) return toast(t('toast.catRequired'));
-      if (!cur.paidByUserId) return toast(t('toast.userRequired'));
-      if (!cur.sourceId) return toast(t('toast.sourceRequired'));
-      if (isEdit) {
-        Store.updateTransaction(state, id, cur);
-        toast(t('toast.txn.updated'));
-      } else {
-        Store.addTransaction(state, cur);
-        toast(t('toast.txn.added'));
-      }
-      // ISSUE-005: when "apply to all" is ticked, propagate the category
-      // to every other same-payee transaction in scope. bulkUpdatePayeeCategory
-      // dispatches store:changed itself when it updates any rows; we only
-      // dispatch ourselves when nothing was propagated.
-      let propagated = 0;
-      if (isEdit && applyAllCb.checked) {
-        const name = extractPayee(cur.description);
-        if (name) propagated = bulkUpdatePayeeCategory(name, cur.categoryId);
-      }
-      if (propagated === 0) window.dispatchEvent(new Event('store:changed'));
-      closeModal();
-    };
-
-    openModal(modal);
-  }
-
-  function deleteTransaction(id) {
-    if (!confirmAction(t('confirm.txn'))) return;
-    Store.deleteTransaction(state, id);
-    toast(t('toast.txn.deleted'));
-    window.dispatchEvent(new Event('store:changed'));
-  }
-
-  // --- Import from CSV (ING Belgium statements) ----------------------
-  function openImportModal() {
-    let parsedRows = []; // [{ row, classification, key, selected, skip, dupe, categoryId }]
-    const defaults = {
-      userId: state.users[0]?.id || '',
-      sourceId: state.sources[0]?.id || '',
-      scope: 'private',
-    };
-
-    const modal = el('div', { class: 'modal modal-wide' });
-    modal.innerHTML = `
-      <div class="modal-head">
-        <div class="modal-title">${escapeText(t('modal.import.title'))}</div>
-        <button class="btn-icon" id="m-close" aria-label="${escapeAttr(t('btn.close'))}">${Icons.close}</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-field">
-          <label>${escapeText(t('csv.file'))}</label>
-          <input class="input" type="file" id="imp-file" accept=".csv,text/csv"/>
-          <div class="hint">${escapeText(t('csv.file.hint'))}</div>
-        </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label>${escapeText(t('csv.defaults.user'))}</label>
-            <select class="select" id="imp-user"></select>
-          </div>
-          <div class="form-field">
-            <label>${escapeText(t('csv.defaults.source'))}</label>
-            <select class="select" id="imp-source"></select>
-          </div>
-        </div>
-        <div class="form-field">
-          <label>${escapeText(t('csv.defaults.scope'))}</label>
-          <div class="scope-pick" id="imp-scope">
-            <button data-s="private" class="active">${Icons.user} ${escapeText(t('txn.scope.private'))}</button>
-            <button data-s="shared">${Icons.globe} ${escapeText(t('txn.scope.shared'))}</button>
-          </div>
-        </div>
-        <div id="imp-summary" class="imp-summary"></div>
-        <div id="imp-preview" class="imp-preview"></div>
-      </div>
-      <div class="modal-foot">
-        <div style="flex:1"></div>
-        <button class="btn btn-ghost" id="m-cancel">${escapeText(t('btn.cancel'))}</button>
-        <button class="btn btn-primary" id="m-import" disabled>${escapeText(t('csv.btn.import0'))}</button>
-      </div>
-    `;
-
-    // Populate user / source selects with active entries
-    const userSel = modal.querySelector('#imp-user');
-    state.users.filter(u => u.active).forEach(u => userSel.appendChild(option(u.id, u.name, u.id === defaults.userId)));
-    const srcSel = modal.querySelector('#imp-source');
-    state.sources.filter(s => s.active).forEach(s => srcSel.appendChild(option(s.id, s.name, s.id === defaults.sourceId)));
-
-    // Existing dedup keys come from any previously-imported transactions
-    const existingKeys = new Set(
-      state.transactions.map(t => t.importedKey).filter(Boolean)
-    );
-
-    function rebuildPreview() {
-      const summary = modal.querySelector('#imp-summary');
-      const preview = modal.querySelector('#imp-preview');
-      const btn = modal.querySelector('#m-import');
-
-      if (parsedRows.length === 0) {
-        summary.innerHTML = '';
-        preview.innerHTML = '';
-        btn.disabled = true;
-        btn.textContent = t('csv.btn.import0');
-        return;
-      }
-
-      const selCount = parsedRows.filter(r => r.selected && !r.skip && !r.dupe).length;
-      const dupeCount = parsedRows.filter(r => r.dupe).length;
-      const skipCount = parsedRows.filter(r => r.skip).length;
-
-      summary.innerHTML = `
-        <span class="pill pill-pos">${escapeText(t('csv.pill.import', { n: selCount }))}</span>
-        <span class="pill">${escapeText(t('csv.pill.dupe', { n: dupeCount }))}</span>
-        <span class="pill">${escapeText(t('csv.pill.skip', { n: skipCount }))}</span>
-      `;
-
-      const table = el('table', { class: 'imp-table' });
-      table.appendChild(el('thead', {}, el('tr', {},
-        el('th', { style: { width: '32px' } }),
-        el('th', {}, escapeText(t('csv.th.date'))),
-        el('th', {}, escapeText(t('csv.th.desc'))),
-        el('th', { class: 'right' }, escapeText(t('csv.th.amount'))),
-        el('th', {}, escapeText(t('csv.th.type'))),
-        el('th', {}, escapeText(t('csv.th.category'))),
-      )));
-      const tbody = el('tbody');
-      for (const item of parsedRows) {
-        const tr = el('tr', { class: (item.skip || item.dupe) ? 'muted' : '' });
-
-        const cb = el('input', { type: 'checkbox', disabled: item.skip || item.dupe });
-        cb.checked = !!item.selected;
-        cb.onchange = () => { item.selected = cb.checked; rebuildPreview(); };
-        tr.appendChild(el('td', {}, cb));
-
-        tr.appendChild(el('td', {}, Fmt.date(item.row.boekingsdatum)));
-        tr.appendChild(el('td', { class: 'desc', title: item.row.detail || '' }, item.row.omschrijving || '—'));
-        const sign = item.classification?.type === 'expense' ? '−' : '+';
-        tr.appendChild(el('td', { class: 'right amt' }, sign + Fmt.money(Math.abs(item.row.bedrag))));
-        const typeText = item.classification
-          ? (item.classification.type === 'income' ? t('csv.th.type.income') : t('csv.th.type.expense'))
-          : (item.skip ? t('csv.th.type.skip') : t('csv.th.type.unset'));
-        tr.appendChild(el('td', {}, typeText));
-
-        const catSel = el('select', { class: 'select', disabled: item.skip || item.dupe });
-        const cats = state.categories.filter(c => c.type === (item.classification?.type || 'expense'));
-        cats.forEach(c => catSel.appendChild(option(c.id, c.name, c.id === item.categoryId)));
-        catSel.onchange = () => { item.categoryId = catSel.value; item.autoMapped = false; };
-        // ISSUE-005: show a small "auto" badge when the category came
-        // from the saved payee → category mapping rather than the row
-        // classifier. Disappears once the user manually changes it.
-        const cell = el('td', {}, catSel);
-        if (item.autoMapped) {
-          cell.appendChild(el('span', {
-            class: 'pill',
-            style: { marginLeft: '6px', fontSize: '.7rem', background: 'var(--cream-deep)', color: 'var(--ink-soft)' },
-            title: t('csv.autoMapped.title'),
-          }, t('csv.autoMapped')));
-        }
-        tr.appendChild(cell);
-
-        tbody.appendChild(tr);
-      }
-      table.appendChild(tbody);
-      preview.innerHTML = '';
-      preview.appendChild(table);
-
-      btn.disabled = selCount === 0;
-      btn.textContent = t('csv.btn.importN', { n: selCount });
-    }
-
-    // Default bindings
-    modal.querySelector('#imp-user').onchange = e => { defaults.userId = e.target.value; };
-    modal.querySelector('#imp-source').onchange = e => { defaults.sourceId = e.target.value; };
-    modal.querySelectorAll('#imp-scope button').forEach(b => {
-      b.onclick = () => {
-        defaults.scope = b.dataset.s;
-        modal.querySelectorAll('#imp-scope button').forEach(x => x.classList.remove('active'));
-        b.classList.add('active');
-      };
-    });
-
-    // File → parse → diff
-    modal.querySelector('#imp-file').onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      let text;
-      try {
-        text = await file.text();
-      } catch (err) {
-        toast(t('csv.err.read'));
-        return;
-      }
-      const rows = CSVImport.parseIngStatement(text);
-      if (rows.length === 0) {
-        toast(t('csv.err.noRows'));
-        parsedRows = [];
-        rebuildPreview();
-        return;
-      }
-      const seen = new Set(existingKeys);
-      parsedRows = rows.map(row => {
-        const cls = CSVImport.classifyRow(row);
-        if (cls.skip) return { row, classification: cls, skip: true, dupe: false, selected: false, key: null };
-        const key = CSVImport.makeDedupKey(row);
-        const dupe = seen.has(key);
-        if (!dupe) seen.add(key);
-        // ISSUE-005: classifier hint first, then the saved payee → category
-        // mapping. The mapping is the safety net for rows the user didn't
-        // explicitly classify (bancontact, transfer-in, transfer-out, etc.).
-        const suggested = CSVImport.suggestedCategoryFor(cls.categoryHint, cls.type, state);
-        const payeeName = CSVImport.extractPayee(row.omschrijving);
-        const mapped = !suggested && payeeName ? (state.payeeCategories || {})[payeeName] : '';
-        return {
-          row, classification: cls, key,
-          skip: false, dupe, selected: !dupe,
-          categoryId: suggested?.id || mapped || '',
-          autoMapped: !suggested && !!mapped,
-        };
-      });
-      rebuildPreview();
-    };
-
-    modal.querySelector('#m-close').onclick = closeModal;
-    modal.querySelector('#m-cancel').onclick = closeModal;
-    modal.querySelector('#m-import').onclick = () => {
-      const toImport = parsedRows.filter(r => r.selected && !r.skip && !r.dupe);
-      let count = 0;
-      for (const item of toImport) {
-        const txn = CSVImport.mapRowToTxn(item.row, item.classification, defaults, item.categoryId);
-        txn.importedKey = item.key; // marker so future imports can dedup
-        Store.addTransaction(state, txn);
-        count++;
-      }
-      if (count > 0) {
-        toast(t('toast.imported', { n: count }));
-        window.dispatchEvent(new Event('store:changed'));
-      }
-      closeModal();
-    };
-
-    openModal(modal);
-  }
-
-  // --- Category modal ------------------------------------------------
-  function openCategoryModal(id) {
-    const editing = id ? state.categories.find(c => c.id === id) : null;
-    // ISSUE-007: new categories start with groupId = null (user-added,
-    // not assigned). Editing categories preserves their current groupId.
-    let cur = editing ? { ...editing } : { name: '', type: 'expense', color: '#5a7248', icon: '✦', active: true, groupId: null };
-
-    const groups = state.groups || [];
-    const sortedGroups = [...groups].sort((a, b) => (a.order || 0) - (b.order || 0));
-
-    const modal = el('div', { class: 'modal' });
-    modal.innerHTML = `
-      <div class="modal-head">
-        <div class="modal-title">${escapeText(t(editing ? 'modal.cat.edit' : 'modal.cat.add'))}</div>
-        <button class="btn-icon" id="m-close" aria-label="${escapeAttr(t('btn.close'))}">${Icons.close}</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-field">
-          <label>${escapeText(t('form.type'))}</label>
-          <div class="tabs" id="type-tabs">
-            <button data-t="expense" class="${cur.type === 'expense' ? 'active expense' : ''}">${escapeText(t('form.type.expense'))}</button>
-            <button data-t="income"  class="${cur.type === 'income'  ? 'active income'  : ''}">${escapeText(t('form.type.income'))}</button>
-          </div>
-        </div>
-        <div class="form-field">
-          <label>${escapeText(t('form.name'))}</label>
-          <input class="input" type="text" id="f-name" placeholder="${escapeAttr(t('form.name.ph.cat'))}" value="${escapeAttr(cur.name)}"/>
-        </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label>${escapeText(t('form.color'))}</label>
-            <div class="color-picker">
-              <input type="color" id="f-color" value="${cur.color}"/>
-              <input class="input" type="text" id="f-color-text" value="${cur.color}" style="flex:1"/>
-            </div>
-          </div>
-          <div class="form-field">
-            <label>${escapeText(t('form.icon'))}</label>
-            <input class="input" type="text" id="f-icon" maxlength="2" value="${escapeAttr(cur.icon || '✦')}"/>
-          </div>
-        </div>
-        <div class="form-field">
-          <label>${escapeText(t('form.icons'))}</label>
-          <div class="icon-grid" id="f-icons"></div>
-        </div>
-        <div class="form-field">
-          <label>${escapeText(t('form.group'))}</label>
-          <select class="select" id="f-group">
-            <option value="" ${cur.groupId == null ? 'selected' : ''}>${escapeText(t('form.group.none'))}</option>
-            ${sortedGroups.map(g => `<option value="${escapeAttr(g.id)}" ${cur.groupId === g.id ? 'selected' : ''}>${escapeText(g.name)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="form-field flex center" style="flex-direction:row; gap:10px;">
-          <div class="toggle ${cur.active ? 'on' : ''}" id="f-active"></div>
-          <div>
-            <div style="font-weight:600;">${cur.active ? escapeText(t('form.active')) : escapeText(t('form.inactive'))}</div>
-            <div class="muted" style="font-size:.8rem;">${escapeText(t('form.active.catHelp'))}</div>
-          </div>
-        </div>
-      </div>
-      <div class="modal-foot">
-        <div style="flex:1"></div>
-        <button class="btn btn-ghost" id="m-cancel">${escapeText(t('btn.cancel'))}</button>
-        <button class="btn btn-primary" id="m-save">${escapeText(t(editing ? 'btn.saveChanges' : 'btn.add'))}</button>
-      </div>
-    `;
-
-    const iconGrid = modal.querySelector('#f-icons');
-    CategoryIcons.forEach(ic => {
-      const b = el('button', { class: ic === cur.icon ? 'active' : '' }, ic);
-      b.onclick = () => {
-        cur.icon = ic;
-        modal.querySelector('#f-icon').value = ic;
-        iconGrid.querySelectorAll('button').forEach(x => x.classList.remove('active'));
-        b.classList.add('active');
-      };
-      iconGrid.appendChild(b);
-    });
-
-    modal.querySelector('#m-close').onclick = closeModal;
-    modal.querySelector('#m-cancel').onclick = closeModal;
-    modal.querySelectorAll('#type-tabs button').forEach(b => {
-      b.onclick = () => {
-        cur.type = b.dataset.t;
-        modal.querySelectorAll('#type-tabs button').forEach(x => x.className = '');
-        b.className = 'active ' + cur.type;
-      };
-    });
-    modal.querySelector('#f-name').oninput = e => cur.name = e.target.value;
-    modal.querySelector('#f-color').oninput = e => { cur.color = e.target.value; modal.querySelector('#f-color-text').value = e.target.value; };
-    modal.querySelector('#f-color-text').oninput = e => { cur.color = e.target.value; modal.querySelector('#f-color').value = e.target.value; };
-    modal.querySelector('#f-icon').oninput = e => cur.icon = e.target.value;
-    modal.querySelector('#f-group').onchange = e => cur.groupId = e.target.value || null;
-    modal.querySelector('#f-active').onclick = () => {
-      cur.active = !cur.active;
-      const tg = modal.querySelector('#f-active');
-      tg.classList.toggle('on', cur.active);
-      tg.nextElementSibling.firstElementChild.textContent = cur.active ? t('form.active') : t('form.inactive');
-    };
-    modal.querySelector('#m-save').onclick = () => {
-      if (!cur.name.trim()) return toast(t('toast.nameRequired'));
-      if (editing) { Store.updateCategory(state, editing.id, cur); toast(t('toast.cat.updated')); }
-      else         { Store.addCategory(state, cur); toast(t('toast.cat.added')); }
-      closeModal();
-      window.dispatchEvent(new Event('store:changed'));
-    };
-
-    openModal(modal);
-  }
-
-  function deleteCategory(id) {
-    const cat = state.categories.find(c => c.id === id);
-    const used = state.transactions.some(t => t.categoryId === id);
-    if (used) return toast(t('toast.catInUse'));
-    if (!confirmAction(t('confirm.cat', { name: cat.name }))) return;
-    Store.deleteCategory(state, id);
-    toast(t('toast.cat.deleted'));
-    window.dispatchEvent(new Event('store:changed'));
-  }
-
-  // --- Group modal (ISSUE-007) ---------------------------------------
-  // Reuses the category-modal shape: name, colour, icon, order. The
-  // delete path checks for assigned categories first; the refusal message
-  // and count are computed in Dutch at call-time.
-  function openGroupModal(id) {
-    const editing = id ? (state.groups || []).find(g => g.id === id) : null;
-    let cur = editing
-      ? { ...editing }
-      : {
-          name: '',
-          color: '#5a7248',
-          icon: '✦',
-          order: (state.groups?.length || 0) + 1,
-          active: true,
-        };
-
-    const modal = el('div', { class: 'modal' });
-    modal.innerHTML = `
-      <div class="modal-head">
-        <div class="modal-title">${escapeText(t(editing ? 'modal.grp.edit' : 'modal.grp.add'))}</div>
-        <button class="btn-icon" id="m-close" aria-label="${escapeAttr(t('btn.close'))}">${Icons.close}</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-field">
-          <label>${escapeText(t('form.name'))}</label>
-          <input class="input" type="text" id="f-name" placeholder="${escapeAttr(t('form.name.ph.cat'))}" value="${escapeAttr(cur.name)}"/>
-        </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label>${escapeText(t('form.color'))}</label>
-            <div class="color-picker">
-              <input type="color" id="f-color" value="${cur.color}"/>
-              <input class="input" type="text" id="f-color-text" value="${cur.color}" style="flex:1"/>
-            </div>
-          </div>
-          <div class="form-field">
-            <label>${escapeText(t('form.icon'))}</label>
-            <input class="input" type="text" id="f-icon" maxlength="2" value="${escapeAttr(cur.icon || '✦')}"/>
-          </div>
-        </div>
-        <div class="form-field">
-          <label>${escapeText(t('form.order'))}</label>
-          <input class="input" type="number" id="f-order" min="1" step="1" value="${cur.order}"/>
-        </div>
-      </div>
-      <div class="modal-foot">
-        <div style="flex:1"></div>
-        <button class="btn btn-ghost" id="m-cancel">${escapeText(t('btn.cancel'))}</button>
-        <button class="btn btn-primary" id="m-save">${escapeText(t(editing ? 'btn.saveChanges' : 'btn.add'))}</button>
-      </div>
-    `;
-
-    modal.querySelector('#m-close').onclick = closeModal;
-    modal.querySelector('#m-cancel').onclick = closeModal;
-    modal.querySelector('#f-name').oninput = e => cur.name = e.target.value;
-    modal.querySelector('#f-color').oninput = e => { cur.color = e.target.value; modal.querySelector('#f-color-text').value = e.target.value; };
-    modal.querySelector('#f-color-text').oninput = e => { cur.color = e.target.value; modal.querySelector('#f-color').value = e.target.value; };
-    modal.querySelector('#f-icon').oninput = e => cur.icon = e.target.value;
-    modal.querySelector('#f-order').oninput = e => cur.order = Number(e.target.value) || 1;
-    modal.querySelector('#m-save').onclick = () => {
-      if (!cur.name.trim()) return toast(t('toast.nameRequired'));
-      if (editing) { Store.updateGroup(state, editing.id, cur); toast(t('toast.grp.updated')); }
-      else         { Store.addGroup(state, cur); toast(t('toast.grp.added')); }
-      closeModal();
-      window.dispatchEvent(new Event('store:changed'));
-    };
-    openModal(modal);
-  }
-
-  // Deleting a group refuses when any category still references it; the
-  // refusal message names the count in Dutch and leaves state untouched.
-  function deleteGroup(id) {
-    const grp = (state.groups || []).find(g => g.id === id);
-    if (!grp) return;
-    const refs = state.categories.filter(c => c.groupId === id).length;
-    if (refs > 0) {
-      toast(t('grp.delete.inUse', { n: refs }));
-      return;
-    }
-    if (!confirmAction(t('confirm.grp', { name: grp.name }))) return;
-    Store.deleteGroup(state, id);
-    toast(t('toast.grp.deleted'));
-    window.dispatchEvent(new Event('store:changed'));
-  }
-
-  // --- Source modal --------------------------------------------------
-  function openSourceModal(id) {
-    const editing = id ? state.sources.find(s => s.id === id) : null;
-    let cur = editing ? { ...editing } : { name: '', type: 'bank', ownerId: '', active: true };
-
-    const modal = el('div', { class: 'modal' });
-    modal.innerHTML = `
-      <div class="modal-head">
-        <div class="modal-title">${escapeText(t(editing ? 'modal.src.edit' : 'modal.src.add'))}</div>
-        <button class="btn-icon" id="m-close" aria-label="${escapeAttr(t('btn.close'))}">${Icons.close}</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-field">
-          <label>${escapeText(t('form.name'))}</label>
-          <input class="input" type="text" id="f-name" placeholder="${escapeAttr(t('form.name.ph.src'))}" value="${escapeAttr(cur.name)}"/>
-        </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label>${escapeText(t('form.type'))}</label>
-            <select class="select" id="f-type">
-              <option value="bank"     ${cur.type==='bank'?'selected':''}>${escapeText(t('form.bank'))}</option>
-              <option value="cash"     ${cur.type==='cash'?'selected':''}>${escapeText(t('form.cash'))}</option>
-              <option value="savings"  ${cur.type==='savings'?'selected':''}>${escapeText(t('form.savings'))}</option>
-              <option value="other"    ${cur.type==='other'?'selected':''}>${escapeText(t('form.other'))}</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label>${escapeText(t('form.owner'))}</label>
-            <select class="select" id="f-owner">
-              <option value="">${escapeText(t('form.owner.none'))}</option>
-              ${state.users.map(u => `<option value="${u.id}" ${cur.ownerId===u.id?'selected':''}>${escapeText(u.name)}</option>`).join('')}
-            </select>
-          </div>
-        </div>
-        <div class="form-field flex center" style="flex-direction:row; gap:10px;">
-          <div class="toggle ${cur.active ? 'on' : ''}" id="f-active"></div>
-          <div>
-            <div style="font-weight:600;">${cur.active ? escapeText(t('form.active')) : escapeText(t('form.inactive'))}</div>
-            <div class="muted" style="font-size:.8rem;">${escapeText(t('form.active.srcHelp'))}</div>
-          </div>
-        </div>
-      </div>
-      <div class="modal-foot">
-        <div style="flex:1"></div>
-        <button class="btn btn-ghost" id="m-cancel">${escapeText(t('btn.cancel'))}</button>
-        <button class="btn btn-primary" id="m-save">${escapeText(t(editing ? 'btn.saveChanges' : 'btn.add'))}</button>
-      </div>
-    `;
-    modal.querySelector('#m-close').onclick = closeModal;
-    modal.querySelector('#m-cancel').onclick = closeModal;
-    modal.querySelector('#f-name').oninput = e => cur.name = e.target.value;
-    modal.querySelector('#f-type').onchange = e => cur.type = e.target.value;
-    modal.querySelector('#f-owner').onchange = e => cur.ownerId = e.target.value || null;
-    modal.querySelector('#f-active').onclick = () => {
-      cur.active = !cur.active;
-      const tg = modal.querySelector('#f-active');
-      tg.classList.toggle('on', cur.active);
-      tg.nextElementSibling.firstElementChild.textContent = cur.active ? t('form.active') : t('form.inactive');
-    };
-    modal.querySelector('#m-save').onclick = () => {
-      if (!cur.name.trim()) return toast(t('toast.nameRequired'));
-      if (editing) { Store.updateSource(state, editing.id, cur); toast(t('toast.src.updated')); }
-      else         { Store.addSource(state, cur); toast(t('toast.src.added')); }
-      closeModal();
-      window.dispatchEvent(new Event('store:changed'));
-    };
-    openModal(modal);
-  }
-  function deleteSource(id) {
-    const s = state.sources.find(x => x.id === id);
-    const used = state.transactions.some(t => t.sourceId === id);
-    if (used) return toast(t('toast.srcInUse'));
-    if (!confirmAction(t('confirm.src', { name: s.name }))) return;
-    Store.deleteSource(state, id);
-    toast(t('toast.src.deleted'));
-    window.dispatchEvent(new Event('store:changed'));
-  }
-
-  // --- User modal ----------------------------------------------------
-  function openUserModal(id) {
-    const editing = id ? state.users.find(u => u.id === id) : null;
-    let cur = editing ? { ...editing } : { name: '', color: '#5a7248', active: true };
-
-    const modal = el('div', { class: 'modal' });
-    modal.innerHTML = `
-      <div class="modal-head">
-        <div class="modal-title">${escapeText(t(editing ? 'modal.usr.edit' : 'modal.usr.add'))}</div>
-        <button class="btn-icon" id="m-close" aria-label="${escapeAttr(t('btn.close'))}">${Icons.close}</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-field">
-          <label>${escapeText(t('form.name'))}</label>
-          <input class="input" type="text" id="f-name" placeholder="${escapeAttr(t('form.name.ph.usr'))}" value="${escapeAttr(cur.name)}"/>
-        </div>
-        <div class="form-field">
-          <label>${escapeText(t('form.color'))}</label>
-          <div class="color-picker">
-            <input type="color" id="f-color" value="${cur.color}"/>
-            <input class="input" type="text" id="f-color-text" value="${cur.color}" style="flex:1"/>
-          </div>
-        </div>
-        <div class="form-field flex center" style="flex-direction:row; gap:10px;">
-          <div class="toggle ${cur.active ? 'on' : ''}" id="f-active"></div>
-          <div>
-            <div style="font-weight:600;">${cur.active ? escapeText(t('form.active')) : escapeText(t('form.inactive'))}</div>
-            <div class="muted" style="font-size:.8rem;">${escapeText(t('form.active.usrHelp'))}</div>
-          </div>
-        </div>
-      </div>
-      <div class="modal-foot">
-        <div style="flex:1"></div>
-        <button class="btn btn-ghost" id="m-cancel">${escapeText(t('btn.cancel'))}</button>
-        <button class="btn btn-primary" id="m-save">${escapeText(t(editing ? 'btn.saveChanges' : 'btn.add'))}</button>
-      </div>
-    `;
-    modal.querySelector('#m-close').onclick = closeModal;
-    modal.querySelector('#m-cancel').onclick = closeModal;
-    modal.querySelector('#f-name').oninput = e => cur.name = e.target.value;
-    modal.querySelector('#f-color').oninput = e => { cur.color = e.target.value; modal.querySelector('#f-color-text').value = e.target.value; };
-    modal.querySelector('#f-color-text').oninput = e => { cur.color = e.target.value; modal.querySelector('#f-color').value = e.target.value; };
-    modal.querySelector('#f-active').onclick = () => {
-      cur.active = !cur.active;
-      const tg = modal.querySelector('#f-active');
-      tg.classList.toggle('on', cur.active);
-      tg.nextElementSibling.firstElementChild.textContent = cur.active ? t('form.active') : t('form.inactive');
-    };
-    modal.querySelector('#m-save').onclick = () => {
-      if (!cur.name.trim()) return toast(t('toast.nameRequired'));
-      if (editing) { Store.updateUser(state, editing.id, cur); toast(t('toast.usr.updated')); }
-      else         { Store.addUser(state, cur); toast(t('toast.usr.added')); }
-      closeModal();
-      window.dispatchEvent(new Event('store:changed'));
-    };
-    openModal(modal);
-  }
-  function deleteUser(id) {
-    const u = state.users.find(x => x.id === id);
-    const used = state.transactions.some(t => t.paidByUserId === id);
-    if (used) return toast(t('toast.usrInUse'));
-    if (!confirmAction(t('confirm.usr', { name: u.name }))) return;
-    Store.deleteUser(state, id);
-    toast(t('toast.usr.deleted'));
-    window.dispatchEvent(new Event('store:changed'));
+    window.Modals.importConfirm(result.data);
   }
 
   // ===================================================================
@@ -2438,6 +1609,6 @@ const App = (() => {
   function escapeAttr(s) { return String(s ?? '').replace(/"/g, '&quot;'); }
   function escapeText(s) { return String(s ?? '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
-  return { init, get _state() { return state; } };
+  return { init, get _state() { return state; }, bulkUpdatePayeeCategory };
 })();
 window.App = App;

@@ -180,7 +180,7 @@ const Strings = {
     'grp.add':                     'Groep toevoegen',
     'grp.edit.title':              'Bewerken',
     'grp.delete.title':            'Verwijderen',
-    'grp.delete.inUse':            'Deze groep wordt nog gebruikt door {n} categorie{en} en kan niet worden verwijderd.',
+    'grp.delete.inUse':            'Deze groep wordt nog gebruikt door {n} categorie{s} en kan niet worden verwijderd.',
     'grp.uncategorized':           'Overige categorieën',
 
     // ---- Sources page -----------------------------------------------
@@ -381,11 +381,17 @@ function t(key, params) {
       // {k} and {k} substitutes; {s} is the special plural marker.
       s = s.split('{' + k + '}').join(String(v));
     }
-    // Plural helper: 's' → 'en' when count != 1.
+    // Plural helper: pick the right Dutch plural suffix based on the
+    // letter immediately preceding the {s} marker. Vowels take 's'
+    // (transactie → transacties), consonants take 'en' (boek → boeken).
     if (params.n != null) {
-      s = s.split('{s}').join(params.n === 1 ? '' : 'en');
+      s = s.replace(/(\w)\{s\}/g, (_, prev) => prev + (params.n === 1 ? '' : /[aeiouy]/i.test(prev) ? 's' : 'en'));
+      // {en} is the explicit Dutch plural marker — it expands to 'en'
+      // when the count != 1, else the empty string.
+      s = s.split('{en}').join(params.n === 1 ? '' : 'en');
     } else {
       s = s.split('{s}').join('');
+      s = s.split('{en}').join('');
     }
   }
   return s;

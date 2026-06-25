@@ -16,7 +16,43 @@ const vm = require('vm');
 // true and child elements are not collapsed into text nodes.
 class StubNode {}
 
-function makeEl(tag) {
+// ISSUE-009: tiny CSS-selector matcher supporting the patterns the
+  // production code uses: #id, .class, tag, and space-separated compounds
+  // (descendant). Returns every matching node under `root`.
+  function matchSelector(root, sel) {
+    if (typeof sel !== 'string') return [];
+    const parts = sel.split(/\s+/).filter(Boolean);
+    const matchesPart = (n, part) => {
+      if (part.startsWith('#')) return n.attributes && n.attributes.id === part.slice(1);
+      if (part.startsWith('.')) return n.classList && n.classList._set && n.classList._set.has(part.slice(1));
+      return (n.tagName || '').toLowerCase() === part.toLowerCase();
+    };
+    const results = [];
+    const walk = (n, partIdx) => {
+      if (!isElement(n)) return;
+      // If we're at the last part and this node matches, add it.
+      if (matchesPart(n, parts[partIdx])) {
+        if (partIdx === parts.length - 1) {
+          results.push(n);
+        } else {
+          // Continue deeper from this matching node.
+          for (const c of (n.children || [])) walk(c, partIdx + 1);
+        }
+      }
+      // Always also descend into children to find more matches via
+      // the descendant combinator (e.g. `.modal-head .modal-title`
+      // also matches if modal-title is nested deeper).
+      if (partIdx < parts.length - 1) {
+        for (const c of (n.children || [])) walk(c, partIdx);
+      }
+    };
+    if (parts.length === 1) return findAll(root, n => matchesPart(n, parts[0]));
+    // Multi-part: descend from root's children.
+    for (const c of (root.children || [])) walk(c, 0);
+    return results;
+  }
+
+  function makeEl(tag) {
   const obj = Object.create(StubNode.prototype);
   obj.tagName = (tag || 'div').toUpperCase();
   obj.children = [];
@@ -35,6 +71,22 @@ function makeEl(tag) {
   obj.removeChild = function (c) { this.children = this.children.filter(x => x !== c); };
   obj.remove = function () {};
   obj.click = function () { (this._listeners['click'] || []).forEach(fn => fn({ type: 'click', target: this, currentTarget: this })); };
+  // ISSUE-009: the Modal helper uses element.querySelector('#id') and
+  // compound selectors like '.modal-head .modal-title'. Production
+  // browsers provide these on every Element; mirror them on the stub
+  // so the helper's "find save button" calls and compound lookups work.
+  obj.querySelector = function (sel) {
+    return matchSelector(this, sel)[0] || null;
+  };
+  obj.querySelectorAll = function (sel) {
+    return matchSelector(this, sel);
+  };
+  // ISSUE-009: the innerHTML setter clearing children is correct for
+  // browser behaviour, but production code uses innerHTML to set
+  // modal markup. The Modal helper itself doesn't rely on parsed
+  // children — it sets `html:` on a button via the el() helper, which
+  // goes through setAttribute path. So the existing innerHTML setter
+  // is preserved.
   obj.setAttribute = function (k, v) {
     this.attributes[k] = v;
     if (k === 'id') setIdAttr(this, v);
@@ -42,14 +94,26 @@ function makeEl(tag) {
   };
   obj.getAttribute = function (k) { return this.attributes[k]; };
   obj.addEventListener = function (ev, fn) { (this._listeners[ev] = this._listeners[ev] || []).push(fn); };
+  // ISSUE-009: production inputs read `.value` (a live DOM property, not
+  // an attribute). Mirror it via a getter/setter backed by `attributes.value`
+  // so Modal.create's text/number/textarea/select collect functions work.
+  Object.defineProperty(obj, 'value', {
+    get() { return this.attributes.value || ''; },
+    set(v) { this.attributes.value = v; },
+    configurable: true,
+  });
+  // ISSUE-009: same trick for `checked` so the apply-all checkbox persists.
+  Object.defineProperty(obj, 'checked', {
+    get() { return !!this.attributes.checked; },
+    set(v) { this.attributes.checked = v; },
+    configurable: true,
+  });
   obj.dispatchEvent = function (ev) {
     // Mimic the browser: set target/currentTarget to the dispatching element.
     if (!ev.target) ev.target = this;
     ev.currentTarget = this;
     (this._listeners[ev.type] || []).forEach(fn => fn(ev));
   };
-  obj.querySelector = function () { return null; };
-  obj.querySelectorAll = function () { return []; };
   obj.focus = function () {};
   Object.defineProperty(obj, 'className', {
     set(v) { this.attributes.class = v; this.classList._set = new Set(String(v).split(/\s+/).filter(Boolean)); },
@@ -147,6 +211,7 @@ const documentStub = {
   },
   getElementById: (id) => findById(id),
   addEventListener: () => {},
+  removeEventListener: () => {},
 };
 // Pre-populate #app like the real index.html does, so App.init() finds it.
 setIdAttr(makeEl('div'), 'app');
@@ -216,11 +281,11 @@ ctx.globalThis = ctx;
 let passed = 0, failed = 0;
 function test(name, fn) {
   try { fn(); console.log(`  ✓ ${name}`); passed++; }
-  catch (e) { console.log(`  ✗ ${name}\n      ${e.message}`); failed++; }
+  catch (e) { console.log(`  ✗ ${name}\n      ${e.message}`); if (process.env.DEBUG_TEST) console.log(e.stack); failed++; }
 }
 
 // ---- Load all scripts in order --------------------------------------
-const scripts = ['data.js', 'utils.js', 'icons.js', 'csv.js', 'selectors.js', 'i18n.js', 'backup.js', 'app.js'];
+const scripts = ['data.js', 'utils.js', 'icons.js', 'csv.js', 'selectors.js', 'i18n.js', 'backup.js', 'app.js', 'modals/_helper.js', 'modals/import-preview.js', 'modals/transaction.js', 'modals/category.js', 'modals/group.js', 'modals/source.js', 'modals/user.js', 'modals/import.js', 'modals/import-confirm.js'];
 for (const s of scripts) {
   const code = fs.readFileSync(path.join(__dirname, s), 'utf8');
   vm.runInContext(code, ctx, { filename: s });
@@ -234,6 +299,74 @@ test('Store is on window', () => {
 
 test('Fmt is on window', () => {
   if (!ctx.window.Fmt || typeof ctx.window.Fmt.money !== 'function') throw new Error('no Fmt');
+});
+
+test('ISSUE-009: Modal helper exposes create', () => {
+  if (!ctx.window.Modal || typeof ctx.window.Modal.create !== 'function') {
+    throw new Error('Modal.create is not on window');
+  }
+});
+
+test('ISSUE-009: Modals namespace exposes all 6 opener functions + 5 deletes + importConfirm', () => {
+  const m = ctx.window.Modals;
+  if (!m) throw new Error('Modals not on window');
+  for (const fn of ['transaction', 'category', 'group', 'source', 'user', 'import', 'importConfirm']) {
+    if (typeof m[fn] !== 'function') throw new Error(`Modals.${fn} is not a function`);
+  }
+  for (const fn of ['transactionDelete', 'categoryDelete', 'groupDelete', 'sourceDelete', 'userDelete']) {
+    if (typeof m[fn] !== 'function') throw new Error(`Modals.${fn} is not a function`);
+  }
+});
+
+test('ISSUE-009: Modal.create builds shell + renders fields + collects values', () => {
+  // Clean any leftover modal from a previous test.
+  documentStub.body.children.length = 0;
+  let captured;
+  ctx.window.Modal.create({
+    title: 'Test modal',
+    fields: [
+      { id: 'name', kind: 'text', label: 'Name', value: 'Alice' },
+      { id: 'age', kind: 'number', label: 'Age', value: 30 },
+      { id: 'happy', kind: 'tabs', options: [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }], value: 'yes' },
+    ],
+    onSave: (v) => { captured = v; },
+  });
+  // Shell structure
+  const backdrop = documentStub.body.querySelector('.modal-backdrop') || ctx.window.document.querySelector('.modal-backdrop');
+  if (!backdrop) throw new Error(`no backdrop; body has ${documentStub.body.children.length} children: ${documentStub.body.children.map(c => c.tagName).join(',')}`);
+  if (!backdrop.querySelector('.modal-head .modal-title')) throw new Error('no modal-title');
+  if (!backdrop.querySelector('#m-close')) throw new Error('no close button');
+  if (!backdrop.querySelector('#m-cancel')) throw new Error('no cancel button');
+  if (!backdrop.querySelector('#m-save')) throw new Error('no save button');
+  // Field rendering
+  if (!backdrop.querySelector('#f-name')) throw new Error('no #f-name');
+  if (!backdrop.querySelector('#f-age')) throw new Error('no #f-age');
+  if (!backdrop.querySelector('.tabs')) throw new Error('no tabs');
+  // Save collects values
+  const saveBtn = backdrop.querySelector('#m-save');
+  saveBtn.click();
+  if (!captured) throw new Error('onSave did not run');
+  if (captured.name !== 'Alice') throw new Error(`expected name=Alice, got ${captured.name}`);
+  if (captured.age !== 30) throw new Error(`expected age=30, got ${captured.age}`);
+  if (captured.happy !== 'yes') throw new Error(`expected happy=yes, got ${captured.happy}`);
+});
+
+test('ISSUE-009: Modal.create returns false from onSave to keep modal open', () => {
+  documentStub.body.children.length = 0;
+  let saveCalls = 0;
+  ctx.window.Modal.create({
+    title: 'Validation test',
+    fields: [{ id: 'x', kind: 'text', value: '' }],
+    onSave: () => { saveCalls++; return false; },
+  });
+  const backdrop = documentStub.body.querySelector('.modal-backdrop') || ctx.window.document.querySelector('.modal-backdrop');
+  if (!backdrop) throw new Error('no backdrop after Modal.create');
+  backdrop.querySelector('#m-save').click();
+  if (saveCalls !== 1) throw new Error(`onSave should have run once, ran ${saveCalls}`);
+  if (!documentStub.body.querySelector('.modal-backdrop')) {
+    throw new Error('modal should still be open after onSave returned false');
+  }
+  backdrop.querySelector('#m-cancel').click(); // cleanup
 });
 
 test('Fmt.date always includes the year (no short option that drops it)', () => {
