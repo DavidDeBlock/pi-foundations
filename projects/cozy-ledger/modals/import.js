@@ -1,11 +1,11 @@
 // modals/import.js — CSV import preview + commit (ISSUE-009)
 // Preview table rendering lives in modals/import-preview.js.
 (function () {
-  const { Store, Modal, Icons, CSVImport, App, ImportPreview } = window;
+  const { Store, Modal, Icons, CSVImport, ImportPreview } = window;
   const t = window.t;
 
   function open() {
-    const state = App._state;
+    const state = window.App._state;
     let parsedRows = [];
     const defaults = { userId: state.users[0]?.id || '', sourceId: state.sources[0]?.id || '', scope: 'private' };
     const existingKeys = new Set(state.transactions.map(x => x.importedKey).filter(Boolean));

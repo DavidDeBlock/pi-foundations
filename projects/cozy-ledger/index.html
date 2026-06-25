@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=12" />
+  <link rel="stylesheet" href="styles.css?v=15" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%235a7248'%3E%3Cpath d='M3 10.5 12 3l9 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-4v-6h-7v6h-4A1.5 1.5 0 0 1 3 19.5v-9Z'/%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%23faf7f1'/%3E%3C/svg%3E" />
 </head>
 <body>
@@ -22,23 +22,75 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
   </button>
 
-  <script src="data.js?v=14"></script>
-  <script src="utils.js?v=14"></script>
-  <script src="icons.js?v=14"></script>
-  <script src="csv.js?v=14"></script>
-  <script src="selectors.js?v=14"></script>
-  <script src="i18n.js?v=14"></script>
-  <script src="backup.js?v=14"></script>
-  <script src="app.js?v=14"></script>
-  <script src="modals/_helper.js?v=14"></script>
-  <script src="modals/import-preview.js?v=14"></script>
-  <script src="modals/transaction.js?v=14"></script>
-  <script src="modals/category.js?v=14"></script>
-  <script src="modals/group.js?v=14"></script>
-  <script src="modals/source.js?v=14"></script>
-  <script src="modals/user.js?v=14"></script>
-  <script src="modals/import.js?v=14"></script>
-  <script src="modals/import-confirm.js?v=14"></script>
+  <!--
+    Script load order matters — there's no module system, only the
+    shared `window` namespace. The chain below matches the dependency
+    graph: pure helpers first, then shared infrastructure, then views
+    and modals, then the bootstrap (`app.js`) which references
+    everything.
+      data.js       — seed state + Store + Fmt inputs
+      utils.js      — Fmt, $, el, toast, confirmAction
+      icons.js      — Icons + Deco + Logo (SVGs)
+      csv.js        — CSVImport (regex payee extract lives here)
+      selectors.js  — pure scope / date / payee selectors
+      i18n.js       — t() + Strings.nl
+      backup.js     — Backup.exportJSON/CSV + parseAndValidate + applyImport
+      router.js     — view state + dispatch
+      shell.js      — sidebar + topbar + month picker + scope pills
+      views/_helpers.js — sum/emptyState/escape/bulkUpdatePayeeCategory + …
+      views/dashboard.js
+      views/trends.js
+      views/transactions.js
+      views/categories.js
+      views/sources.js
+      views/users.js
+      views/payees.js
+      views/settings.js
+      charts/_helpers.js — chart palette + colorForSource
+      charts/monthly-flow.js
+      charts/balance-trajectory.js
+      modals/_helper.js   — Modal.create() (used by all opener files)
+      modals/import-preview.js  — pure CSV preview rendering
+      modals/transaction.js
+      modals/category.js
+      modals/group.js
+      modals/source.js
+      modals/user.js
+      modals/import.js
+      modals/import-confirm.js
+      app.js        — bootstrap: init() + bindGlobal()
+  -->
+  <script src="data.js?v=15"></script>
+  <script src="utils.js?v=15"></script>
+  <script src="icons.js?v=15"></script>
+  <script src="csv.js?v=15"></script>
+  <script src="selectors.js?v=15"></script>
+  <script src="i18n.js?v=15"></script>
+  <script src="backup.js?v=15"></script>
+  <script src="router.js?v=15"></script>
+  <script src="shell.js?v=15"></script>
+  <script src="views/_helpers.js?v=15"></script>
+  <script src="views/dashboard.js?v=15"></script>
+  <script src="views/trends.js?v=15"></script>
+  <script src="views/transactions.js?v=15"></script>
+  <script src="views/categories.js?v=15"></script>
+  <script src="views/sources.js?v=15"></script>
+  <script src="views/users.js?v=15"></script>
+  <script src="views/payees.js?v=15"></script>
+  <script src="views/settings.js?v=15"></script>
+  <script src="charts/_helpers.js?v=15"></script>
+  <script src="charts/monthly-flow.js?v=15"></script>
+  <script src="charts/balance-trajectory.js?v=15"></script>
+  <script src="modals/_helper.js?v=15"></script>
+  <script src="modals/import-preview.js?v=15"></script>
+  <script src="modals/transaction.js?v=15"></script>
+  <script src="modals/category.js?v=15"></script>
+  <script src="modals/group.js?v=15"></script>
+  <script src="modals/source.js?v=15"></script>
+  <script src="modals/user.js?v=15"></script>
+  <script src="modals/import.js?v=15"></script>
+  <script src="modals/import-confirm.js?v=15"></script>
+  <script src="app.js?v=15"></script>
   <script>
     // Inject decorative SVGs (kept here so icons.js isn't tangled with HTML)
     (function injectDeco() {

@@ -2,7 +2,7 @@
 // Shows record counts from a parsed backup, a warning, and a
 // destructive "Replace" button. Triggered by the Settings import flow.
 (function () {
-  const { Backup, Store, App, Modal } = window;
+  const { Backup, Store, Modal } = window;
   const t = window.t;
   const Fmt = window.Fmt;
 
@@ -50,7 +50,7 @@
       replace.id = 'imp-replace';
       replace.textContent = t('btn.replace');
       replace.onclick = () => {
-        const err = Backup.applyImport(App._state, parsed, Store.save);
+        const err = Backup.applyImport(window.App._state, parsed, Store.save);
         document.querySelector('.modal-backdrop').remove();
         if (err) { window.toast(err.error); return; }
         window.dispatchEvent(new Event('store:changed'));

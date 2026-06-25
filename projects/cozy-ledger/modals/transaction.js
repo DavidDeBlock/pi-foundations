@@ -1,11 +1,11 @@
 // modals/transaction.js — Add / edit / delete a transaction (ISSUE-009)
 (function () {
-  const { Store, Selectors, Modal, Icons, Fmt, CSVImport, App } = window;
+  const { Store, Selectors, Modal, Icons, Fmt, CSVImport } = window;
   const t = window.t;
   const extractPayee = CSVImport.extractPayee;
 
   function open(id) {
-    const state = App._state;
+    const state = window.App._state;
     const isEdit = !!id;
     const editing = isEdit ? state.transactions.find(x => x.id === id) : null;
     const u0 = state.users[0]?.id || '', s0 = state.sources[0]?.id || '';
@@ -56,11 +56,11 @@
         if (!v.categoryId) return window.toast(t('toast.catRequired')), false;
         if (!v.paidByUserId) return window.toast(t('toast.userRequired')), false;
         if (!v.sourceId) return window.toast(t('toast.sourceRequired')), false;
-        const s = App._state;
+        const s = window.App._state;
         if (isEdit) { Store.updateTransaction(s, id, v); window.toast(t('toast.txn.updated')); }
         else        { Store.addTransaction(s, v);     window.toast(t('toast.txn.added')); }
         const propagated = (isEdit && v.applyAll)
-          ? App.bulkUpdatePayeeCategory(extractPayee(v.description), v.categoryId) : 0;
+          ? window.App.bulkUpdatePayeeCategory(extractPayee(v.description), v.categoryId) : 0;
         if (propagated === 0) window.dispatchEvent(new Event('store:changed'));
       },
       onDelete: isEdit ? () => deleteOne(id) : null,
@@ -69,7 +69,7 @@
 
   function deleteOne(id) {
     if (!window.confirmAction(t('confirm.txn'))) return;
-    Store.deleteTransaction(App._state, id);
+    Store.deleteTransaction(window.App._state, id);
     window.toast(t('toast.txn.deleted'));
     window.dispatchEvent(new Event('store:changed'));
   }
