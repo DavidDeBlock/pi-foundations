@@ -118,3 +118,58 @@ The two graphs in the trend step are not showing correctly. For example, in the 
 4.I think every day for a short period of time. 
 5.Cat is her favorite animal. 
 
+All the issues and the one PRD are implemented. 
+I want to take a look at several things:
+1. I want an easier way to link categories to the bank transactions. For example, we have the payees tab, which is a good one. This is a list of distinct payees, and I can select a category for them, so that is good, but it has some issues. When I already selected the category for certain payments, then I want it to check it and apply the same category for all the same transactions. If I am on the transaction tab or on the dashboard app and I see a transaction, then I can add a category. If there are multiple transactions of the same payee, then it also has to apply the category to those as well. A better category system is the thing I want the most.
+2. I need a way to export all our data we have so far and then import it again. Basically, a backup system is what we need. Currently, we don't use a database. We are using local storage, which is fine for me, but we need to be able to persist the data in a different way, so importing and exporting would be nice.
+
+3. the categories should also be mentioned in Dutch, and frankly, the whole UI should be in Dutch, because the code and everything, and the way we communicate with each other, will stay English, but the frontend will be better if it is in Dutch. The categories are now only one-level categories, which is fine, but I think it's more handy if we have subcategories as well. This will add a little bit more detail to the transactions, so that's also a thing I want.
+
+4. Then it's good to have a monthly overview, and we have that in the dashboard. As a fourth point, I want some sort of reports to see at a glance what we spent on certain categories over a year and what it costs over a year. Let's say electricity or groceries. We can see an evolution if we spent a certain tier more or less, so that would also be a nice addition. 
+
+
+
+
+### 1. Payee → category propagation                              
+                                                                  
+ Existing: payees-tab bulk dropdown works.                        
+ Gap: inline edit on txn list / dashboard should offer "apply to  
+ all X transactions of this payee".                               
+ Open decisions:
+ - Prompt every time? Or a "remember my choice" toggle? Remember my choice      
+ - When the same payee has some transactions already categorised  
+   and others not, do we overwrite the categorised ones, leave    
+   them, or ask? We overwrite 
+ - Do we also persist a payee → default category mapping so       
+   future imports auto-categorise? (Strongly recommend yes —      
+   otherwise we're solving the same problem again at import       
+   time.)  Yes 
+
+
+ ### 2. Export / Import backup   
+
+ Existing: nothing — data lives in localStorage only.             
+ Shape:         
+ - Format: JSON (round-trippable). CSV is lossy for categories,   
+   sources, users, settings.     
+ - Import semantics: replace all (typical backup restore) — but   
+   needs a confirm dialog showing count, and ideally a "dry run"  
+   option.      
+ - Versioned: include a schema version + export date so future    
+   migrations can detect old backups.                             
+   Open decisions:               
+ - Do you also want CSV export for Excel users, or is JSON        
+   enough? Yes include CSV export aswell   
+ - Should "import" also support merging into existing data (e.g.  
+   another household member's file), or strict replace only?  No merging for now, replace the existing data     
+
+
+ ### 3. Dutch UI + subcategories 
+
+Let's completely get rid of the subcategories. It's fine to have the categories like we have them now, but we just need grouping. That's it. We don't need subcategories or main categories, but we just need grouping, and then we don't have to change anything to transactions. We can use the groupings and charts and everything as well, so just grouping our categories will solve my problem. 
+
+  ### 4. Yearly category reports                                   
+                                                                  
+ No yearly reports for now, i need to think about. 
+
+

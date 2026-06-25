@@ -7,7 +7,7 @@ const App = (() => {
   let state = Store.load();
   let view = 'dashboard';           // current route
   let monthKey = Fmt.currentMonthKey(); // for month-scoped screens
-  let txnFilters = { month: 'all', type: 'all', categoryId: 'all', userId: 'all', sourceId: 'all', scope: 'all', payee: 'all' };
+  let txnFilters = { month: 'all', type: 'all', categoryId: 'all', userId: 'all', sourceId: 'all', scope: 'all', payee: 'all', groupId: 'all' };
   let balanceViewMode = 'sources';  // 'sources' (per-source lines) or 'networth' (single aggregate line)
   let trendRange = '1y';  // '1y' | '2y' | '3y' | 'all' — window for the trends charts
 
@@ -46,24 +46,26 @@ const App = (() => {
       el('div', { class: 'brand' },
         el('div', { class: 'brand-mark', html: Logo }),
         el('div', {},
-          el('div', { class: 'brand-name' }, 'Cozy Ledger'),
-          el('div', { class: 'brand-sub' }, 'Our household notebook'),
+          el('div', { class: 'brand-name' }, t('brand.name')),
+          el('div', { class: 'brand-sub' }, t('brand.tagline')),
         ),
       ),
       el('nav', { class: 'nav' },
-        el('div', { class: 'nav-label' }, 'Overview'),
-        navItem('dashboard',   'Dashboard',     Icons.home),
-        navItem('trends',      'Trends',        Icons.trend),
-        navItem('transactions','Transactions',  Icons.list, txCount),
-        el('div', { class: 'nav-label' }, 'Manage'),
-        navItem('categories',  'Categories',    Icons.tags, state.categories.length),
-        navItem('sources',     'Sources',       Icons.wallet, state.sources.length),
-        navItem('users',       'Users',         Icons.users, state.users.length),
-        navItem('payees',      'Payees',        Icons.store, distinctPayees().filter(p => p.noCategory > 0).length || null),
+        el('div', { class: 'nav-label' }, t('sidebar.label.overview')),
+        navItem('dashboard',   t('nav.dashboard'),    Icons.home),
+        navItem('trends',      t('nav.trends'),       Icons.trend),
+        navItem('transactions',t('nav.transactions'), Icons.list, txCount),
+        el('div', { class: 'nav-label' }, t('sidebar.label.manage')),
+        navItem('categories',  t('nav.categories'),   Icons.tags, state.categories.length),
+        navItem('sources',     t('nav.sources'),      Icons.wallet, state.sources.length),
+        navItem('users',       t('nav.users'),        Icons.users, state.users.length),
+        navItem('payees',      t('nav.payees'),       Icons.store, distinctPayees().filter(p => p.noCategory > 0).length || null),
+        el('div', { class: 'nav-label' }, t('sidebar.label.backup')),
+        navItem('settings',    t('nav.settings'),     Icons.settings),
       ),
       el('div', { class: 'sidebar-foot' },
-        el('strong', {}, 'Phase 1'),
-        'Manual tracking. Phase 2 will add recurring items, budgets, CSV import/export and a monthly PDF report.'),
+        el('strong', {}, t('sidebar.foot.title')),
+        t('sidebar.foot.body')),
     );
   }
 
@@ -77,10 +79,10 @@ const App = (() => {
       el('div', { class: 'flex center gap-8' },
         el('div', { class: 'month-picker', id: 'month-picker' }),
         el('div', { class: 'scope-pills', id: 'scope-pills' }),
-        el('button', { class: 'btn btn-ghost', onclick: openImportModal, id: 'import-btn', title: 'Import ING Belgium CSV' },
-          el('span', { html: Icons.upload }), 'Import'),
+        el('button', { class: 'btn btn-ghost', onclick: openImportModal, id: 'import-btn', title: t('topbar.import.title') },
+          el('span', { html: Icons.upload }), t('topbar.import')),
         el('button', { class: 'btn btn-primary', onclick: openAddTransaction, id: 'add-txn-btn' },
-          el('span', { html: Icons.plus }), 'Add transaction'),
+          el('span', { html: Icons.plus }), t('topbar.add')),
       ),
     );
   }
@@ -92,25 +94,25 @@ const App = (() => {
     host.innerHTML = '';
     const current = state.settings && state.settings.scope;
     const opts = [
-      { id: 'private', label: 'Private' },
-      { id: 'shared',  label: 'Shared' },
-      { id: 'all',     label: 'All' },
+      { id: 'private', label: t('scope.private.label'), title: t('scope.private.title') },
+      { id: 'shared',  label: t('scope.shared.label'),  title: t('scope.shared.title') },
+      { id: 'all',     label: t('scope.all.label'),     title: t('scope.all.title') },
     ];
     for (const o of opts) {
       const active = current === o.id;
       host.appendChild(el('button', {
         class: 'scope-pill' + (active ? ' active' : ''),
         'data-scope': o.id,
-        title: scopeTitle(o.id),
+        title: o.title,
         onclick: () => setScope(o.id),
       }, o.label));
     }
   }
 
   function scopeTitle(id) {
-    if (id === 'private') return 'Your own accounts only';
-    if (id === 'shared')  return 'Household / shared accounts only';
-    return 'Every account';
+    if (id === 'private') return t('scope.private.title');
+    if (id === 'shared')  return t('scope.shared.title');
+    return t('scope.all.title');
   }
 
   function setScope(id) {
@@ -144,13 +146,14 @@ const App = (() => {
 
     // Update page title/sub
     const titles = {
-      dashboard:    ['Cozy <em>overview</em>',     'Where the money went this month.'],
-      trends:       ['Money <em>trends</em>',       'Multi-month view: balance, income vs expenses, top categories.'],
-      transactions: ['All <em>transactions</em>',  'Filter, search, edit and review everything.'],
-      categories:   ['<em>Categories</em>',        'Give every euro a clear home.'],
-      sources:      ['Sources & <em>wallets</em>', 'Bank accounts, cash and savings.'],
-      users:        ['<em>Users</em>',             'The people sharing this notebook.'],
-      payees:       ['<em>Payees</em>',            'Everyone you have paid — sort by what still needs a category.'],
+      dashboard:    [t('page.dashboard.title'),    t('page.dashboard.sub')],
+      trends:       [t('page.trends.title'),       t('page.trends.sub')],
+      transactions: [t('page.transactions.title'), t('page.transactions.sub')],
+      categories:   [t('page.categories.title'),   t('page.categories.sub')],
+      sources:      [t('page.sources.title'),      t('page.sources.sub')],
+      users:        [t('page.users.title'),        t('page.users.sub')],
+      payees:       [t('page.payees.title'),       t('page.payees.sub')],
+      settings:     [t('page.settings.title'),     t('page.settings.sub')],
     };
     $('#page-title').innerHTML = titles[view][0];
     $('#page-sub').textContent = titles[view][1];
@@ -166,7 +169,7 @@ const App = (() => {
     renderScopeSelector($('#scope-pills'));
 
     const at = $('#add-txn-btn');
-    at.style.display = (view === 'categories' || view === 'sources' || view === 'users') ? 'none' : 'inline-flex';
+    at.style.display = (view === 'categories' || view === 'sources' || view === 'users' || view === 'settings') ? 'none' : 'inline-flex';
 
     if (view === 'dashboard') view_.appendChild(renderDashboard());
     else if (view === 'trends') view_.appendChild(renderTrends());
@@ -175,15 +178,16 @@ const App = (() => {
     else if (view === 'sources') view_.appendChild(renderSources());
     else if (view === 'users') view_.appendChild(renderUsers());
     else if (view === 'payees') view_.appendChild(renderPayees());
+    else if (view === 'settings') view_.appendChild(renderSettings());
   }
 
   // ---- Month picker -------------------------------------------------
   function renderMonthPicker(host) {
     host.innerHTML = '';
     const label = Fmt.monthLabel(monthKey);
-    host.appendChild(el('button', { title: 'Previous month', onclick: () => { monthKey = Fmt.shiftMonth(monthKey, -1); renderView(); }, html: Icons.chevLeft }));
+    host.appendChild(el('button', { title: t('month.prev'), onclick: () => { monthKey = Fmt.shiftMonth(monthKey, -1); renderView(); }, html: Icons.chevLeft }));
     host.appendChild(el('div', { class: 'mp-label' }, label));
-    host.appendChild(el('button', { title: 'Next month', onclick: () => { monthKey = Fmt.shiftMonth(monthKey, 1); renderView(); }, html: Icons.chevRight }));
+    host.appendChild(el('button', { title: t('month.next'), onclick: () => { monthKey = Fmt.shiftMonth(monthKey, 1); renderView(); }, html: Icons.chevRight }));
   }
 
   // ---- Sidebar (mobile) --------------------------------------------
@@ -220,20 +224,28 @@ const App = (() => {
       );
 
     const balanceClass = balance > 0 ? 'pos' : (balance < 0 ? 'neg' : 'zero');
-    const sIncome  = sCard('income',  'Income',     Fmt.money(totalIncome),  `${countTxns(txns, 'income')} entries`, Icons.arrowDown);
-    const sExpense = sCard('expense', 'Expenses',   Fmt.money(totalExpense), `${countTxns(txns, 'expense')} entries`, Icons.arrowUp);
-    const sBalance = sCard('balance', 'Balance',    Fmt.money(balance),      balance > 0 ? 'You saved this month' : (balance < 0 ? 'You spent more than earned' : 'Break even this month'), Icons.piggy, balanceClass);
-    const sShared  = sCard('shared',  'Shared / Private', `${Fmt.money(sharedExp)} / ${Fmt.money(privateExp)}`, 'Shared vs private expenses', Icons.globe);
+    const byGroup = !!(state.settings && state.settings.dashboardByGroup);
+    const sIncome  = sCard('income',  t('dashboard.card.income.label'),    Fmt.money(totalIncome),  t('dashboard.card.income.entries',  { n: countTxns(txns, 'income')  }), Icons.arrowDown);
+    const sExpense = sCard('expense', t('dashboard.card.expense.label'),   Fmt.money(totalExpense), t('dashboard.card.expense.entries', { n: countTxns(txns, 'expense') }), Icons.arrowUp);
+    const sBalance = sCard('balance', t('dashboard.card.balance.label'),   Fmt.money(balance),
+      balance > 0 ? t('dashboard.card.balance.pos') : (balance < 0 ? t('dashboard.card.balance.neg') : t('dashboard.card.balance.zero')),
+      Icons.piggy, balanceClass);
+    const sShared  = sCard('shared',  t('dashboard.card.shared.label'),    `${Fmt.money(sharedExp)} / ${Fmt.money(privateExp)}`, t('dashboard.card.shared.foot'), Icons.globe);
 
     const summary = el('div', { class: 'summary-grid' }, sIncome, sExpense, sBalance, sShared);
     wrap.appendChild(summary);
 
     // Donut — given its own full-width row so it has visual room to breathe.
+    // ISSUE-007: when the dashboardByGroup toggle is on, the donut
+    // segments roll up at the group level rather than per category.
+    const donutRows = byGroup
+      ? topGroups(txns).map(({ grp, amount }) => ({ cat: { name: grp.name, color: grp.color, icon: grp.icon }, amount }))
+      : topCats;
     const donutCard = el('div', { class: 'card donut-card' },
       el('div', { class: 'card-head' },
         el('div', { class: 'card-title', html: Icons.coffee }),
-        'Spending share'),
-      topCats.length ? renderDonut(topCats, totalExpense) : emptyState('Nothing to plot yet', 'Log a few expenses to see the picture.'),
+        t('dashboard.donut.title')),
+      donutRows.length ? renderDonut(donutRows, totalExpense) : emptyState(t('dashboard.donut.empty.title'), t('dashboard.donut.empty.msg')),
     );
     wrap.appendChild(donutCard);
 
@@ -241,11 +253,11 @@ const App = (() => {
     const recentCard = el('div', { class: 'card recent-list' },
       el('div', { class: 'card-head' },
         el('div', { class: 'card-title', html: Icons.list }),
-        'Recent transactions',
-        el('button', { class: 'btn btn-ghost btn-sm', onclick: () => goTo('transactions') }, 'View all →')),
+        t('dashboard.recent.title'),
+        el('button', { class: 'btn btn-ghost btn-sm', onclick: () => goTo('transactions') }, t('dashboard.recent.viewAll'))),
       recent.length
         ? renderTxnTable(recent, { compact: true })
-        : emptyState('No transactions this month', 'Tap the + button to add your first one.'),
+        : emptyState(t('dashboard.recent.empty.title'), t('dashboard.recent.empty.msg')),
     );
     wrap.appendChild(recentCard);
 
@@ -266,17 +278,76 @@ const App = (() => {
       .slice(0, 6);
   }
 
+  // Top 6 expense groups (ISSUE-007). Aggregates the same transactions
+  // by the groupId of each transaction's category. Categories without
+  // a groupId collapse into a synthetic "__none__" group rendered with
+  // a sand-coloured fallback so the chart stays meaningful.
+  function topGroups(txns) {
+    const exp = txns.filter(t => t.type === 'expense');
+    const byGroup = new Map();
+    const cats = state.categories || [];
+    const groups = (state.groups || []).sort((a, b) => (a.order || 0) - (b.order || 0));
+    const groupById = Object.create(null);
+    for (const g of groups) groupById[g.id] = g;
+    for (const t of exp) {
+      const cat = cats.find(c => c.id === t.categoryId);
+      const gid = cat && cat.groupId ? cat.groupId : '__none__';
+      byGroup.set(gid, (byGroup.get(gid) || 0) + t.amount);
+    }
+    const rows = [...byGroup.entries()].map(([gid, amount]) => {
+      const grp = groupById[gid] || { id: '__none__', name: t('grp.uncategorized'), color: '#a4926b', icon: '✦' };
+      return { grp: { ...grp }, amount };
+    });
+    return rows.sort((a, b) => b.amount - a.amount).slice(0, 6);
+  }
+
   // The "Top categories this month" card. Reused on both views.
+  // ISSUE-007: when settings.dashboardByGroup is true, the card rolls
+  // up at the group level instead. The toggle lives in the card head.
   function renderTopCategoriesCard(txns, totalExpense) {
-    const topCats = topCategories(txns, totalExpense);
+    const byGroup = !!(state.settings && state.settings.dashboardByGroup);
+    const onToggle = () => {
+      Store.setDashboardByGroup(state, !byGroup);
+      renderView();
+    };
+    const rows = byGroup ? topGroups(txns) : topCategories(txns, totalExpense);
     return el('div', { class: 'card' },
       el('div', { class: 'card-head' },
         el('div', { class: 'card-title', html: Icons.tags }),
-        'Top categories this month'),
-      topCats.length
-        ? renderCatList(topCats, totalExpense)
-        : emptyState('No expenses yet', 'Once you log one, it shows up here.'),
+        t('dashboard.top.title'),
+        el('button', {
+          class: 'btn btn-ghost btn-sm' + (byGroup ? ' toggle-on' : ''),
+          onclick: onToggle,
+          id: 'dashboard-bygroup-toggle',
+          title: byGroup ? t('dashboard.byGroup.toggle') : t('dashboard.byGroup.toggle'),
+        }, t('dashboard.byGroup.toggle')),
+      ),
+      rows.length
+        ? (byGroup ? renderGroupList(rows, totalExpense) : renderCatList(rows, totalExpense))
+        : emptyState(t('dashboard.top.empty.title'), t('dashboard.top.empty.msg')),
     );
+  }
+
+  // Grouped version of the category list — same shape, but rows hold
+  // a `grp` (group) instead of a `cat`, and the swatch uses the group's
+  // colour + icon.
+  function renderGroupList(items, total) {
+    const list = el('div', { class: 'cat-list' });
+    items.forEach(({ grp, amount }) => {
+      const pct = Fmt.pct(amount, total);
+      const swatch = el('div', { class: 'cat-swatch', style: { background: grp.color } }, grp.icon || '✦');
+      const bar = el('div', { class: 'cat-bar' },
+        el('div', { class: 'cat-bar-fill', style: { width: pct + '%', background: grp.color } }),
+      );
+      list.appendChild(el('div', { class: 'cat-row' },
+        swatch,
+        el('div', { class: 'cat-name' }, grp.name),
+        bar,
+        el('div', { class: 'cat-amount' }, Fmt.money(amount)),
+        el('div', { class: 'cat-pct' }, pct.toFixed(0) + '%'),
+      ));
+    });
+    return list;
   }
 
   // ---- Trends view (ISSUE-004) ---------------------------------------
@@ -329,10 +400,10 @@ const App = (() => {
       return el('div', { class: 'card balance-card', id: 'balance-card' },
         el('div', { class: 'card-head' },
           el('div', { class: 'card-title', html: Icons.piggy }),
-          'Balance over time',
+          t('trends.balance.heading'),
         ),
         el('div', { class: 'balance-empty' },
-          'No sources in the current scope. Switch scope or add a source to begin.'),
+          t('trends.balance.empty')),
       );
     }
 
@@ -344,9 +415,9 @@ const App = (() => {
     return el('div', { class: 'card balance-card', id: 'balance-card' },
       el('div', { class: 'card-head' },
         el('div', { class: 'card-title', html: Icons.piggy }),
-        'Balance over time',
+        t('trends.balance.heading'),
         el('div', { class: 'card-sub' },
-          'Type your current bank balance for each account. History walks backwards from there.'),
+          t('trends.balance.sub')),
         renderViewToggle(),
       ),
       chartHost,
@@ -363,12 +434,12 @@ const App = (() => {
         class: 'vt-pill' + (balanceViewMode === 'sources' ? ' active' : ''),
         'data-mode': 'sources',
         onclick: () => setBalanceViewMode('sources'),
-      }, 'Per source'),
+      }, t('trends.toggle.sources')),
       el('button', {
         class: 'vt-pill' + (balanceViewMode === 'networth' ? ' active' : ''),
         'data-mode': 'networth',
         onclick: () => setBalanceViewMode('networth'),
-      }, 'Net worth'),
+      }, t('trends.toggle.networth')),
     );
   }
   function setBalanceViewMode(mode) {
@@ -405,10 +476,10 @@ const App = (() => {
   }
   function renderRangeButtons() {
     const opts = [
-      { id: '1y',  label: '1 year' },
-      { id: '2y',  label: '2 years' },
-      { id: '3y',  label: '3 years' },
-      { id: 'all', label: 'All' },
+      { id: '1y',  label: t('trends.range.1y')  },
+      { id: '2y',  label: t('trends.range.2y')  },
+      { id: '3y',  label: t('trends.range.3y')  },
+      { id: 'all', label: t('trends.range.all') },
     ];
     return el('div', { class: 'range-buttons' },
       ...opts.map(o => {
@@ -448,9 +519,9 @@ const App = (() => {
     const wrap = el('div', { class: 'chart-section' },
       el('div', { class: 'chart-section-head' },
         el('span', { class: 'chart-section-title' },
-          'Income vs expenses by month',
+          t('trends.section.flow.title'),
           el('span', { class: 'chart-section-sub' },
-            'green = saved that month, red = spent more than earned'),
+            t('trends.section.flow.sub')),
         ),
         renderRangeButtons(),
       ),
@@ -461,7 +532,7 @@ const App = (() => {
     const hasAnyActivity = months.some(m => m.income !== 0 || m.expense !== 0);
     if (!hasAnyActivity) {
       wrap.appendChild(el('div', { class: 'balance-empty' },
-        'No transactions yet. Once you log a few, you’ll see which months saved (green) vs spent (red).'));
+        t('trends.balance.noActivity')));
       return wrap;
     }
 
@@ -565,7 +636,9 @@ const App = (() => {
       if (!m) { tooltip.style.display = 'none'; return; }
       const sign = m.net >= 0 ? '+' : '\u2212';
       const signClass = m.net >= 0 ? 'hb-pos' : 'hb-neg';
-      const verb = m.net >= 0 ? 'saved' : 'spent';
+      const verb = m.net >= 0 ? t('trends.tooltip.saved') : t('trends.tooltip.spent');
+      const inTxt = t('trends.tooltip.in');
+      const outTxt = t('trends.tooltip.out');
       const detail = isNetWorth ? '' :
         Object.entries(m.perSource)
           .filter(([, v]) => v)
@@ -575,8 +648,8 @@ const App = (() => {
           }).join('');
       tooltip.innerHTML =
         `<span class="bc-tt-name">${escapeText(Fmt.monthLabel(m.month))}</span>` +
-        `<span class="bc-tt-date">${escapeText(Fmt.money(m.income))} in \u00b7 ${escapeText(Fmt.money(m.expense))} out</span>` +
-        `<span class="bc-tt-bal ${signClass}">${verb} ${sign}${escapeText(Fmt.money(Math.abs(m.net)))}</span>` +
+        `<span class="bc-tt-date">${escapeText(Fmt.money(m.income))} ${escapeText(inTxt)} \u00b7 ${escapeText(Fmt.money(m.expense))} ${escapeText(outTxt)}</span>` +
+        `<span class="bc-tt-bal ${signClass}">${escapeText(verb)} ${sign}${escapeText(Fmt.money(Math.abs(m.net)))}</span>` +
         (detail ? `<span class="bc-tt-detail">${detail}</span>` : '');
       tooltip.style.display = 'flex';
       tooltip.style.left = (xToPx(col) / CHART_W * 100) + '%';
@@ -598,11 +671,11 @@ const App = (() => {
     const wrap = el('div', { class: 'chart-section' },
       el('div', { class: 'chart-section-head' },
         el('span', { class: 'chart-section-title' },
-          isNetWorth ? 'Net worth trajectory' : 'Balance trajectory per source',
+          isNetWorth ? t('trends.section.traj.title.nw') : t('trends.section.traj.title.src'),
           el('span', { class: 'chart-section-sub' },
             isNetWorth
-              ? 'walks back from the total of your typed balances \u2014 see if you had more in the past'
-              : 'walks back from each source\u2019s typed balance \u2014 line above today\u2019s value = had more'),
+              ? t('trends.section.traj.sub.nw')
+              : t('trends.section.traj.sub.src')),
         ),
         renderRangeButtons(),
       ),
@@ -613,10 +686,10 @@ const App = (() => {
       const pts = Selectors.monthlyNetWorth(state, trendMonths);
       if (!pts.length) {
         wrap.appendChild(el('div', { class: 'balance-empty' },
-          'No sources to chart. Add or enable a source to see your balance trajectory.'));
+          t('trends.balance.noSources')));
         return wrap;
       }
-      series = [{ id: '__networth__', name: 'Net worth', color: NW_COLOR, points: pts, today: pts[pts.length - 1].balance }];
+      series = [{ id: '__networth__', name: t('trends.toggle.networth'), color: NW_COLOR, points: pts, today: pts[pts.length - 1].balance }];
     } else {
       series = sources.map(src => {
         const points = Selectors.monthlyBalance(state, src.id, trendMonths);
@@ -635,7 +708,7 @@ const App = (() => {
       }).filter(s => s.points.length);
       if (!series.length) {
         wrap.appendChild(el('div', { class: 'balance-empty' },
-          'No transactions in the last 12 months. Log some to see your balance trajectory.'));
+          t('trends.balance.noTxns12')));
         return wrap;
       }
     }
@@ -722,7 +795,7 @@ const App = (() => {
         x: todayX, y: y - 4,
         'text-anchor': 'end', class: 'bc-ref-label',
         fill: s.color,
-      }, isFlat ? `${escapeText(s.name)} \u00b7 ${Fmt.moneyShort(s.today)}` : `today ${Fmt.moneyShort(s.today)}`));
+      }, isFlat ? `${escapeText(s.name)} \u00b7 ${Fmt.moneyShort(s.today)}` : `${t('trends.balance.today')} ${Fmt.moneyShort(s.today)}`));
     }
 
     // Smooth polylines (straight segments connecting points; the
@@ -782,7 +855,7 @@ const App = (() => {
       if (!best) { tooltip.style.display = 'none'; return; }
       tooltip.innerHTML =
         (isNetWorth
-          ? `<span class="bc-tt-name">Net worth</span>`
+          ? `<span class="bc-tt-name">${escapeText(t('trends.toggle.networth'))}</span>`
           : `<span class="bc-tt-dot" style="background:${best.source.color}"></span>` +
             `<span class="bc-tt-name">${escapeText(best.source.name)}</span>`) +
         `<span class="bc-tt-date">${escapeText(Fmt.date(best.point.date, { short: true }))}</span>` +
@@ -846,7 +919,7 @@ const App = (() => {
     // Flash the "saved" hint beside the input.
     const saved = $('#saved-' + sourceId);
     if (saved) {
-      saved.textContent = '✓ saved';
+      saved.textContent = t('trends.balance.saved');
       saved.classList.add('show');
       setTimeout(() => {
         if (saved) { saved.textContent = ''; saved.classList.remove('show'); }
@@ -890,7 +963,7 @@ const App = (() => {
       <div class="donut-center">
         <div>
           <div class="dc-val">${Fmt.money(total)}</div>
-          <div class="dc-lbl">Total</div>
+          <div class="dc-lbl">${escapeText(t('dashboard.donut.center.total'))}</div>
         </div>
       </div>
     </div>`;
@@ -914,7 +987,7 @@ const App = (() => {
     wrap.appendChild(renderFilters());
     const list = filteredTxns();
     if (!list.length) {
-      wrap.appendChild(emptyState('Nothing matches your filters', 'Try clearing some or adding a new transaction.'));
+      wrap.appendChild(emptyState(t('txn.empty.title'), t('txn.empty.msg')));
       return wrap;
     }
     wrap.appendChild(renderTxnTable(list, { compact: false }));
@@ -926,54 +999,66 @@ const App = (() => {
     const cats = state.categories;
     const users = state.users;
     const sources = Selectors.sourcesInScope(state);
+    const groups = state.groups || [];
 
-    f.appendChild(field('Month',
+    f.appendChild(field(t('filter.month'),
       el('select', { class: 'select', onchange: (e) => { txnFilters.month = e.target.value; renderView(); } },
-        option('all', 'All months'),
+        option('all', t('filter.month.all')),
         ...availableMonths().map(m => option(m, Fmt.monthLabel(m), txnFilters.month === m)),
       )));
 
-    f.appendChild(field('Type',
+    f.appendChild(field(t('filter.type'),
       el('select', { class: 'select', onchange: (e) => { txnFilters.type = e.target.value; renderView(); } },
-        option('all', 'All types'),
-        option('income', 'Income', txnFilters.type === 'income'),
-        option('expense', 'Expense', txnFilters.type === 'expense'),
+        option('all', t('filter.type.all')),
+        option('income',  t('filter.type.income'),  txnFilters.type === 'income'),
+        option('expense', t('filter.type.expense'), txnFilters.type === 'expense'),
       )));
 
-    f.appendChild(field('Category',
+    f.appendChild(field(t('filter.category'),
       el('select', { class: 'select', onchange: (e) => { txnFilters.categoryId = e.target.value; renderView(); } },
-        option('all', 'All categories'),
+        option('all', t('filter.category.all')),
         ...cats.map(c => option(c.id, c.name, txnFilters.categoryId === c.id)),
       )));
 
-    f.appendChild(field('User',
+    // ISSUE-007: group filter, sourced from state.groups. Selecting a
+    // group filters to transactions whose category's groupId matches;
+    // selecting "Geen groep" shows transactions whose category has no
+    // groupId (user-added, not yet assigned).
+    f.appendChild(field(t('filter.group'),
+      el('select', { class: 'select', onchange: (e) => { txnFilters.groupId = e.target.value; renderView(); } },
+        option('all', t('filter.group.all')),
+        ...groups.map(g => option(g.id, g.name, txnFilters.groupId === g.id)),
+        option('__none__', t('filter.group.none')),
+      )));
+
+    f.appendChild(field(t('filter.user'),
       el('select', { class: 'select', onchange: (e) => { txnFilters.userId = e.target.value; renderView(); } },
-        option('all', 'All users'),
+        option('all', t('filter.user.all')),
         ...users.map(u => option(u.id, u.name, txnFilters.userId === u.id)),
       )));
 
-    f.appendChild(field('Source',
+    f.appendChild(field(t('filter.source'),
       el('select', { class: 'select', onchange: (e) => { txnFilters.sourceId = e.target.value; renderView(); } },
-        option('all', 'All sources'),
+        option('all', t('filter.source.all')),
         ...sources.map(s => option(s.id, s.name, txnFilters.sourceId === s.id)),
       )));
 
-    f.appendChild(field('Scope',
+    f.appendChild(field(t('filter.scope'),
       el('select', { class: 'select', onchange: (e) => { txnFilters.scope = e.target.value; renderView(); } },
-        option('all', 'All scopes'),
-        option('private', 'Private', txnFilters.scope === 'private'),
-        option('shared', 'Shared', txnFilters.scope === 'shared'),
+        option('all', t('filter.scope.all')),
+        option('private', t('filter.scope.priv'),   txnFilters.scope === 'private'),
+        option('shared',  t('filter.scope.shared'), txnFilters.scope === 'shared'),
       )));
 
     const payees = distinctPayees();
-    f.appendChild(field('Payee',
+    f.appendChild(field(t('filter.payee'),
       el('select', { class: 'select', onchange: (e) => { txnFilters.payee = e.target.value; renderView(); } },
-        option('all', 'All payees'),
+        option('all', t('filter.payee.all')),
         ...payees.map(p => option(p.name, p.name + (p.noCategory ? ` (${p.noCategory} ✱)` : ''), txnFilters.payee === p.name)),
       )));
 
     f.appendChild(el('div', { style: { flex: 1 } }));
-    f.appendChild(el('button', { class: 'btn btn-ghost btn-sm', onclick: () => { txnFilters = { month: 'all', type: 'all', categoryId: 'all', userId: 'all', sourceId: 'all', scope: 'all', payee: 'all' }; renderView(); } }, 'Reset'));
+    f.appendChild(el('button', { class: 'btn btn-ghost btn-sm', onclick: () => { txnFilters = { month: 'all', type: 'all', categoryId: 'all', userId: 'all', sourceId: 'all', scope: 'all', payee: 'all', groupId: 'all' }; renderView(); } }, t('filter.reset')));
 
     return f;
   }
@@ -1021,6 +1106,11 @@ const App = (() => {
   // matches `name`. Empty string clears the category. Operates only on
   // in-scope transactions so the bulk edit never crosses the scope the
   // user is currently looking at.
+  //
+  // ISSUE-005: also writes/clears `state.payeeCategories[name]` so that
+  // future CSV imports of this payee come in pre-categorised. The mapping
+  // is updated even when no in-scope transactions match, so users can
+  // pre-seed a mapping for a payee that has no transactions yet.
   function bulkUpdatePayeeCategory(name, categoryId) {
     let count = 0;
     for (const t of Selectors.transactionsInScope(state)) {
@@ -1028,14 +1118,18 @@ const App = (() => {
       Store.updateTransaction(state, t.id, { categoryId: categoryId });
       count++;
     }
+    Store.setPayeeCategory(state, name, categoryId);
     if (count === 0) return;
-    const label = categoryId ? (state.categories.find(c => c.id === categoryId)?.name || 'category') : 'no category';
-    toast(`Set "${name}" → ${label} on ${count} transaction${count === 1 ? '' : 's'}`);
+    toast(t('toast.payeeSet', { n: count }));
     window.dispatchEvent(new Event('store:changed'));
   }
 
   function filteredTxns() {
     const f = txnFilters;
+    // Pre-compute the groupId for each filter-relevant category once so
+    // the inner loop is a Set lookup rather than a find() per row.
+    const catsById = Object.create(null);
+    for (const c of (state.categories || [])) catsById[c.id] = c;
     // Base set respects the active scope; txnFilters apply on top.
     return [...Selectors.transactionsInScope(state)]
       .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
@@ -1047,6 +1141,15 @@ const App = (() => {
         if (f.sourceId !== 'all' && t.sourceId !== f.sourceId) return false;
         if (f.scope !== 'all' && t.scope !== f.scope) return false;
         if (f.payee !== 'all' && extractPayee(t.description) !== f.payee) return false;
+        if (f.groupId !== 'all' && f.groupId !== undefined) {
+          const cat = catsById[t.categoryId];
+          const catGroupId = cat ? cat.groupId : null;
+          if (f.groupId === '__none__') {
+            if (catGroupId) return false;
+          } else {
+            if (catGroupId !== f.groupId) return false;
+          }
+        }
         return true;
       });
   }
@@ -1055,13 +1158,13 @@ const App = (() => {
     const tbl = el('table', { class: 'txn-table' });
     const thead = el('thead', null,
       el('tr', null,
-        el('th', null, 'Date'),
-        el('th', null, 'Description'),
-        el('th', null, 'Category'),
-        el('th', null, 'User / Source'),
-        el('th', null, 'Scope'),
-        el('th', { class: 'right' }, 'Amount'),
-        el('th', null, ''),
+        el('th', null, t('txn.th.date')),
+        el('th', null, t('txn.th.desc')),
+        el('th', null, t('txn.th.category')),
+        el('th', null, t('txn.th.userSource')),
+        el('th', null, t('txn.th.scope')),
+        el('th', { class: 'right' }, t('txn.th.amount')),
+        el('th', null, t('txn.th.actions')),
       ));
     const tb = el('tbody');
     tbl.appendChild(thead);
@@ -1070,16 +1173,16 @@ const App = (() => {
     return tbl;
   }
 
-  function renderTxnRow(t, compact) {
-    const cat = state.categories.find(c => c.id === t.categoryId);
-    const user = state.users.find(u => u.id === t.paidByUserId);
-    const source = state.sources.find(s => s.id === t.sourceId);
+  function renderTxnRow(txn, compact) {
+    const cat = state.categories.find(c => c.id === txn.categoryId);
+    const user = state.users.find(u => u.id === txn.paidByUserId);
+    const source = state.sources.find(s => s.id === txn.sourceId);
 
     const tr = el('tr', {});
-    tr.appendChild(el('td', { class: 'txn-date' }, Fmt.date(t.date, { short: !compact })));
+    tr.appendChild(el('td', { class: 'txn-date' }, Fmt.date(txn.date, { short: !compact })));
     tr.appendChild(el('td', {},
-      el('div', { class: 'txn-desc', title: t.description || '' }, extractPayee(t.description) || t.description || (cat ? cat.name : '—')),
-      t.notes ? el('div', { class: 'cell-meta' }, t.notes) : null,
+      el('div', { class: 'txn-desc', title: txn.description || '' }, extractPayee(txn.description) || txn.description || (cat ? cat.name : '—')),
+      txn.notes ? el('div', { class: 'cell-meta' }, txn.notes) : null,
     ));
     tr.appendChild(el('td', {},
       cat ? el('div', { class: 'cell-cat' },
@@ -1094,15 +1197,15 @@ const App = (() => {
       el('div', { class: 'cell-meta' }, source ? source.name : ''),
     ));
     tr.appendChild(el('td', {},
-      el('span', { class: 'chip ' + t.scope },
-        el('span', { class: 'chip-dot' }), t.scope[0].toUpperCase() + t.scope.slice(1)),
+      el('span', { class: 'chip ' + txn.scope },
+        el('span', { class: 'chip-dot' }), t('txn.scope.' + txn.scope)),
     ));
-    tr.appendChild(el('td', { class: 'txn-amount ' + (t.type === 'income' ? 'pos' : 'neg') },
-      (t.type === 'income' ? '+ ' : '− ') + Fmt.money(t.amount)));
+    tr.appendChild(el('td', { class: 'txn-amount ' + (txn.type === 'income' ? 'pos' : 'neg') },
+      (txn.type === 'income' ? '+ ' : '− ') + Fmt.money(txn.amount)));
     tr.appendChild(el('td', { class: 'txn-actions' },
       el('div', { class: 'txn-row-actions' },
-        el('button', { class: 'btn-icon', title: 'Edit', onclick: () => openEditTransaction(t.id), html: Icons.edit }),
-        el('button', { class: 'btn-icon btn-danger', title: 'Delete', onclick: () => deleteTransaction(t.id), html: Icons.trash }),
+        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => openEditTransaction(txn.id), html: Icons.edit }),
+        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => deleteTransaction(txn.id), html: Icons.trash }),
       ),
     ));
     return tr;
@@ -1113,41 +1216,119 @@ const App = (() => {
   // ===================================================================
   function renderCategories() {
     const wrap = el('div', {});
-    const head = el('div', { class: 'section-head' },
-      el('div', { class: 'section-label' }, 'Manage'),
-    );
-    const addBtn = el('button', { class: 'btn btn-sage', onclick: () => openCategoryModal() });
-    addBtn.innerHTML = `${Icons.plus} Add category`;
-    head.appendChild(addBtn);
-    wrap.appendChild(head);
 
+    // ---- Groepen section (ISSUE-007) -------------------------------
+    // Sits above the category lists so users see what grouping layer is
+    // available without having to scroll. The card includes a per-group
+    // Edit / Delete affordance that opens the group modal.
+    const groups = state.groups || [];
+    const groupsGrid = el('div', { class: 'entity-grid' });
+    groups.forEach(g => groupsGrid.appendChild(renderGroupCard(g)));
+    const groupsHead = el('div', { class: 'section-head' },
+      el('div', { class: 'section-label' }, t('cat.section.manage')),
+    );
+    const addGrpBtn = el('button', { class: 'btn btn-sage', onclick: () => openGroupModal() });
+    addGrpBtn.innerHTML = `${Icons.plus} ${escapeText(t('grp.add'))}`;
+    groupsHead.appendChild(addGrpBtn);
+    const groupsCard = el('div', { class: 'card', style: { marginBottom: '16px' } },
+      el('div', { class: 'card-head' },
+        el('div', { class: 'card-title' }, t('grp.section.title')),
+        el('div', { class: 'muted', style: { fontSize: '.82rem' } }, t('grp.section.sub'))),
+      groups.length ? groupsGrid : emptyState(t('grp.empty.title'), t('grp.empty.msg')),
+    );
+    wrap.appendChild(groupsHead);
+    wrap.appendChild(groupsCard);
+
+    // ---- Categories sections (now grouped by groupId) ---------------
     const expenses = state.categories.filter(c => c.type === 'expense');
     const incomes = state.categories.filter(c => c.type === 'income');
-    wrap.appendChild(renderCatSection('Expense categories', expenses, 'expense'));
-    wrap.appendChild(renderCatSection('Income categories', incomes, 'income'));
+    wrap.appendChild(renderGroupedCatSection(t('cat.section.expense.title'), expenses, 'expense'));
+    wrap.appendChild(renderGroupedCatSection(t('cat.section.income.title'), incomes, 'income'));
+
+    // Add-category button (kept below the lists for now)
+    const addBtn = el('button', { class: 'btn btn-sage', onclick: () => openCategoryModal(), style: { marginTop: '12px' } });
+    addBtn.innerHTML = `${Icons.plus} ${escapeText(t('cat.add'))}`;
+    wrap.appendChild(addBtn);
+
     return wrap;
   }
-  function renderCatSection(title, cats, type) {
-    const grid = el('div', { class: 'entity-grid' });
-    cats.forEach(c => grid.appendChild(renderCategoryCard(c)));
+
+  // Render a list of categories (expenses or incomes) under their group
+  // headers. Categories without a groupId fall under "Overige categorieën".
+  function renderGroupedCatSection(title, cats, type) {
+    const byGroup = new Map();
+    for (const c of cats) {
+      const key = c.groupId || '__none__';
+      if (!byGroup.has(key)) byGroup.set(key, []);
+      byGroup.get(key).push(c);
+    }
+    const groups = state.groups || [];
+    const sortedGroups = [...groups].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    const content = el('div', {});
+    for (const g of sortedGroups) {
+      const list = byGroup.get(g.id) || [];
+      content.appendChild(el('div', { class: 'cat-group-head' },
+        el('span', { class: 'cat-group-icon', style: { background: g.color } }, g.icon || '✦'),
+        el('span', { class: 'cat-group-name' }, g.name),
+        el('span', { class: 'cat-group-count muted' }, `(${list.length})`),
+      ));
+      const grid = el('div', { class: 'entity-grid' });
+      list.forEach(c => grid.appendChild(renderCategoryCard(c)));
+      content.appendChild(grid);
+    }
+    // Ungrouped bucket (user-added categories without groupId).
+    const ungrouped = byGroup.get('__none__') || [];
+    if (ungrouped.length) {
+      content.appendChild(el('div', { class: 'cat-group-head' },
+        el('span', { class: 'cat-group-icon cat-group-icon-none' }, '✦'),
+        el('span', { class: 'cat-group-name' }, t('grp.uncategorized')),
+        el('span', { class: 'cat-group-count muted' }, `(${ungrouped.length})`),
+      ));
+      const grid = el('div', { class: 'entity-grid' });
+      ungrouped.forEach(c => grid.appendChild(renderCategoryCard(c)));
+      content.appendChild(grid);
+    }
+
     const sec = el('div', { class: 'card', style: { marginBottom: '16px' } },
       el('div', { class: 'card-head' },
         el('div', { class: 'card-title' }, title),
-        el('div', { class: 'muted', style: { fontSize: '.82rem' } }, `${cats.filter(c => c.active).length} active`)),
-      cats.length ? grid : emptyState(`No ${type} categories yet`, 'Add one to start tagging transactions.'),
+        el('div', { class: 'muted', style: { fontSize: '.82rem' } }, `${cats.filter(c => c.active).length} ${t('cat.active')}`)),
+      cats.length ? content : emptyState(t(`cat.section.${type}.empty.title`), t(`cat.section.${type}.empty.msg`)),
     );
     return sec;
   }
+
+  // Backwards-compat alias (kept for any external code that referenced it).
+  const renderCatSection = renderGroupedCatSection;
+
   function renderCategoryCard(c) {
     return el('div', { class: 'entity' + (c.active ? '' : ' inactive') },
       el('div', { class: 'cat-swatch', style: { background: c.color } }, c.icon || '✦'),
       el('div', { style: { flex: 1, minWidth: 0 } },
         el('div', { class: 'e-name', style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, c.name),
-        el('div', { class: 'e-meta' }, c.active ? c.type : 'inactive'),
+        el('div', { class: 'e-meta' }, c.active ? c.type : t('cat.inactive')),
       ),
       el('div', { class: 'e-actions' },
-        el('button', { class: 'btn-icon', title: 'Edit', onclick: () => openCategoryModal(c.id), html: Icons.edit }),
-        el('button', { class: 'btn-icon btn-danger', title: 'Delete', onclick: () => deleteCategory(c.id), html: Icons.trash }),
+        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => openCategoryModal(c.id), html: Icons.edit }),
+        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => deleteCategory(c.id), html: Icons.trash }),
+      ),
+    );
+  }
+
+  // ---- Group card (ISSUE-007) -------------------------------------
+  // Renders a single group in the Groepen grid. Shows the group's icon,
+  // name, color swatch, and an Edit / Delete affordance.
+  function renderGroupCard(g) {
+    return el('div', { class: 'entity' },
+      el('div', { class: 'cat-swatch', style: { background: g.color } }, g.icon || '✦'),
+      el('div', { style: { flex: 1, minWidth: 0 } },
+        el('div', { class: 'e-name', style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, g.name),
+        el('div', { class: 'e-meta' }, `${g.icon || '✦'} · ${t('grp.section.title')}`),
+      ),
+      el('div', { class: 'e-actions' },
+        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => openGroupModal(g.id), html: Icons.edit }),
+        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => deleteGroup(g.id), html: Icons.trash }),
       ),
     );
   }
@@ -1158,10 +1339,10 @@ const App = (() => {
   function renderSources() {
     const wrap = el('div', {});
     const head = el('div', { class: 'section-head' },
-      el('div', { class: 'section-label' }, 'Manage'),
+      el('div', { class: 'section-label' }, t('src.section.manage')),
     );
     const addBtn = el('button', { class: 'btn btn-sage', onclick: () => openSourceModal() });
-    addBtn.innerHTML = `${Icons.plus} Add source`;
+    addBtn.innerHTML = `${Icons.plus} ${escapeText(t('src.add'))}`;
     head.appendChild(addBtn);
     wrap.appendChild(head);
 
@@ -1169,23 +1350,24 @@ const App = (() => {
     state.sources.forEach(s => grid.appendChild(renderSourceCard(s)));
     wrap.appendChild(el('div', { class: 'card' },
       el('div', { class: 'card-head' },
-        el('div', { class: 'card-title' }, 'Wallets & accounts'),
-        el('div', { class: 'muted', style: { fontSize: '.82rem' } }, `${state.sources.filter(s => s.active).length} active`)),
-      state.sources.length ? grid : emptyState('No sources yet', 'Add a bank account, cash or savings to start.'),
+        el('div', { class: 'card-title' }, t('src.card.title')),
+        el('div', { class: 'muted', style: { fontSize: '.82rem' } }, `${state.sources.filter(s => s.active).length} ${t('cat.active')}`)),
+      state.sources.length ? grid : emptyState(t('src.empty.title'), t('src.empty.msg')),
     ));
     return wrap;
   }
   function renderSourceCard(s) {
     const owner = s.ownerId ? state.users.find(u => u.id === s.ownerId) : null;
+    const sharedTxt = s.ownerId ? '' : t('src.meta.shared');
     return el('div', { class: 'entity' + (s.active ? '' : ' inactive') },
       el('div', { class: 'cat-swatch', style: { background: 'var(--beige)', color: 'var(--wood-dark)' }, html: Icons.wallet }),
       el('div', { style: { flex: 1, minWidth: 0 } },
         el('div', { class: 'e-name', style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, s.name),
-        el('div', { class: 'e-meta' }, `${s.type}${owner ? ' · ' + owner.name : ''}${s.active ? '' : ' · inactive'}`),
+        el('div', { class: 'e-meta' }, `${s.type}${owner ? ' · ' + owner.name : (sharedTxt ? ' · ' + sharedTxt : '')}${s.active ? '' : ' · ' + t('cat.inactive')}`),
       ),
       el('div', { class: 'e-actions' },
-        el('button', { class: 'btn-icon', title: 'Edit', onclick: () => openSourceModal(s.id), html: Icons.edit }),
-        el('button', { class: 'btn-icon btn-danger', title: 'Delete', onclick: () => deleteSource(s.id), html: Icons.trash }),
+        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => openSourceModal(s.id), html: Icons.edit }),
+        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => deleteSource(s.id), html: Icons.trash }),
       ),
     );
   }
@@ -1196,10 +1378,10 @@ const App = (() => {
   function renderUsers() {
     const wrap = el('div', {});
     const head = el('div', { class: 'section-head' },
-      el('div', { class: 'section-label' }, 'Manage'),
+      el('div', { class: 'section-label' }, t('usr.section.manage')),
     );
     const addBtn = el('button', { class: 'btn btn-sage', onclick: () => openUserModal() });
-    addBtn.innerHTML = `${Icons.plus} Add user`;
+    addBtn.innerHTML = `${Icons.plus} ${escapeText(t('usr.add'))}`;
     head.appendChild(addBtn);
     wrap.appendChild(head);
 
@@ -1207,9 +1389,9 @@ const App = (() => {
     state.users.forEach(u => grid.appendChild(renderUserCard(u)));
     wrap.appendChild(el('div', { class: 'card' },
       el('div', { class: 'card-head' },
-        el('div', { class: 'card-title' }, 'People in this notebook'),
-        el('div', { class: 'muted', style: { fontSize: '.82rem' } }, `${state.users.filter(u => u.active).length} active`)),
-      state.users.length ? grid : emptyState('No users yet', 'Add at least one person to start logging transactions.'),
+        el('div', { class: 'card-title' }, t('usr.card.title')),
+        el('div', { class: 'muted', style: { fontSize: '.82rem' } }, `${state.users.filter(u => u.active).length} ${t('cat.active')}`)),
+      state.users.length ? grid : emptyState(t('usr.empty.title'), t('usr.empty.msg')),
     ));
     return wrap;
   }
@@ -1221,22 +1403,22 @@ const App = (() => {
     // Summary header
     const summary = el('div', { class: 'summary-grid' },
       el('div', { class: 'summary income' },
-        el('div', { class: 's-label' }, 'Distinct payees'),
+        el('div', { class: 's-label' }, t('payee.card.distinct')),
         el('div', { class: 's-value' }, String(payees.length)),
-        el('div', { class: 's-foot' }, 'After extracting merchant names from descriptions'),
+        el('div', { class: 's-foot' }, t('payee.card.distinct.foot')),
         el('div', { class: 's-icon', html: Icons.store }),
       ),
       el('div', { class: 'summary ' + (needsCount > 0 ? 'expense' : 'income') },
-        el('div', { class: 's-label' }, 'Need categorization'),
+        el('div', { class: 's-label' }, t('payee.card.needs')),
         el('div', { class: 's-value' }, String(needsCount)),
-        el('div', { class: 's-foot' }, needsCount > 0 ? 'Click a payee below to see their transactions' : 'All payees are categorized'),
+        el('div', { class: 's-foot' }, needsCount > 0 ? t('payee.card.needs.foot.has') : t('payee.card.needs.foot.none')),
         el('div', { class: 's-icon', html: Icons.tags }),
       ),
     );
     wrap.appendChild(summary);
 
     if (payees.length === 0) {
-      wrap.appendChild(emptyState('No payees yet', 'Import a statement or add a transaction to get started.'));
+      wrap.appendChild(emptyState(t('payee.empty.title'), t('payee.empty.msg')));
       return wrap;
     }
 
@@ -1246,12 +1428,12 @@ const App = (() => {
     const tbl = el('table', { class: 'txn-table' });
     tbl.innerHTML = `
       <thead><tr>
-        <th>Payee</th>
-        <th class="right">Transactions</th>
-        <th class="right">Need category</th>
-        <th>Last category</th>
-        <th>Last seen</th>
-        <th>Set category for all</th>
+        <th>${escapeText(t('payee.th.payee'))}</th>
+        <th class="right">${escapeText(t('payee.th.count'))}</th>
+        <th class="right">${escapeText(t('payee.th.needCat'))}</th>
+        <th>${escapeText(t('payee.th.lastCat'))}</th>
+        <th>${escapeText(t('payee.th.lastSeen'))}</th>
+        <th>${escapeText(t('payee.th.bulk'))}</th>
       </tr></thead>
       <tbody></tbody>`;
     const tb = tbl.querySelector('tbody');
@@ -1279,15 +1461,15 @@ const App = (() => {
       // Category bulk-assign dropdown
       const select = el('select', {
         class: 'select',
-        title: `Sets the category for all ${p.count} transaction${p.count === 1 ? '' : 's'} of "${p.name}"`,
+        title: t('applyAll.template', { n: p.count, name: p.name }),
         onchange: (e) => {
           const newCat = e.target.value;
           bulkUpdatePayeeCategory(p.name, newCat);
         },
       },
-        option('', '— pick —', !lastCat),
-        catsByType.expense.length ? el('optgroup', { label: 'Expense' }, ...catsByType.expense.map(c => option(c.id, c.name, lastCat && lastCat.id === c.id))) : null,
-        catsByType.income.length ? el('optgroup', { label: 'Income' }, ...catsByType.income.map(c => option(c.id, c.name, lastCat && lastCat.id === c.id))) : null,
+        option('', t('payee.bulk.pick'), !lastCat),
+        catsByType.expense.length ? el('optgroup', { label: t('payee.opt.expense') }, ...catsByType.expense.map(c => option(c.id, c.name, lastCat && lastCat.id === c.id))) : null,
+        catsByType.income.length ? el('optgroup', { label: t('payee.opt.income') }, ...catsByType.income.map(c => option(c.id, c.name, lastCat && lastCat.id === c.id))) : null,
       );
       tr.appendChild(el('td', {}, select));
       tb.appendChild(tr);
@@ -1302,11 +1484,11 @@ const App = (() => {
       el('div', { class: 'cat-swatch', style: { background: u.color }, html: Icons.user }),
       el('div', { style: { flex: 1, minWidth: 0 } },
         el('div', { class: 'e-name', style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, u.name),
-        el('div', { class: 'e-meta' }, u.active ? 'active' : 'inactive'),
+        el('div', { class: 'e-meta' }, u.active ? t('cat.active') : t('cat.inactive')),
       ),
       el('div', { class: 'e-actions' },
-        el('button', { class: 'btn-icon', title: 'Edit', onclick: () => openUserModal(u.id), html: Icons.edit }),
-        el('button', { class: 'btn-icon btn-danger', title: 'Delete', onclick: () => deleteUser(u.id), html: Icons.trash }),
+        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => openUserModal(u.id), html: Icons.edit }),
+        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => deleteUser(u.id), html: Icons.trash }),
       ),
     );
   }
@@ -1326,6 +1508,128 @@ const App = (() => {
     $$('.modal-backdrop').forEach(b => b.remove());
   }
 
+  // ===================================================================
+  // SCREEN: SETTINGS (ISSUE-006 — backup / restore)
+  // ===================================================================
+  function renderSettings() {
+    const wrap = el('div', { class: 'view-settings' });
+
+    // Hidden file input is mounted on document.body so the click→file
+    // picker flow works regardless of where the visible button sits.
+    const fileInput = el('input', {
+      type: 'file', accept: 'application/json,.json',
+      class: 'sr-only-file',
+      onchange: (e) => onImportFileSelected(e.target.files && e.target.files[0]),
+    });
+
+    const card = el('div', { class: 'card' },
+      el('div', { class: 'card-head' },
+        el('div', { class: 'card-title' },
+          el('span', { html: Icons.settings }),
+          ' ' + t('settings.backup.title')),
+        el('div', { class: 'muted', style: { fontSize: '.82rem' } },
+          t('settings.backup.sub')),
+      ),
+      el('div', { class: 'settings-actions' },
+        el('div', { class: 'settings-row' },
+          el('div', {},
+            el('div', { class: 'settings-row-title' }, t('settings.export.json')),
+            el('div', { class: 'hint' }, t('settings.export.json.hint')),
+          ),
+          el('button', { class: 'btn btn-primary', onclick: () => Backup.exportJSON(state), id: 'export-json-btn' },
+            el('span', { html: Icons.download }), ' ' + t('settings.btn.exportJson')),
+        ),
+        el('div', { class: 'settings-row' },
+          el('div', {},
+            el('div', { class: 'settings-row-title' }, t('settings.export.csv')),
+            el('div', { class: 'hint' }, t('settings.export.csv.hint')),
+          ),
+          el('button', { class: 'btn btn-sage', onclick: () => Backup.exportCSV(state), id: 'export-csv-btn' },
+            el('span', { html: Icons.download }), ' ' + t('settings.btn.exportCsv')),
+        ),
+        el('div', { class: 'settings-row' },
+          el('div', {},
+            el('div', { class: 'settings-row-title' }, t('settings.import.json')),
+            el('div', { class: 'hint' }, t('settings.import.json.hint')),
+          ),
+          el('button', { class: 'btn btn-ghost', onclick: () => fileInput.click(), id: 'import-json-btn' },
+            el('span', { html: Icons.upload }), ' ' + t('settings.btn.importJson')),
+        ),
+        fileInput,
+      ),
+    );
+    wrap.appendChild(card);
+    return wrap;
+  }
+
+  // File picker → FileReader → parseAndValidate → dry-run modal.
+  async function onImportFileSelected(file) {
+    if (!file) return;
+    const text = await Backup.readFileText(file);
+    const result = Backup.parseAndValidate(text);
+    if (!result.ok) {
+      toast(result.error);
+      return;
+    }
+    openImportConfirmModal(result.data);
+  }
+
+  // Dry-run modal: shows counts, exportedAt, schemaVersion, Cancel + Replace.
+  function openImportConfirmModal(parsed) {
+    const counts = Backup.countRecords(parsed);
+    const hasGroups = counts.groups > 0;
+    const backupDate = parsed.exportedAt ? Fmt.date(parsed.exportedAt) : '—';
+
+    const countsParts = [
+      `${counts.transactions} ${t('txn.th.count').toLowerCase()}`,
+      `${counts.categories} ${t('nav.categories').toLowerCase()}`,
+      `${counts.sources} ${t('nav.sources').toLowerCase()}`,
+      `${counts.users} ${t('nav.users').toLowerCase()}`,
+    ];
+    if (hasGroups) countsParts.push(`${counts.groups} ${t('grp.section.title').toLowerCase()}`);
+
+    const modal = el('div', { class: 'modal' });
+    modal.innerHTML = `
+      <div class="modal-head">
+        <div class="modal-title">${escapeText(t('settings.import.title'))}</div>
+        <button class="btn-icon" id="imp-cancel-x" aria-label="${escapeAttr(t('btn.close'))}">${Icons.close}</button>
+      </div>
+      <div class="modal-body">
+        <div class="backup-summary">
+          <p>${t('settings.import.summary', { n: countsParts.join(', ') }).replace('<strong>', '<strong>').replace('</strong>', '</strong>')}</p>
+          <p class="muted" style="font-size:.85rem">
+            ${escapeText(t('settings.import.meta', { date: backupDate, ver: parsed.schemaVersion }))}
+          </p>
+        </div>
+        <div class="backup-warning">
+          <strong>${escapeText(t('settings.import.warn'))}</strong>
+          ${escapeText(t('settings.import.warn2'))}
+        </div>
+      </div>
+      <div class="modal-foot">
+        <div style="flex:1"></div>
+        <button class="btn btn-ghost" id="imp-cancel">${escapeText(t('btn.cancel'))}</button>
+        <button class="btn btn-danger" id="imp-replace">${escapeText(t('btn.replace'))}</button>
+      </div>
+    `;
+
+    const close = () => closeModal();
+    modal.querySelector('#imp-cancel-x').onclick = close;
+    modal.querySelector('#imp-cancel').onclick = close;
+    modal.querySelector('#imp-replace').onclick = () => {
+      const err = Backup.applyImport(state, parsed, Store.save);
+      close();
+      if (err) {
+        toast(err.error);
+        return;
+      }
+      window.dispatchEvent(new Event('store:changed'));
+      toast(t('settings.import.done', { n: counts.transactions }));
+    };
+
+    openModal(modal);
+  }
+
   // --- Add / edit transaction ---------------------------------------
   function openAddTransaction() { openTransactionModal(null); }
   function openEditTransaction(id) { openTransactionModal(id); }
@@ -1340,19 +1644,19 @@ const App = (() => {
     const modal = el('div', { class: 'modal' });
     modal.innerHTML = `
       <div class="modal-head">
-        <div class="modal-title">${isEdit ? 'Edit transaction' : 'Add a transaction'}</div>
-        <button class="btn-icon" id="m-close" aria-label="Close">${Icons.close}</button>
+        <div class="modal-title">${escapeText(t(isEdit ? 'modal.txn.edit' : 'modal.txn.add'))}</div>
+        <button class="btn-icon" id="m-close" aria-label="${escapeAttr(t('btn.close'))}">${Icons.close}</button>
       </div>
       <div class="modal-body">
         <div class="form-field">
-          <label>Type</label>
+          <label>${escapeText(t('form.type'))}</label>
           <div class="tabs" id="type-tabs">
-            <button data-t="expense" class="${cur.type === 'expense' ? 'active expense' : ''}">Expense</button>
-            <button data-t="income"  class="${cur.type === 'income'  ? 'active income'  : ''}">Income</button>
+            <button data-t="expense" class="${cur.type === 'expense' ? 'active expense' : ''}">${escapeText(t('form.type.expense'))}</button>
+            <button data-t="income"  class="${cur.type === 'income'  ? 'active income'  : ''}">${escapeText(t('form.type.income'))}</button>
           </div>
         </div>
         <div class="form-field">
-          <label>Amount</label>
+          <label>${escapeText(t('form.amount'))}</label>
           <div class="amount-wrap">
             <span class="currency">€</span>
             <input class="input amount-input" type="number" min="0" step="0.01" id="f-amount" value="${cur.amount || ''}" placeholder="0.00"/>
@@ -1360,45 +1664,49 @@ const App = (() => {
         </div>
         <div class="form-row">
           <div class="form-field">
-            <label>Date</label>
+            <label>${escapeText(t('form.date'))}</label>
             <input class="input" type="date" id="f-date" value="${cur.date}"/>
           </div>
           <div class="form-field">
-            <label>Category</label>
+            <label>${escapeText(t('form.category'))}</label>
             <select class="select" id="f-cat"></select>
           </div>
         </div>
+        <label class="apply-all-opt" id="f-apply-all" style="display:none" title="${escapeAttr(t('applyAll.title'))}">
+          <input type="checkbox" id="f-apply-all-cb"/>
+          <span id="f-apply-all-text"></span>
+        </label>
         <div class="form-field">
-          <label>Description</label>
-          <input class="input" type="text" id="f-desc" placeholder="e.g. Weekly groceries" value="${escapeAttr(cur.description || '')}"/>
+          <label>${escapeText(t('form.description'))}</label>
+          <input class="input" type="text" id="f-desc" placeholder="${escapeAttr(t('form.descPlaceholder'))}" value="${escapeAttr(cur.description || '')}"/>
         </div>
         <div class="form-row">
           <div class="form-field">
-            <label>Paid by</label>
+            <label>${escapeText(t('form.paidBy'))}</label>
             <select class="select" id="f-user"></select>
           </div>
           <div class="form-field">
-            <label>Source</label>
+            <label>${escapeText(t('form.source'))}</label>
             <select class="select" id="f-source"></select>
           </div>
         </div>
         <div class="form-field">
-          <label>Scope</label>
+          <label>${escapeText(t('form.scope'))}</label>
           <div class="scope-pick" id="f-scope">
-            <button data-s="private" class="${cur.scope === 'private' ? 'active' : ''}">${Icons.user} Private</button>
-            <button data-s="shared"  class="${cur.scope === 'shared'  ? 'active' : ''}">${Icons.globe} Shared</button>
+            <button data-s="private" class="${cur.scope === 'private' ? 'active' : ''}">${Icons.user} ${escapeText(t('txn.scope.private'))}</button>
+            <button data-s="shared"  class="${cur.scope === 'shared'  ? 'active' : ''}">${Icons.globe} ${escapeText(t('txn.scope.shared'))}</button>
           </div>
         </div>
         <div class="form-field">
-          <label>Notes (optional)</label>
-          <textarea class="textarea" id="f-notes" placeholder="Anything worth remembering">${escapeText(cur.notes || '')}</textarea>
+          <label>${escapeText(t('form.notes'))}</label>
+          <textarea class="textarea" id="f-notes" placeholder="${escapeAttr(t('form.notesPh'))}">${escapeText(cur.notes || '')}</textarea>
         </div>
       </div>
       <div class="modal-foot">
-        ${isEdit ? `<button class="btn btn-danger" id="m-delete">${Icons.trash} Delete</button>` : ''}
+        ${isEdit ? `<button class="btn btn-danger" id="m-delete">${Icons.trash} ${escapeText(t('btn.delete'))}</button>` : ''}
         <div style="flex:1"></div>
-        <button class="btn btn-ghost" id="m-cancel">Cancel</button>
-        <button class="btn btn-primary" id="m-save">${isEdit ? 'Save changes' : 'Add transaction'}</button>
+        <button class="btn btn-ghost" id="m-cancel">${escapeText(t('btn.cancel'))}</button>
+        <button class="btn btn-primary" id="m-save">${escapeText(t(isEdit ? 'btn.saveChanges' : 'modal.txn.add'))}</button>
       </div>
     `;
 
@@ -1454,36 +1762,70 @@ const App = (() => {
     });
     modal.querySelector('#f-amount').oninput = e => cur.amount = parseFloat(e.target.value) || 0;
     modal.querySelector('#f-date').oninput = e => cur.date = e.target.value;
-    modal.querySelector('#f-desc').oninput = e => cur.description = e.target.value;
+    modal.querySelector('#f-desc').oninput = e => { cur.description = e.target.value; refreshApplyAll(); };
     modal.querySelector('#f-cat').onchange = e => cur.categoryId = e.target.value;
     modal.querySelector('#f-user').onchange = e => cur.paidByUserId = e.target.value;
     modal.querySelector('#f-source').onchange = e => cur.sourceId = e.target.value;
     modal.querySelector('#f-notes').oninput = e => cur.notes = e.target.value;
 
+    // ISSUE-005: "apply to all" checkbox is shown only when editing a
+    // transaction with a recognisable payee that has at least one other
+    // in-scope transaction. Ticking persists settings.applyCategoryToPayee
+    // so subsequent modals start checked.
+    const applyAllEl = modal.querySelector('#f-apply-all');
+    const applyAllCb = modal.querySelector('#f-apply-all-cb');
+    const applyAllText = modal.querySelector('#f-apply-all-text');
+    function refreshApplyAll() {
+      const name = extractPayee(cur.description);
+      if (!name) { applyAllEl.style.display = 'none'; return; }
+      const others = Selectors.transactionsInScope(state)
+        .filter(t => t.id !== id && extractPayee(t.description) === name).length;
+      if (others === 0) { applyAllEl.style.display = 'none'; return; }
+      applyAllCb.checked = !!state.settings.applyCategoryToPayee;
+      // The template uses {n}, {name} and {s} (plural). t() substitutes them
+      // and returns the raw string; we render it as HTML because the
+      // template deliberately contains <strong> / <span> markup.
+      applyAllText.innerHTML = t('applyAll.template', { n: others, name });
+      applyAllEl.style.display = '';
+    }
+    applyAllCb.addEventListener('change', () => {
+      Store.setApplyCategoryToPayee(state, applyAllCb.checked);
+    });
+    refreshApplyAll();
+
     modal.querySelector('#m-save').onclick = () => {
-      if (!cur.amount || cur.amount <= 0) return toast('Please enter a positive amount.');
-      if (!cur.date) return toast('Please pick a date.');
-      if (!cur.categoryId) return toast('Please pick a category.');
-      if (!cur.paidByUserId) return toast('Please pick who paid.');
-      if (!cur.sourceId) return toast('Please pick a source.');
+      if (!cur.amount || cur.amount <= 0) return toast(t('toast.amountRequired'));
+      if (!cur.date) return toast(t('toast.dateRequired'));
+      if (!cur.categoryId) return toast(t('toast.catRequired'));
+      if (!cur.paidByUserId) return toast(t('toast.userRequired'));
+      if (!cur.sourceId) return toast(t('toast.sourceRequired'));
       if (isEdit) {
         Store.updateTransaction(state, id, cur);
-        toast('Transaction updated');
+        toast(t('toast.txn.updated'));
       } else {
         Store.addTransaction(state, cur);
-        toast('Transaction added');
+        toast(t('toast.txn.added'));
       }
+      // ISSUE-005: when "apply to all" is ticked, propagate the category
+      // to every other same-payee transaction in scope. bulkUpdatePayeeCategory
+      // dispatches store:changed itself when it updates any rows; we only
+      // dispatch ourselves when nothing was propagated.
+      let propagated = 0;
+      if (isEdit && applyAllCb.checked) {
+        const name = extractPayee(cur.description);
+        if (name) propagated = bulkUpdatePayeeCategory(name, cur.categoryId);
+      }
+      if (propagated === 0) window.dispatchEvent(new Event('store:changed'));
       closeModal();
-      window.dispatchEvent(new Event('store:changed'));
     };
 
     openModal(modal);
   }
 
   function deleteTransaction(id) {
-    if (!confirmAction('Delete this transaction? This cannot be undone.')) return;
+    if (!confirmAction(t('confirm.txn'))) return;
     Store.deleteTransaction(state, id);
-    toast('Transaction deleted');
+    toast(t('toast.txn.deleted'));
     window.dispatchEvent(new Event('store:changed'));
   }
 
@@ -1499,30 +1841,30 @@ const App = (() => {
     const modal = el('div', { class: 'modal modal-wide' });
     modal.innerHTML = `
       <div class="modal-head">
-        <div class="modal-title">Import from CSV</div>
-        <button class="btn-icon" id="m-close" aria-label="Close">${Icons.close}</button>
+        <div class="modal-title">${escapeText(t('modal.import.title'))}</div>
+        <button class="btn-icon" id="m-close" aria-label="${escapeAttr(t('btn.close'))}">${Icons.close}</button>
       </div>
       <div class="modal-body">
         <div class="form-field">
-          <label>CSV file (ING Belgium format)</label>
+          <label>${escapeText(t('csv.file'))}</label>
           <input class="input" type="file" id="imp-file" accept=".csv,text/csv"/>
-          <div class="hint">Pick a statement file. Header row is required.</div>
+          <div class="hint">${escapeText(t('csv.file.hint'))}</div>
         </div>
         <div class="form-row">
           <div class="form-field">
-            <label>Paid by (default)</label>
+            <label>${escapeText(t('csv.defaults.user'))}</label>
             <select class="select" id="imp-user"></select>
           </div>
           <div class="form-field">
-            <label>Source (default)</label>
+            <label>${escapeText(t('csv.defaults.source'))}</label>
             <select class="select" id="imp-source"></select>
           </div>
         </div>
         <div class="form-field">
-          <label>Scope (default)</label>
+          <label>${escapeText(t('csv.defaults.scope'))}</label>
           <div class="scope-pick" id="imp-scope">
-            <button data-s="private" class="active">${Icons.user} Private</button>
-            <button data-s="shared">${Icons.globe} Shared</button>
+            <button data-s="private" class="active">${Icons.user} ${escapeText(t('txn.scope.private'))}</button>
+            <button data-s="shared">${Icons.globe} ${escapeText(t('txn.scope.shared'))}</button>
           </div>
         </div>
         <div id="imp-summary" class="imp-summary"></div>
@@ -1530,8 +1872,8 @@ const App = (() => {
       </div>
       <div class="modal-foot">
         <div style="flex:1"></div>
-        <button class="btn btn-ghost" id="m-cancel">Cancel</button>
-        <button class="btn btn-primary" id="m-import" disabled>Import 0 transactions</button>
+        <button class="btn btn-ghost" id="m-cancel">${escapeText(t('btn.cancel'))}</button>
+        <button class="btn btn-primary" id="m-import" disabled>${escapeText(t('csv.btn.import0'))}</button>
       </div>
     `;
 
@@ -1555,7 +1897,7 @@ const App = (() => {
         summary.innerHTML = '';
         preview.innerHTML = '';
         btn.disabled = true;
-        btn.textContent = 'Import 0 transactions';
+        btn.textContent = t('csv.btn.import0');
         return;
       }
 
@@ -1564,19 +1906,19 @@ const App = (() => {
       const skipCount = parsedRows.filter(r => r.skip).length;
 
       summary.innerHTML = `
-        <span class="pill pill-pos">${selCount} to import</span>
-        <span class="pill">${dupeCount} duplicates skipped</span>
-        <span class="pill">${skipCount} info / zero skipped</span>
+        <span class="pill pill-pos">${escapeText(t('csv.pill.import', { n: selCount }))}</span>
+        <span class="pill">${escapeText(t('csv.pill.dupe', { n: dupeCount }))}</span>
+        <span class="pill">${escapeText(t('csv.pill.skip', { n: skipCount }))}</span>
       `;
 
       const table = el('table', { class: 'imp-table' });
       table.appendChild(el('thead', {}, el('tr', {},
         el('th', { style: { width: '32px' } }),
-        el('th', {}, 'Date'),
-        el('th', {}, 'Description'),
-        el('th', { class: 'right' }, 'Amount'),
-        el('th', {}, 'Type'),
-        el('th', {}, 'Category'),
+        el('th', {}, escapeText(t('csv.th.date'))),
+        el('th', {}, escapeText(t('csv.th.desc'))),
+        el('th', { class: 'right' }, escapeText(t('csv.th.amount'))),
+        el('th', {}, escapeText(t('csv.th.type'))),
+        el('th', {}, escapeText(t('csv.th.category'))),
       )));
       const tbody = el('tbody');
       for (const item of parsedRows) {
@@ -1591,13 +1933,27 @@ const App = (() => {
         tr.appendChild(el('td', { class: 'desc', title: item.row.detail || '' }, item.row.omschrijving || '—'));
         const sign = item.classification?.type === 'expense' ? '−' : '+';
         tr.appendChild(el('td', { class: 'right amt' }, sign + Fmt.money(Math.abs(item.row.bedrag))));
-        tr.appendChild(el('td', {}, item.classification ? (item.classification.type === 'income' ? '⬇ Income' : '⬆ Expense') : (item.skip ? '— skip —' : '—')));
+        const typeText = item.classification
+          ? (item.classification.type === 'income' ? t('csv.th.type.income') : t('csv.th.type.expense'))
+          : (item.skip ? t('csv.th.type.skip') : t('csv.th.type.unset'));
+        tr.appendChild(el('td', {}, typeText));
 
         const catSel = el('select', { class: 'select', disabled: item.skip || item.dupe });
         const cats = state.categories.filter(c => c.type === (item.classification?.type || 'expense'));
         cats.forEach(c => catSel.appendChild(option(c.id, c.name, c.id === item.categoryId)));
-        catSel.onchange = () => { item.categoryId = catSel.value; };
-        tr.appendChild(el('td', {}, catSel));
+        catSel.onchange = () => { item.categoryId = catSel.value; item.autoMapped = false; };
+        // ISSUE-005: show a small "auto" badge when the category came
+        // from the saved payee → category mapping rather than the row
+        // classifier. Disappears once the user manually changes it.
+        const cell = el('td', {}, catSel);
+        if (item.autoMapped) {
+          cell.appendChild(el('span', {
+            class: 'pill',
+            style: { marginLeft: '6px', fontSize: '.7rem', background: 'var(--cream-deep)', color: 'var(--ink-soft)' },
+            title: t('csv.autoMapped.title'),
+          }, t('csv.autoMapped')));
+        }
+        tr.appendChild(cell);
 
         tbody.appendChild(tr);
       }
@@ -1606,7 +1962,7 @@ const App = (() => {
       preview.appendChild(table);
 
       btn.disabled = selCount === 0;
-      btn.textContent = `Import ${selCount} transaction${selCount === 1 ? '' : 's'}`;
+      btn.textContent = t('csv.btn.importN', { n: selCount });
     }
 
     // Default bindings
@@ -1628,12 +1984,12 @@ const App = (() => {
       try {
         text = await file.text();
       } catch (err) {
-        toast('Could not read file.');
+        toast(t('csv.err.read'));
         return;
       }
       const rows = CSVImport.parseIngStatement(text);
       if (rows.length === 0) {
-        toast('No rows found — is this an ING Belgium CSV?');
+        toast(t('csv.err.noRows'));
         parsedRows = [];
         rebuildPreview();
         return;
@@ -1645,11 +2001,17 @@ const App = (() => {
         const key = CSVImport.makeDedupKey(row);
         const dupe = seen.has(key);
         if (!dupe) seen.add(key);
+        // ISSUE-005: classifier hint first, then the saved payee → category
+        // mapping. The mapping is the safety net for rows the user didn't
+        // explicitly classify (bancontact, transfer-in, transfer-out, etc.).
         const suggested = CSVImport.suggestedCategoryFor(cls.categoryHint, cls.type, state);
+        const payeeName = CSVImport.extractPayee(row.omschrijving);
+        const mapped = !suggested && payeeName ? (state.payeeCategories || {})[payeeName] : '';
         return {
           row, classification: cls, key,
           skip: false, dupe, selected: !dupe,
-          categoryId: suggested?.id || '',
+          categoryId: suggested?.id || mapped || '',
+          autoMapped: !suggested && !!mapped,
         };
       });
       rebuildPreview();
@@ -1667,7 +2029,7 @@ const App = (() => {
         count++;
       }
       if (count > 0) {
-        toast(`Imported ${count} transaction${count === 1 ? '' : 's'}`);
+        toast(t('toast.imported', { n: count }));
         window.dispatchEvent(new Event('store:changed'));
       }
       closeModal();
@@ -1679,55 +2041,67 @@ const App = (() => {
   // --- Category modal ------------------------------------------------
   function openCategoryModal(id) {
     const editing = id ? state.categories.find(c => c.id === id) : null;
-    let cur = editing ? { ...editing } : { name: '', type: 'expense', color: '#5a7248', icon: '✦', active: true };
+    // ISSUE-007: new categories start with groupId = null (user-added,
+    // not assigned). Editing categories preserves their current groupId.
+    let cur = editing ? { ...editing } : { name: '', type: 'expense', color: '#5a7248', icon: '✦', active: true, groupId: null };
+
+    const groups = state.groups || [];
+    const sortedGroups = [...groups].sort((a, b) => (a.order || 0) - (b.order || 0));
 
     const modal = el('div', { class: 'modal' });
     modal.innerHTML = `
       <div class="modal-head">
-        <div class="modal-title">${editing ? 'Edit category' : 'New category'}</div>
-        <button class="btn-icon" id="m-close">${Icons.close}</button>
+        <div class="modal-title">${escapeText(t(editing ? 'modal.cat.edit' : 'modal.cat.add'))}</div>
+        <button class="btn-icon" id="m-close" aria-label="${escapeAttr(t('btn.close'))}">${Icons.close}</button>
       </div>
       <div class="modal-body">
         <div class="form-field">
-          <label>Type</label>
+          <label>${escapeText(t('form.type'))}</label>
           <div class="tabs" id="type-tabs">
-            <button data-t="expense" class="${cur.type === 'expense' ? 'active expense' : ''}">Expense</button>
-            <button data-t="income"  class="${cur.type === 'income'  ? 'active income'  : ''}">Income</button>
+            <button data-t="expense" class="${cur.type === 'expense' ? 'active expense' : ''}">${escapeText(t('form.type.expense'))}</button>
+            <button data-t="income"  class="${cur.type === 'income'  ? 'active income'  : ''}">${escapeText(t('form.type.income'))}</button>
           </div>
         </div>
         <div class="form-field">
-          <label>Name</label>
-          <input class="input" type="text" id="f-name" placeholder="e.g. Groceries" value="${escapeAttr(cur.name)}"/>
+          <label>${escapeText(t('form.name'))}</label>
+          <input class="input" type="text" id="f-name" placeholder="${escapeAttr(t('form.name.ph.cat'))}" value="${escapeAttr(cur.name)}"/>
         </div>
         <div class="form-row">
           <div class="form-field">
-            <label>Color</label>
+            <label>${escapeText(t('form.color'))}</label>
             <div class="color-picker">
               <input type="color" id="f-color" value="${cur.color}"/>
               <input class="input" type="text" id="f-color-text" value="${cur.color}" style="flex:1"/>
             </div>
           </div>
           <div class="form-field">
-            <label>Icon</label>
+            <label>${escapeText(t('form.icon'))}</label>
             <input class="input" type="text" id="f-icon" maxlength="2" value="${escapeAttr(cur.icon || '✦')}"/>
           </div>
         </div>
         <div class="form-field">
-          <label>Quick icons</label>
+          <label>${escapeText(t('form.icons'))}</label>
           <div class="icon-grid" id="f-icons"></div>
+        </div>
+        <div class="form-field">
+          <label>${escapeText(t('form.group'))}</label>
+          <select class="select" id="f-group">
+            <option value="" ${cur.groupId == null ? 'selected' : ''}>${escapeText(t('form.group.none'))}</option>
+            ${sortedGroups.map(g => `<option value="${escapeAttr(g.id)}" ${cur.groupId === g.id ? 'selected' : ''}>${escapeText(g.name)}</option>`).join('')}
+          </select>
         </div>
         <div class="form-field flex center" style="flex-direction:row; gap:10px;">
           <div class="toggle ${cur.active ? 'on' : ''}" id="f-active"></div>
           <div>
-            <div style="font-weight:600;">${cur.active ? 'Active' : 'Inactive'}</div>
-            <div class="muted" style="font-size:.8rem;">Inactive categories are hidden in dropdowns.</div>
+            <div style="font-weight:600;">${cur.active ? escapeText(t('form.active')) : escapeText(t('form.inactive'))}</div>
+            <div class="muted" style="font-size:.8rem;">${escapeText(t('form.active.catHelp'))}</div>
           </div>
         </div>
       </div>
       <div class="modal-foot">
         <div style="flex:1"></div>
-        <button class="btn btn-ghost" id="m-cancel">Cancel</button>
-        <button class="btn btn-primary" id="m-save">${editing ? 'Save changes' : 'Add category'}</button>
+        <button class="btn btn-ghost" id="m-cancel">${escapeText(t('btn.cancel'))}</button>
+        <button class="btn btn-primary" id="m-save">${escapeText(t(editing ? 'btn.saveChanges' : 'btn.add'))}</button>
       </div>
     `;
 
@@ -1756,16 +2130,17 @@ const App = (() => {
     modal.querySelector('#f-color').oninput = e => { cur.color = e.target.value; modal.querySelector('#f-color-text').value = e.target.value; };
     modal.querySelector('#f-color-text').oninput = e => { cur.color = e.target.value; modal.querySelector('#f-color').value = e.target.value; };
     modal.querySelector('#f-icon').oninput = e => cur.icon = e.target.value;
+    modal.querySelector('#f-group').onchange = e => cur.groupId = e.target.value || null;
     modal.querySelector('#f-active').onclick = () => {
       cur.active = !cur.active;
-      const t = modal.querySelector('#f-active');
-      t.classList.toggle('on', cur.active);
-      t.nextElementSibling.firstElementChild.textContent = cur.active ? 'Active' : 'Inactive';
+      const tg = modal.querySelector('#f-active');
+      tg.classList.toggle('on', cur.active);
+      tg.nextElementSibling.firstElementChild.textContent = cur.active ? t('form.active') : t('form.inactive');
     };
     modal.querySelector('#m-save').onclick = () => {
-      if (!cur.name.trim()) return toast('Please enter a name.');
-      if (editing) { Store.updateCategory(state, editing.id, cur); toast('Category updated'); }
-      else         { Store.addCategory(state, cur); toast('Category added'); }
+      if (!cur.name.trim()) return toast(t('toast.nameRequired'));
+      if (editing) { Store.updateCategory(state, editing.id, cur); toast(t('toast.cat.updated')); }
+      else         { Store.addCategory(state, cur); toast(t('toast.cat.added')); }
       closeModal();
       window.dispatchEvent(new Event('store:changed'));
     };
@@ -1776,10 +2151,95 @@ const App = (() => {
   function deleteCategory(id) {
     const cat = state.categories.find(c => c.id === id);
     const used = state.transactions.some(t => t.categoryId === id);
-    if (used) return toast('Cannot delete: this category is used by transactions.');
-    if (!confirmAction(`Delete category "${cat.name}"?`)) return;
+    if (used) return toast(t('toast.catInUse'));
+    if (!confirmAction(t('confirm.cat', { name: cat.name }))) return;
     Store.deleteCategory(state, id);
-    toast('Category deleted');
+    toast(t('toast.cat.deleted'));
+    window.dispatchEvent(new Event('store:changed'));
+  }
+
+  // --- Group modal (ISSUE-007) ---------------------------------------
+  // Reuses the category-modal shape: name, colour, icon, order. The
+  // delete path checks for assigned categories first; the refusal message
+  // and count are computed in Dutch at call-time.
+  function openGroupModal(id) {
+    const editing = id ? (state.groups || []).find(g => g.id === id) : null;
+    let cur = editing
+      ? { ...editing }
+      : {
+          name: '',
+          color: '#5a7248',
+          icon: '✦',
+          order: (state.groups?.length || 0) + 1,
+          active: true,
+        };
+
+    const modal = el('div', { class: 'modal' });
+    modal.innerHTML = `
+      <div class="modal-head">
+        <div class="modal-title">${escapeText(t(editing ? 'modal.grp.edit' : 'modal.grp.add'))}</div>
+        <button class="btn-icon" id="m-close" aria-label="${escapeAttr(t('btn.close'))}">${Icons.close}</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-field">
+          <label>${escapeText(t('form.name'))}</label>
+          <input class="input" type="text" id="f-name" placeholder="${escapeAttr(t('form.name.ph.cat'))}" value="${escapeAttr(cur.name)}"/>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>${escapeText(t('form.color'))}</label>
+            <div class="color-picker">
+              <input type="color" id="f-color" value="${cur.color}"/>
+              <input class="input" type="text" id="f-color-text" value="${cur.color}" style="flex:1"/>
+            </div>
+          </div>
+          <div class="form-field">
+            <label>${escapeText(t('form.icon'))}</label>
+            <input class="input" type="text" id="f-icon" maxlength="2" value="${escapeAttr(cur.icon || '✦')}"/>
+          </div>
+        </div>
+        <div class="form-field">
+          <label>${escapeText(t('form.order'))}</label>
+          <input class="input" type="number" id="f-order" min="1" step="1" value="${cur.order}"/>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <div style="flex:1"></div>
+        <button class="btn btn-ghost" id="m-cancel">${escapeText(t('btn.cancel'))}</button>
+        <button class="btn btn-primary" id="m-save">${escapeText(t(editing ? 'btn.saveChanges' : 'btn.add'))}</button>
+      </div>
+    `;
+
+    modal.querySelector('#m-close').onclick = closeModal;
+    modal.querySelector('#m-cancel').onclick = closeModal;
+    modal.querySelector('#f-name').oninput = e => cur.name = e.target.value;
+    modal.querySelector('#f-color').oninput = e => { cur.color = e.target.value; modal.querySelector('#f-color-text').value = e.target.value; };
+    modal.querySelector('#f-color-text').oninput = e => { cur.color = e.target.value; modal.querySelector('#f-color').value = e.target.value; };
+    modal.querySelector('#f-icon').oninput = e => cur.icon = e.target.value;
+    modal.querySelector('#f-order').oninput = e => cur.order = Number(e.target.value) || 1;
+    modal.querySelector('#m-save').onclick = () => {
+      if (!cur.name.trim()) return toast(t('toast.nameRequired'));
+      if (editing) { Store.updateGroup(state, editing.id, cur); toast(t('toast.grp.updated')); }
+      else         { Store.addGroup(state, cur); toast(t('toast.grp.added')); }
+      closeModal();
+      window.dispatchEvent(new Event('store:changed'));
+    };
+    openModal(modal);
+  }
+
+  // Deleting a group refuses when any category still references it; the
+  // refusal message names the count in Dutch and leaves state untouched.
+  function deleteGroup(id) {
+    const grp = (state.groups || []).find(g => g.id === id);
+    if (!grp) return;
+    const refs = state.categories.filter(c => c.groupId === id).length;
+    if (refs > 0) {
+      toast(t('grp.delete.inUse', { n: refs }));
+      return;
+    }
+    if (!confirmAction(t('confirm.grp', { name: grp.name }))) return;
+    Store.deleteGroup(state, id);
+    toast(t('toast.grp.deleted'));
     window.dispatchEvent(new Event('store:changed'));
   }
 
@@ -1791,28 +2251,28 @@ const App = (() => {
     const modal = el('div', { class: 'modal' });
     modal.innerHTML = `
       <div class="modal-head">
-        <div class="modal-title">${editing ? 'Edit source' : 'New source'}</div>
-        <button class="btn-icon" id="m-close">${Icons.close}</button>
+        <div class="modal-title">${escapeText(t(editing ? 'modal.src.edit' : 'modal.src.add'))}</div>
+        <button class="btn-icon" id="m-close" aria-label="${escapeAttr(t('btn.close'))}">${Icons.close}</button>
       </div>
       <div class="modal-body">
         <div class="form-field">
-          <label>Name</label>
-          <input class="input" type="text" id="f-name" placeholder="e.g. Joint account" value="${escapeAttr(cur.name)}"/>
+          <label>${escapeText(t('form.name'))}</label>
+          <input class="input" type="text" id="f-name" placeholder="${escapeAttr(t('form.name.ph.src'))}" value="${escapeAttr(cur.name)}"/>
         </div>
         <div class="form-row">
           <div class="form-field">
-            <label>Type</label>
+            <label>${escapeText(t('form.type'))}</label>
             <select class="select" id="f-type">
-              <option value="bank"     ${cur.type==='bank'?'selected':''}>Bank account</option>
-              <option value="cash"     ${cur.type==='cash'?'selected':''}>Cash</option>
-              <option value="savings"  ${cur.type==='savings'?'selected':''}>Savings</option>
-              <option value="other"    ${cur.type==='other'?'selected':''}>Other</option>
+              <option value="bank"     ${cur.type==='bank'?'selected':''}>${escapeText(t('form.bank'))}</option>
+              <option value="cash"     ${cur.type==='cash'?'selected':''}>${escapeText(t('form.cash'))}</option>
+              <option value="savings"  ${cur.type==='savings'?'selected':''}>${escapeText(t('form.savings'))}</option>
+              <option value="other"    ${cur.type==='other'?'selected':''}>${escapeText(t('form.other'))}</option>
             </select>
           </div>
           <div class="form-field">
-            <label>Owner (optional)</label>
+            <label>${escapeText(t('form.owner'))}</label>
             <select class="select" id="f-owner">
-              <option value="">— Shared / none —</option>
+              <option value="">${escapeText(t('form.owner.none'))}</option>
               ${state.users.map(u => `<option value="${u.id}" ${cur.ownerId===u.id?'selected':''}>${escapeText(u.name)}</option>`).join('')}
             </select>
           </div>
@@ -1820,15 +2280,15 @@ const App = (() => {
         <div class="form-field flex center" style="flex-direction:row; gap:10px;">
           <div class="toggle ${cur.active ? 'on' : ''}" id="f-active"></div>
           <div>
-            <div style="font-weight:600;">${cur.active ? 'Active' : 'Inactive'}</div>
-            <div class="muted" style="font-size:.8rem;">Inactive sources are hidden in dropdowns.</div>
+            <div style="font-weight:600;">${cur.active ? escapeText(t('form.active')) : escapeText(t('form.inactive'))}</div>
+            <div class="muted" style="font-size:.8rem;">${escapeText(t('form.active.srcHelp'))}</div>
           </div>
         </div>
       </div>
       <div class="modal-foot">
         <div style="flex:1"></div>
-        <button class="btn btn-ghost" id="m-cancel">Cancel</button>
-        <button class="btn btn-primary" id="m-save">${editing ? 'Save changes' : 'Add source'}</button>
+        <button class="btn btn-ghost" id="m-cancel">${escapeText(t('btn.cancel'))}</button>
+        <button class="btn btn-primary" id="m-save">${escapeText(t(editing ? 'btn.saveChanges' : 'btn.add'))}</button>
       </div>
     `;
     modal.querySelector('#m-close').onclick = closeModal;
@@ -1838,14 +2298,14 @@ const App = (() => {
     modal.querySelector('#f-owner').onchange = e => cur.ownerId = e.target.value || null;
     modal.querySelector('#f-active').onclick = () => {
       cur.active = !cur.active;
-      const t = modal.querySelector('#f-active');
-      t.classList.toggle('on', cur.active);
-      t.nextElementSibling.firstElementChild.textContent = cur.active ? 'Active' : 'Inactive';
+      const tg = modal.querySelector('#f-active');
+      tg.classList.toggle('on', cur.active);
+      tg.nextElementSibling.firstElementChild.textContent = cur.active ? t('form.active') : t('form.inactive');
     };
     modal.querySelector('#m-save').onclick = () => {
-      if (!cur.name.trim()) return toast('Please enter a name.');
-      if (editing) { Store.updateSource(state, editing.id, cur); toast('Source updated'); }
-      else         { Store.addSource(state, cur); toast('Source added'); }
+      if (!cur.name.trim()) return toast(t('toast.nameRequired'));
+      if (editing) { Store.updateSource(state, editing.id, cur); toast(t('toast.src.updated')); }
+      else         { Store.addSource(state, cur); toast(t('toast.src.added')); }
       closeModal();
       window.dispatchEvent(new Event('store:changed'));
     };
@@ -1854,10 +2314,10 @@ const App = (() => {
   function deleteSource(id) {
     const s = state.sources.find(x => x.id === id);
     const used = state.transactions.some(t => t.sourceId === id);
-    if (used) return toast('Cannot delete: this source is used by transactions.');
-    if (!confirmAction(`Delete source "${s.name}"?`)) return;
+    if (used) return toast(t('toast.srcInUse'));
+    if (!confirmAction(t('confirm.src', { name: s.name }))) return;
     Store.deleteSource(state, id);
-    toast('Source deleted');
+    toast(t('toast.src.deleted'));
     window.dispatchEvent(new Event('store:changed'));
   }
 
@@ -1869,16 +2329,16 @@ const App = (() => {
     const modal = el('div', { class: 'modal' });
     modal.innerHTML = `
       <div class="modal-head">
-        <div class="modal-title">${editing ? 'Edit user' : 'New user'}</div>
-        <button class="btn-icon" id="m-close">${Icons.close}</button>
+        <div class="modal-title">${escapeText(t(editing ? 'modal.usr.edit' : 'modal.usr.add'))}</div>
+        <button class="btn-icon" id="m-close" aria-label="${escapeAttr(t('btn.close'))}">${Icons.close}</button>
       </div>
       <div class="modal-body">
         <div class="form-field">
-          <label>Name</label>
-          <input class="input" type="text" id="f-name" placeholder="e.g. David" value="${escapeAttr(cur.name)}"/>
+          <label>${escapeText(t('form.name'))}</label>
+          <input class="input" type="text" id="f-name" placeholder="${escapeAttr(t('form.name.ph.usr'))}" value="${escapeAttr(cur.name)}"/>
         </div>
         <div class="form-field">
-          <label>Display color</label>
+          <label>${escapeText(t('form.color'))}</label>
           <div class="color-picker">
             <input type="color" id="f-color" value="${cur.color}"/>
             <input class="input" type="text" id="f-color-text" value="${cur.color}" style="flex:1"/>
@@ -1887,15 +2347,15 @@ const App = (() => {
         <div class="form-field flex center" style="flex-direction:row; gap:10px;">
           <div class="toggle ${cur.active ? 'on' : ''}" id="f-active"></div>
           <div>
-            <div style="font-weight:600;">${cur.active ? 'Active' : 'Inactive'}</div>
-            <div class="muted" style="font-size:.8rem;">Inactive users are hidden in dropdowns.</div>
+            <div style="font-weight:600;">${cur.active ? escapeText(t('form.active')) : escapeText(t('form.inactive'))}</div>
+            <div class="muted" style="font-size:.8rem;">${escapeText(t('form.active.usrHelp'))}</div>
           </div>
         </div>
       </div>
       <div class="modal-foot">
         <div style="flex:1"></div>
-        <button class="btn btn-ghost" id="m-cancel">Cancel</button>
-        <button class="btn btn-primary" id="m-save">${editing ? 'Save changes' : 'Add user'}</button>
+        <button class="btn btn-ghost" id="m-cancel">${escapeText(t('btn.cancel'))}</button>
+        <button class="btn btn-primary" id="m-save">${escapeText(t(editing ? 'btn.saveChanges' : 'btn.add'))}</button>
       </div>
     `;
     modal.querySelector('#m-close').onclick = closeModal;
@@ -1905,14 +2365,14 @@ const App = (() => {
     modal.querySelector('#f-color-text').oninput = e => { cur.color = e.target.value; modal.querySelector('#f-color').value = e.target.value; };
     modal.querySelector('#f-active').onclick = () => {
       cur.active = !cur.active;
-      const t = modal.querySelector('#f-active');
-      t.classList.toggle('on', cur.active);
-      t.nextElementSibling.firstElementChild.textContent = cur.active ? 'Active' : 'Inactive';
+      const tg = modal.querySelector('#f-active');
+      tg.classList.toggle('on', cur.active);
+      tg.nextElementSibling.firstElementChild.textContent = cur.active ? t('form.active') : t('form.inactive');
     };
     modal.querySelector('#m-save').onclick = () => {
-      if (!cur.name.trim()) return toast('Please enter a name.');
-      if (editing) { Store.updateUser(state, editing.id, cur); toast('User updated'); }
-      else         { Store.addUser(state, cur); toast('User added'); }
+      if (!cur.name.trim()) return toast(t('toast.nameRequired'));
+      if (editing) { Store.updateUser(state, editing.id, cur); toast(t('toast.usr.updated')); }
+      else         { Store.addUser(state, cur); toast(t('toast.usr.added')); }
       closeModal();
       window.dispatchEvent(new Event('store:changed'));
     };
@@ -1921,10 +2381,10 @@ const App = (() => {
   function deleteUser(id) {
     const u = state.users.find(x => x.id === id);
     const used = state.transactions.some(t => t.paidByUserId === id);
-    if (used) return toast('Cannot delete: this user is used by transactions.');
-    if (!confirmAction(`Delete user "${u.name}"?`)) return;
+    if (used) return toast(t('toast.usrInUse'));
+    if (!confirmAction(t('confirm.usr', { name: u.name }))) return;
     Store.deleteUser(state, id);
-    toast('User deleted');
+    toast(t('toast.usr.deleted'));
     window.dispatchEvent(new Event('store:changed'));
   }
 
