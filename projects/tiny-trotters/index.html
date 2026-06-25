@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tiny Trotters - Prototype</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>Tiny Trotters</h1>
+      <p class="subtitle">First Technical Prototype</p>
+    </header>
+
+    <section class="hud">
+      <div class="counter">
+        <span class="label">Alive</span>
+        <span class="value" id="alive-count">0</span>
+      </div>
+      <div class="counter">
+        <span class="label">Saved</span>
+        <span class="value saved" id="saved-count">0</span>
+      </div>
+      <div class="counter">
+        <span class="label">Dead</span>
+        <span class="value dead" id="dead-count">0</span>
+      </div>
+    </section>
+
+    <canvas id="game" width="320" height="180"></canvas>
+
+    <p class="hint">
+      Goal: tiny creatures walk right. Reach the green exit to save them.
+      Falling too far is fatal.
+    </p>
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>

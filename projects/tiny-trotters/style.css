@@ -1,0 +1,104 @@
+/* Tiny Trotters - First Technical Prototype styles */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  background: #0a0a14;
+  color: #eaeaea;
+  font-family: 'Courier New', monospace;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+header {
+  text-align: center;
+}
+
+h1 {
+  font-size: 26px;
+  letter-spacing: 4px;
+  color: #f0c674;
+}
+
+.subtitle {
+  font-size: 11px;
+  color: #777;
+  letter-spacing: 2px;
+  margin-top: 4px;
+  text-transform: uppercase;
+}
+
+/* HUD counters */
+.hud {
+  display: flex;
+  gap: 16px;
+  padding: 10px 24px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #333;
+  border-radius: 4px;
+}
+
+.counter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 60px;
+}
+
+.counter .label {
+  font-size: 10px;
+  color: #888;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.counter .value {
+  font-size: 22px;
+  font-weight: bold;
+  color: #f0e36a;
+}
+
+.counter .value.saved {
+  color: #2ecc71;
+}
+
+.counter .value.dead {
+  color: #e74c3c;
+}
+
+/* Game canvas - internal 320x180, displayed at 960x540 with nearest-neighbor scaling */
+#game {
+  background: #0d1b2a;
+  width: 960px;
+  height: 540px;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  border: 2px solid #f0c674;
+  display: block;
+}
+
+.hint {
+  font-size: 11px;
+  color: #666;
+  text-align: center;
+  max-width: 600px;
+  line-height: 1.6;
+}
