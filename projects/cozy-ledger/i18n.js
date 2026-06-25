@@ -180,7 +180,7 @@ const Strings = {
     'grp.add':                     'Groep toevoegen',
     'grp.edit.title':              'Bewerken',
     'grp.delete.title':            'Verwijderen',
-    'grp.delete.inUse':            'Deze groep wordt nog gebruikt door {n} categorie{s} en kan niet worden verwijderd.',
+    'grp.delete.inUse':            'Deze groep wordt nog gebruikt door {n} {cat} en kan niet worden verwijderd.',
     'grp.uncategorized':           'Overige categorieën',
 
     // ---- Sources page -----------------------------------------------

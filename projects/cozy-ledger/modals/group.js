@@ -34,7 +34,7 @@
     const grp = (s.groups || []).find(g => g.id === id);
     if (!grp) return;
     const refs = s.categories.filter(c => c.groupId === id).length;
-    if (refs > 0) return window.toast(window.t('grp.delete.inUse', { n: refs }));
+    if (refs > 0) return window.toast(window.t('grp.delete.inUse', { n: refs, cat: refs === 1 ? 'categorie' : 'categorieën' }));
     if (!window.confirmAction(window.t('confirm.grp', { name: grp.name }))) return;
     Store.deleteGroup(s, id);
     window.toast(window.t('toast.grp.deleted'));

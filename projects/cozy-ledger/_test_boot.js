@@ -1401,7 +1401,7 @@ test('ISSUE-007: deleting a group with assigned categories refuses and does not 
   // checking the refusal message and that state.groups is unchanged after.
   const beforeLen = state.groups.length;
   const t = ctx.window.t;
-  const refusalMsg = t('grp.delete.inUse', { n: count });
+  const refusalMsg = t('grp.delete.inUse', { n: count, cat: count === 1 ? 'categorie' : 'categorieën' });
   if (!/categorie/.test(refusalMsg)) {
     throw new Error(`refusal message not in Dutch: "${refusalMsg}"`);
   }
