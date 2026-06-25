@@ -1,8 +1,14 @@
 #!/usr/bin/env node
 // =====================================================================
-// _test_selectors.js — Pure-function tests for selectors.js.
-// Covers sourcesInScope and transactionsInScope for every scope, plus
-// the data.js migration that backfills settings + source.balance.
+// _test_selectors.js — Pure-function tests for selectors.js + utils.js.
+//
+// Covers every public function on the Selectors object (scope,
+// currentUserId, sourcesInScope, transactionsInScope, sourcesById,
+// balanceSeries, balanceChartDateRange, balanceAtDate, netWorthSeries,
+// dailyNetFlow, monthlyBalance, monthlyNetWorth, monthlyNetFlow) and
+// every function on the Fmt object (money, moneyShort, date, ymKey,
+// monthLabel, today, currentMonthKey, shiftMonth, inMonth, pct),
+// plus the data.js migration that backfills settings + source.balance.
 // =====================================================================
 const fs = require('fs');
 const path = require('path');
@@ -40,14 +46,18 @@ function eq(a, b, msg) {
   if (sa !== sb) throw new Error(`${msg || 'eq'}: expected ${sb}, got ${sa}`);
 }
 
-// Load only data.js + selectors.js. No DOM, no app.js.
-for (const s of ['data.js', 'selectors.js']) {
+// Load only data.js + selectors.js + utils.js. No DOM, no app.js.
+// utils.js is loaded into the same sandbox so Fmt.* is testable
+// without a real document (Fmt only references document inside
+// function bodies that we never invoke from these tests).
+for (const s of ['data.js', 'selectors.js', 'utils.js']) {
   const code = fs.readFileSync(path.join(__dirname, s), 'utf8');
   vm.runInContext(code, ctx, { filename: s });
 }
 
 const Store = ctx.window.Store;
 const Selectors = ctx.window.Selectors;
+const Fmt = ctx.window.Fmt;
 
 // Helper: build a minimal state object with the fields selectors care about.
 function makeState(overrides = {}) {
@@ -610,6 +620,285 @@ test('monthlyNetFlow: uses type, not amount sign, to bucket income vs expense', 
   if (may.income  !== 1800) throw new Error(`may.income = ${may.income}, want 1800`);
   if (may.expense !== 2200) throw new Error(`may.expense = ${may.expense}, want 2200`);
   if (may.net     !== -400) throw new Error(`may.net = ${may.net}, want -400 (May should be a red month)`);
+});
+
+// ---- Read-only accessors (Selectors.scope, currentUserId) ----------
+
+console.log('\n— Selectors.scope / currentUserId —');
+
+test('Selectors.scope returns the persisted scope', () => {
+  const state = makeState({ settings: { currentUserId: 'u_david', scope: 'shared' } });
+  if (Selectors.scope(state) !== 'shared') throw new Error(`got ${Selectors.scope(state)}`);
+});
+
+test('Selectors.scope falls back to "private" when settings are missing', () => {
+  const state = makeState({ settings: undefined });
+  if (Selectors.scope(state) !== 'private') throw new Error(`got ${Selectors.scope(state)}`);
+});
+
+test('Selectors.scope treats invalid scope as "private"', () => {
+  const state = makeState({ settings: { currentUserId: 'u_david', scope: 'banana' } });
+  if (Selectors.scope(state) !== 'private') throw new Error(`got ${Selectors.scope(state)}`);
+});
+
+test('Selectors.currentUserId returns the persisted user', () => {
+  const state = makeState({ settings: { currentUserId: 'u_isabelle', scope: 'private' } });
+  if (Selectors.currentUserId(state) !== 'u_isabelle') throw new Error(`got ${Selectors.currentUserId(state)}`);
+});
+
+test('Selectors.currentUserId falls back to first user when currentUserId is missing', () => {
+  const state = makeState({ settings: { scope: 'private' } });
+  if (Selectors.currentUserId(state) !== 'u_david') throw new Error(`got ${Selectors.currentUserId(state)}`);
+});
+
+test('Selectors.currentUserId falls back to first user when currentUserId points at a missing user', () => {
+  const state = makeState({ settings: { currentUserId: 'u_ghost', scope: 'private' } });
+  if (Selectors.currentUserId(state) !== 'u_david') throw new Error(`got ${Selectors.currentUserId(state)}`);
+});
+
+test('Selectors.currentUserId returns "" when there are no users', () => {
+  const state = makeState({ users: [], settings: { scope: 'private' } });
+  if (Selectors.currentUserId(state) !== '') throw new Error(`got "${Selectors.currentUserId(state)}"`);
+});
+
+// ---- Selectors.sourcesById -----------------------------------------
+
+console.log('\n— Selectors.sourcesById —');
+
+test('sourcesById returns a map keyed by id', () => {
+  const state = makeState();
+  const map = Selectors.sourcesById(state);
+  if (map.s_david.name !== 'David private') throw new Error('s_david missing or wrong');
+  if (map.s_joint.ownerId !== null)        throw new Error('s_joint.ownerId wrong');
+});
+
+test('sourcesById is empty when state.sources is undefined', () => {
+  const state = makeState({ sources: undefined });
+  const map = Selectors.sourcesById(state);
+  if (Object.keys(map).length !== 0) throw new Error(`got ${Object.keys(map).length} keys`);
+});
+
+// ---- Selectors.balanceAtDate ---------------------------------------
+
+console.log('\n— Selectors.balanceAtDate —');
+
+test('balanceAtDate: missing source returns 0', () => {
+  const state = makeState();
+  if (Selectors.balanceAtDate(state, 's_nonexistent', '2024-06-15') !== 0) {
+    throw new Error('expected 0 for missing source');
+  }
+});
+
+test('balanceAtDate: source with no transactions returns typed balance at any date', () => {
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [{ id: 's', ownerId: 'u_david', active: true, balance: 750 }],
+    transactions: [],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  if (Selectors.balanceAtDate(state, 's', '2024-06-15') !== 750) throw new Error('past date');
+  if (Selectors.balanceAtDate(state, 's', '1990-01-01') !== 750) throw new Error('ancient date');
+  if (Selectors.balanceAtDate(state, 's', '2099-12-31') !== 750) throw new Error('future date');
+});
+
+test('balanceAtDate: 1-txn source returns typed balance at every date (no pre-tx history available)', () => {
+  // With only one transaction, balanceSeries yields a single point at
+  // the typed balance — there's no historical pre-tx balance to walk
+  // back to. So balanceAtDate returns the typed balance at every date.
+  // This is a known limitation of the algorithm; the dashboard never
+  // surfaces pre-tx history for 1-txn sources because there isn't one.
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [{ id: 's', ownerId: 'u_david', active: true, balance: 1000 }],
+    transactions: [
+      { sourceId: 's', date: '2024-06-15', amount: -50 },
+    ],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  if (Selectors.balanceAtDate(state, 's', '2024-01-01') !== 1000) throw new Error('before tx → typed');
+  if (Selectors.balanceAtDate(state, 's', '2024-06-14') !== 1000) throw new Error('day before tx');
+  if (Selectors.balanceAtDate(state, 's', '2024-06-15') !== 1000) throw new Error('tx day');
+  if (Selectors.balanceAtDate(state, 's', '2099-12-31') !== 1000) throw new Error('after tx → typed');
+});
+
+test('balanceAtDate: with 2+ txns, dates before leftmost return leftmost balance', () => {
+  // 3 consecutive-day txns: B(day3)=1000 (typed), B(day2)=1100, B(day1)=1050.
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [{ id: 's', ownerId: 'u_david', active: true, balance: 1000 }],
+    transactions: [
+      { sourceId: 's', date: '2024-06-01', amount: -30 },
+      { sourceId: 's', date: '2024-06-02', amount: 50 },
+      { sourceId: 's', date: '2024-06-03', amount: -100 },
+    ],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  if (Selectors.balanceAtDate(state, 's', '2020-01-01') !== 1050) throw new Error('long before → leftmost');
+  if (Selectors.balanceAtDate(state, 's', '2024-05-31') !== 1050) throw new Error('day before leftmost');
+  if (Selectors.balanceAtDate(state, 's', '2024-06-01') !== 1050) throw new Error('leftmost day');
+  if (Selectors.balanceAtDate(state, 's', '2024-06-02') !== 1100) throw new Error('between');
+  if (Selectors.balanceAtDate(state, 's', '2024-06-03') !== 1000) throw new Error('rightmost');
+});
+
+test('balanceAtDate: returns the most recent prior balance for dates between transactions', () => {
+  // Day 1: -30 → B(1)=? Day 2: +50 → B(2)=? Day 3: -100 → B(3)=1000 (typed).
+  // Walking back: B(2)=1100, B(1)=1050.
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [{ id: 's', ownerId: 'u_david', active: true, balance: 1000 }],
+    transactions: [
+      { sourceId: 's', date: '2024-06-01', amount: -30 },
+      { sourceId: 's', date: '2024-06-02', amount: 50 },
+      { sourceId: 's', date: '2024-06-03', amount: -100 },
+    ],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  if (Selectors.balanceAtDate(state, 's', '2024-06-01') !== 1050) throw new Error('day 1');
+  if (Selectors.balanceAtDate(state, 's', '2024-06-02') !== 1100) throw new Error('day 2');
+  if (Selectors.balanceAtDate(state, 's', '2024-06-03') !== 1000) throw new Error('day 3');
+});
+
+// ---- Fmt.money / moneyShort ----------------------------------------
+
+console.log('\n— Fmt.money / moneyShort —');
+
+test('Fmt.money formats a positive amount with euro sign and 2 decimals', () => {
+  // 'nl-BE' locale uses period for thousands, comma for decimal.
+  if (Fmt.money(1234.5) !== '€1.234,50') throw new Error(`got "${Fmt.money(1234.5)}"`);
+  if (Fmt.money(10)     !== '€10,00')    throw new Error(`got "${Fmt.money(10)}"`);
+});
+
+test('Fmt.money formats zero as "€0,00"', () => {
+  if (Fmt.money(0) !== '€0,00') throw new Error(`got "${Fmt.money(0)}"`);
+});
+
+test('Fmt.money treats null/undefined/NaN as 0', () => {
+  if (Fmt.money(null) !== '€0,00') throw new Error('null');
+  if (Fmt.money(undefined) !== '€0,00') throw new Error('undefined');
+  if (Fmt.money(NaN) !== '€0,00') throw new Error('NaN');
+});
+
+test('Fmt.money formats negatives without a sign', () => {
+  if (Fmt.money(-42.5) !== '€-42,50') throw new Error(`got "${Fmt.money(-42.5)}"`);
+});
+
+test('Fmt.money with signed: true prepends "+" to positives', () => {
+  if (Fmt.money(10, { signed: true }) !== '+€10,00') throw new Error(`got "${Fmt.money(10, { signed: true })}"`);
+  if (Fmt.money(0,   { signed: true }) !== '€0,00')    throw new Error(`got "${Fmt.money(0,   { signed: true })}"`);
+  if (Fmt.money(-5,  { signed: true }) !== '€-5,00')   throw new Error(`got "${Fmt.money(-5,  { signed: true })}"`);
+});
+
+test('Fmt.moneyShort: values under €10 show one decimal', () => {
+  if (Fmt.moneyShort(5.4) !== '€5,4')   throw new Error(`got "${Fmt.moneyShort(5.4)}"`);
+  if (Fmt.moneyShort(9.99) !== '€10,0') throw new Error(`got "${Fmt.moneyShort(9.99)}"`); // rounds 9.99 → 10.0
+});
+
+test('Fmt.moneyShort: values €10 and above show no decimal', () => {
+  if (Fmt.moneyShort(50)   !== '€50')   throw new Error(`got "${Fmt.moneyShort(50)}"`);
+  if (Fmt.moneyShort(999)  !== '€999')  throw new Error(`got "${Fmt.moneyShort(999)}"`);
+});
+
+test('Fmt.moneyShort: values >= €1000 use the "k" suffix', () => {
+  if (Fmt.moneyShort(1500)  !== '€1,5k')  throw new Error(`got "${Fmt.moneyShort(1500)}"`);
+  if (Fmt.moneyShort(12345) !== '€12,3k') throw new Error(`got "${Fmt.moneyShort(12345)}"`);
+});
+
+test('Fmt.moneyShort: treats null/NaN as 0 (still shows the decimal)', () => {
+  // 0 < 10, so minFrac=1 → "0,0".
+  if (Fmt.moneyShort(null) !== '€0,0') throw new Error(`null → "${Fmt.moneyShort(null)}"`);
+  if (Fmt.moneyShort(NaN)  !== '€0,0') throw new Error(`NaN → "${Fmt.moneyShort(NaN)}"`);
+});
+
+// ---- Fmt.date / ymKey / monthLabel ---------------------------------
+
+console.log('\n— Fmt.date / ymKey / monthLabel —');
+
+test('Fmt.date returns "—" for empty input', () => {
+  if (Fmt.date('') !== '—') throw new Error(`got "${Fmt.date('')}"`);
+  if (Fmt.date(null) !== '—') throw new Error(`got "${Fmt.date(null)}"`);
+});
+
+test('Fmt.date with month: true yields "Month Year"', () => {
+  const out = Fmt.date('2024-06-15', { month: true });
+  if (!/[A-Za-z]+ 2024/.test(out)) throw new Error(`got "${out}"`);
+});
+
+test('Fmt.date default yields "DD Mon YYYY"', () => {
+  const out = Fmt.date('2024-06-15');
+  if (!/15/.test(out) || !/2024/.test(out)) throw new Error(`got "${out}"`);
+});
+
+test('Fmt.ymKey returns YYYY-MM with zero-padded month', () => {
+  // Use a local-time constructor to avoid TZ surprises.
+  if (Fmt.ymKey(new Date(2024, 0, 15)) !== '2024-01') throw new Error('Jan');
+  if (Fmt.ymKey(new Date(2024, 10, 30)) !== '2024-11') throw new Error('Nov');
+});
+
+test('Fmt.monthLabel renders Dutch-aware long month + year', () => {
+  const out = Fmt.monthLabel('2024-06');
+  if (!/2024/.test(out)) throw new Error(`got "${out}"`);
+});
+
+// ---- Fmt.today / currentMonthKey -----------------------------------
+
+console.log('\n— Fmt.today / currentMonthKey —');
+
+test('Fmt.today returns YYYY-MM-DD (UTC, 10 chars)', () => {
+  const out = Fmt.today();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(out)) throw new Error(`got "${out}"`);
+  if (out.length !== 10) throw new Error(`length ${out.length}`);
+});
+
+test('Fmt.currentMonthKey returns YYYY-MM (zero-padded)', () => {
+  const out = Fmt.currentMonthKey();
+  if (!/^\d{4}-\d{2}$/.test(out)) throw new Error(`got "${out}"`);
+});
+
+test('Fmt.currentMonthKey matches the leading 7 chars of Fmt.ymKey for now', () => {
+  const now = new Date();
+  if (Fmt.currentMonthKey() !== Fmt.ymKey(now).slice(0, 7)) throw new Error('mismatch');
+});
+
+// ---- Fmt.shiftMonth -----------------------------------------------
+
+console.log('\n— Fmt.shiftMonth —');
+
+test('Fmt.shiftMonth advances by delta months', () => {
+  if (Fmt.shiftMonth('2024-06', 1)  !== '2024-07') throw new Error('+1');
+  if (Fmt.shiftMonth('2024-06', 6)  !== '2024-12') throw new Error('+6');
+  if (Fmt.shiftMonth('2024-06', -1) !== '2024-05') throw new Error('-1');
+});
+
+test('Fmt.shiftMonth crosses year boundaries', () => {
+  if (Fmt.shiftMonth('2024-01', -1) !== '2023-12') throw new Error('back into prev year');
+  if (Fmt.shiftMonth('2024-12', 1)  !== '2025-01') throw new Error('forward into next year');
+});
+
+// ---- Fmt.inMonth / Fmt.pct -----------------------------------------
+
+console.log('\n— Fmt.inMonth / Fmt.pct —');
+
+test('Fmt.inMonth: same month returns true', () => {
+  if (Fmt.inMonth('2024-06-15', '2024-06') !== true) throw new Error('mid-month');
+  if (Fmt.inMonth('2024-06-01', '2024-06') !== true) throw new Error('first day');
+  if (Fmt.inMonth('2024-06-30', '2024-06') !== true) throw new Error('last day');
+});
+
+test('Fmt.inMonth: different month returns false', () => {
+  if (Fmt.inMonth('2024-06-15', '2024-07') !== false) throw new Error('next month');
+  if (Fmt.inMonth('2023-06-15', '2024-06') !== false) throw new Error('prev year');
+});
+
+test('Fmt.pct: computes ratio as a percentage', () => {
+  if (Fmt.pct(1, 4)   !== 25)  throw new Error(`got ${Fmt.pct(1, 4)}`);
+  if (Fmt.pct(3, 4)   !== 75)  throw new Error(`got ${Fmt.pct(3, 4)}`);
+  if (Fmt.pct(0, 100) !== 0)   throw new Error(`got ${Fmt.pct(0, 100)}`);
+});
+
+test('Fmt.pct: returns 0 when total is 0 or falsy', () => {
+  if (Fmt.pct(5, 0) !== 0) throw new Error('total=0');
+  if (Fmt.pct(5, null) !== 0) throw new Error('total=null');
+  if (Fmt.pct(5, undefined) !== 0) throw new Error('total=undefined');
 });
 
 console.log('\n— Summary —');

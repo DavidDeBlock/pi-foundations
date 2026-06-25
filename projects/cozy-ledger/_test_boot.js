@@ -236,6 +236,25 @@ test('Fmt is on window', () => {
   if (!ctx.window.Fmt || typeof ctx.window.Fmt.money !== 'function') throw new Error('no Fmt');
 });
 
+test('Fmt.date always includes the year (no short option that drops it)', () => {
+  const F = ctx.window.Fmt;
+  // Sample dates across multiple years so the assertion catches a
+  // regression that hardcoded the current year.
+  for (const iso of ['2023-01-15', '2024-06-30', '2025-12-25', '2026-07-04']) {
+    const out = F.date(iso);
+    if (!/\b20\d{2}\b/.test(out)) {
+      throw new Error(`Fmt.date('${iso}') = '${out}' — year missing`);
+    }
+    if (out.includes('NaN') || out === 'Invalid Date') {
+      throw new Error(`Fmt.date('${iso}') produced invalid output: ${out}`);
+    }
+  }
+  // The {short} option was removed: passing it should not affect output.
+  const full    = F.date('2025-12-25');
+  const fullOpt = F.date('2025-12-25', { short: true });
+  if (full !== fullOpt) throw new Error(`short option should be ignored: '${full}' vs '${fullOpt}'`);
+});
+
 test('Icons is on window', () => {
   if (!ctx.window.Icons || !ctx.window.Icons.upload) throw new Error('no Icons.upload');
 });
@@ -1357,6 +1376,45 @@ test('ISSUE-007: pre-ISSUE-007 backups (no groups) import cleanly', () => {
   if (!cGroceries || !cGroceries.groupId) {
     throw new Error(`seed category groupId was not restored on reload`);
   }
+});
+
+// ---- ISSUE-007 categories page visual hierarchy ------------------
+// The categories page renders two distinct sections: expenses roll up under
+// group headers, incomes stay flat. Section banners use a coloured band
+// tinted by type so they read as clearly different levels.
+test('ISSUE-007: categories page has two type-tinted section banners (expense + income)', () => {
+  navigateToView('categories');
+  const appRoot = ctx.window.document.querySelector('#app');
+  const banners = findAll(appRoot, n => n.classList?._set && n.classList._set.has('cat-section-banner'));
+  if (banners.length !== 2) throw new Error(`expected 2 section banners, got ${banners.length}`);
+  if (!banners[0].classList.contains('is-expense')) throw new Error('first banner should be is-expense');
+  if (!banners[1].classList.contains('is-income')) throw new Error('second banner should be is-income');
+  if (!/Uitgavencategorieën/.test(banners[0].textContent)) throw new Error('first banner title should mention Uitgavencategorieën');
+  if (!/Inkomstencategorieën/.test(banners[1].textContent)) throw new Error('second banner title should mention Inkomstencategorieën');
+});
+
+test('ISSUE-007: expense section rolls up under group headers; income section is flat', () => {
+  navigateToView('categories');
+  const appRoot = ctx.window.document.querySelector('#app');
+  const sections = findAll(appRoot, n => n.classList?._set && n.classList._set.has('cat-section'));
+  if (sections.length !== 2) throw new Error(`expected 2 .cat-section blocks, got ${sections.length}`);
+  const expenseHeads = findAll(sections[0], n => n.classList?._set && n.classList._set.has('cat-group-head'));
+  const incomeHeads  = findAll(sections[1], n => n.classList?._set && n.classList._set.has('cat-group-head'));
+  if (expenseHeads.length === 0) throw new Error('expense section should have at least one group header');
+  if (incomeHeads.length !== 0) throw new Error(`income section must be flat (no group headers), got ${incomeHeads.length}`);
+  const allExpenseCats = findAll(sections[0], n => n.classList?._set && n.classList._set.has('entity'));
+  if (allExpenseCats.length < expenseHeads.length) throw new Error('every expense group should have at least 1 category');
+  const incomeCats = findAll(sections[1], n => n.classList?._set && n.classList._set.has('entity'));
+  if (incomeCats.length < 1) throw new Error('income section should show at least one category');
+});
+
+test('ISSUE-007: empty groups (no expense categories) do not render a header in the expense section', () => {
+  navigateToView('categories');
+  const appRoot = ctx.window.document.querySelector('#app');
+  const sections = findAll(appRoot, n => n.classList?._set && n.classList._set.has('cat-section'));
+  const expenseGroupHeads = findAll(sections[0], n => n.classList?._set && n.classList._set.has('cat-group-name'))
+    .map(n => n.textContent.trim());
+  if (expenseGroupHeads.includes('Inkomen')) throw new Error('Inkomen group leaked into expense section');
 });
 
 console.log('\n— Summary —');

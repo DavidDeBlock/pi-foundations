@@ -771,7 +771,7 @@ const App = (() => {
       svg.appendChild(el('text', {
         x: xToPx(lbl.date), y: TR_H - 8,
         'text-anchor': lbl.anchor, class: 'bc-axis',
-      }, Fmt.date(lbl.date, { short: true })));
+      }, Fmt.date(lbl.date)));
     }
 
     // "Today" reference line: a dashed horizontal at each series'
@@ -858,7 +858,7 @@ const App = (() => {
           ? `<span class="bc-tt-name">${escapeText(t('trends.toggle.networth'))}</span>`
           : `<span class="bc-tt-dot" style="background:${best.source.color}"></span>` +
             `<span class="bc-tt-name">${escapeText(best.source.name)}</span>`) +
-        `<span class="bc-tt-date">${escapeText(Fmt.date(best.point.date, { short: true }))}</span>` +
+        `<span class="bc-tt-date">${escapeText(Fmt.date(best.point.date))}</span>` +
         `<span class="bc-tt-bal">${escapeText(Fmt.money(best.point.balance))}</span>`;
       tooltip.style.display = 'flex';
       tooltip.style.left = (xToPx(best.point.date) / CHART_W * 100) + '%';
@@ -1179,7 +1179,7 @@ const App = (() => {
     const source = state.sources.find(s => s.id === txn.sourceId);
 
     const tr = el('tr', {});
-    tr.appendChild(el('td', { class: 'txn-date' }, Fmt.date(txn.date, { short: !compact })));
+    tr.appendChild(el('td', { class: 'txn-date' }, Fmt.date(txn.date)));
     tr.appendChild(el('td', {},
       el('div', { class: 'txn-desc', title: txn.description || '' }, extractPayee(txn.description) || txn.description || (cat ? cat.name : '—')),
       txn.notes ? el('div', { class: 'cell-meta' }, txn.notes) : null,
@@ -1230,7 +1230,7 @@ const App = (() => {
     const addGrpBtn = el('button', { class: 'btn btn-sage', onclick: () => openGroupModal() });
     addGrpBtn.innerHTML = `${Icons.plus} ${escapeText(t('grp.add'))}`;
     groupsHead.appendChild(addGrpBtn);
-    const groupsCard = el('div', { class: 'card', style: { marginBottom: '16px' } },
+    const groupsCard = el('div', { class: 'card', style: { marginBottom: '24px' } },
       el('div', { class: 'card-head' },
         el('div', { class: 'card-title' }, t('grp.section.title')),
         el('div', { class: 'muted', style: { fontSize: '.82rem' } }, t('grp.section.sub'))),
@@ -1239,23 +1239,27 @@ const App = (() => {
     wrap.appendChild(groupsHead);
     wrap.appendChild(groupsCard);
 
-    // ---- Categories sections (now grouped by groupId) ---------------
+    // ---- Categories sections --------------------------------------
+    // Expenses get a warm (terracotta) banner and roll up under their
+    // group headers — there are many expense categories and a hierarchy
+    // helps scanability. Income stays flat: only a handful of categories
+    // (typically 1–2) and grouping would add noise without value.
     const expenses = state.categories.filter(c => c.type === 'expense');
-    const incomes = state.categories.filter(c => c.type === 'income');
-    wrap.appendChild(renderGroupedCatSection(t('cat.section.expense.title'), expenses, 'expense'));
-    wrap.appendChild(renderGroupedCatSection(t('cat.section.income.title'), incomes, 'income'));
+    const incomes  = state.categories.filter(c => c.type === 'income');
+    wrap.appendChild(renderExpenseSection(expenses));
+    wrap.appendChild(renderIncomeSection(incomes));
 
     // Add-category button (kept below the lists for now)
-    const addBtn = el('button', { class: 'btn btn-sage', onclick: () => openCategoryModal(), style: { marginTop: '12px' } });
+    const addBtn = el('button', { class: 'btn btn-sage', onclick: () => openCategoryModal(), style: { marginTop: '16px' } });
     addBtn.innerHTML = `${Icons.plus} ${escapeText(t('cat.add'))}`;
     wrap.appendChild(addBtn);
 
     return wrap;
   }
 
-  // Render a list of categories (expenses or incomes) under their group
-  // headers. Categories without a groupId fall under "Overige categorieën".
-  function renderGroupedCatSection(title, cats, type) {
+  // ---- Expense categories: grouped by groupId under a warm banner --
+  // Categories without a groupId land in an "Overige categorieën" bucket.
+  function renderExpenseSection(cats) {
     const byGroup = new Map();
     for (const c of cats) {
       const key = c.groupId || '__none__';
@@ -1264,46 +1268,74 @@ const App = (() => {
     }
     const groups = state.groups || [];
     const sortedGroups = [...groups].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const activeCount = cats.filter(c => c.active).length;
 
     const content = el('div', {});
     for (const g of sortedGroups) {
       const list = byGroup.get(g.id) || [];
-      content.appendChild(el('div', { class: 'cat-group-head' },
-        el('span', { class: 'cat-group-icon', style: { background: g.color } }, g.icon || '✦'),
-        el('span', { class: 'cat-group-name' }, g.name),
-        el('span', { class: 'cat-group-count muted' }, `(${list.length})`),
-      ));
+      if (!list.length) continue; // skip groups with no expense categories in this section
+      content.appendChild(renderExpenseGroupHead(g, list.length));
       const grid = el('div', { class: 'entity-grid' });
       list.forEach(c => grid.appendChild(renderCategoryCard(c)));
       content.appendChild(grid);
     }
-    // Ungrouped bucket (user-added categories without groupId).
     const ungrouped = byGroup.get('__none__') || [];
     if (ungrouped.length) {
-      content.appendChild(el('div', { class: 'cat-group-head' },
-        el('span', { class: 'cat-group-icon cat-group-icon-none' }, '✦'),
-        el('span', { class: 'cat-group-name' }, t('grp.uncategorized')),
-        el('span', { class: 'cat-group-count muted' }, `(${ungrouped.length})`),
-      ));
+      content.appendChild(renderExpenseGroupHead(null, ungrouped.length));
       const grid = el('div', { class: 'entity-grid' });
       ungrouped.forEach(c => grid.appendChild(renderCategoryCard(c)));
       content.appendChild(grid);
     }
 
-    const sec = el('div', { class: 'card', style: { marginBottom: '16px' } },
-      el('div', { class: 'card-head' },
-        el('div', { class: 'card-title' }, title),
-        el('div', { class: 'muted', style: { fontSize: '.82rem' } }, `${cats.filter(c => c.active).length} ${t('cat.active')}`)),
-      cats.length ? content : emptyState(t(`cat.section.${type}.empty.title`), t(`cat.section.${type}.empty.msg`)),
+    return el('div', { class: 'card cat-section cat-section--expense' },
+      el('div', { class: 'cat-section-banner is-expense' },
+        el('div', { class: 'cat-section-icon is-expense' }, '↑'),
+        el('div', { style: { flex: '1', minWidth: '0' } },
+          el('div', { class: 'cat-section-title' }, t('cat.section.expense.title')),
+          el('div', { class: 'cat-section-sub muted' }, `${cats.length} ${t('cat.total')} · ${activeCount} ${t('cat.active')}`),
+        ),
+      ),
+      cats.length ? content : emptyState(t('cat.section.expense.empty.title'), t('cat.section.expense.empty.msg')),
     );
-    return sec;
   }
 
-  // Backwards-compat alias (kept for any external code that referenced it).
-  const renderCatSection = renderGroupedCatSection;
+  // ---- Income categories: flat, no grouping, sage banner ----------
+  function renderIncomeSection(cats) {
+    const activeCount = cats.filter(c => c.active).length;
+    const grid = el('div', { class: 'entity-grid' });
+    cats.forEach(c => grid.appendChild(renderCategoryCard(c)));
+
+    return el('div', { class: 'card cat-section cat-section--income' },
+      el('div', { class: 'cat-section-banner is-income' },
+        el('div', { class: 'cat-section-icon is-income' }, '↓'),
+        el('div', { style: { flex: '1', minWidth: '0' } },
+          el('div', { class: 'cat-section-title' }, t('cat.section.income.title')),
+          el('div', { class: 'cat-section-sub muted' }, `${cats.length} ${t('cat.total')} · ${activeCount} ${t('cat.active')}`),
+        ),
+      ),
+      cats.length ? grid : emptyState(t('cat.section.income.empty.title'), t('cat.section.income.empty.msg')),
+    );
+  }
+
+  // A single group header inside the expense section. Tinted with the
+  // group's color so it scans as a distinct band under the section banner.
+  function renderExpenseGroupHead(g, count) {
+    const head = el('div', { class: 'cat-group-head' });
+    if (g) {
+      head.appendChild(el('span', { class: 'cat-group-icon', style: { background: g.color } }, g.icon || '✦'));
+      head.appendChild(el('span', { class: 'cat-group-name' }, g.name));
+      head.dataset.groupId = g.id;
+      head.style.borderLeftColor = g.color;
+    } else {
+      head.appendChild(el('span', { class: 'cat-group-icon cat-group-icon-none' }, '✦'));
+      head.appendChild(el('span', { class: 'cat-group-name' }, t('grp.uncategorized')));
+    }
+    head.appendChild(el('span', { class: 'cat-group-count' }, String(count)));
+    return head;
+  }
 
   function renderCategoryCard(c) {
-    return el('div', { class: 'entity' + (c.active ? '' : ' inactive') },
+    return el('div', { class: 'entity' + (c.active ? '' : ' inactive'), style: { '--cat-color': c.color } },
       el('div', { class: 'cat-swatch', style: { background: c.color } }, c.icon || '✦'),
       el('div', { style: { flex: 1, minWidth: 0 } },
         el('div', { class: 'e-name', style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, c.name),
@@ -1457,7 +1489,7 @@ const App = (() => {
           el('span', {}, lastCat.name),
         ) : '—',
       ));
-      tr.appendChild(el('td', { class: 'muted' }, p.lastDate ? Fmt.date(p.lastDate, { short: true }) : '—'));
+      tr.appendChild(el('td', { class: 'muted' }, p.lastDate ? Fmt.date(p.lastDate) : '—'));
       // Category bulk-assign dropdown
       const select = el('select', {
         class: 'select',
@@ -1929,7 +1961,7 @@ const App = (() => {
         cb.onchange = () => { item.selected = cb.checked; rebuildPreview(); };
         tr.appendChild(el('td', {}, cb));
 
-        tr.appendChild(el('td', {}, Fmt.date(item.row.boekingsdatum, { short: true })));
+        tr.appendChild(el('td', {}, Fmt.date(item.row.boekingsdatum)));
         tr.appendChild(el('td', { class: 'desc', title: item.row.detail || '' }, item.row.omschrijving || '—'));
         const sign = item.classification?.type === 'expense' ? '−' : '+';
         tr.appendChild(el('td', { class: 'right amt' }, sign + Fmt.money(Math.abs(item.row.bedrag))));

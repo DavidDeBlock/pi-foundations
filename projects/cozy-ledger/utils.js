@@ -25,9 +25,6 @@ const Fmt = {
     if (opts.month) {
       return dt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     }
-    if (opts.short) {
-      return dt.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
-    }
     return dt.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
   },
   ymKey(d) {

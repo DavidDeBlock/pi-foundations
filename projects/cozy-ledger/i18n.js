@@ -168,6 +168,7 @@ const Strings = {
     'cat.section.income.empty.title':  'Nog geen inkomstencategorieën',
     'cat.section.income.empty.msg':    'Voeg er één toe om inkomsten te markeren.',
     'cat.active':                  'actief',
+    'cat.total':                   'totaal',
     'cat.inactive':                'inactief',
     'cat.card.inactive':           'inactief',
 

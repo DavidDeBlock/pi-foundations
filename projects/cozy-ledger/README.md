@@ -27,20 +27,25 @@ A small, warm, friendly budget-tracking web app for tracking private and shared 
 
 ```
 cozy-ledger/
-├── index.html      Entry point. Loads the 5 scripts below.
-├── styles.css      Design system, layout, components, responsive rules.
-├── data.js         Store: localStorage persistence + seed data + CRUD.
-├── utils.js        Formatters (money/date), DOM helpers ($, el, toast).
-├── icons.js        Inline SVG icon set + decorative illustrations.
-├── csv.js          ING Belgium CSV import — pure parser, classifier, dedup.
-├── app.js          Router, screens, modals — the main app logic.
-├── _test_csv.js    Node test for csv.js (21 assertions, no jsdom).
-├── _test_boot.js   Boot smoke test: loads all scripts, runs import flow.
-├── package.json    Marks this subdir as CommonJS so the Node tests run.
-└── statements/     Real ING Belgium bank statements used as fixtures.
+├── index.html          Entry point. Loads the 8 scripts below.
+├── styles.css          Design system, layout, components, responsive rules.
+├── data.js             Store: localStorage persistence + seed data + CRUD.
+├── utils.js            Formatters (money/date), DOM helpers ($, el, toast).
+├── icons.js            Inline SVG icon set + decorative illustrations.
+├── csv.js              ING Belgium CSV import — pure parser, classifier, dedup.
+├── selectors.js        Pure selector functions over state (scope, balances, flows).
+├── i18n.js             Dutch translation table + t(key) helper.
+├── backup.js           Settings-page backup helpers (settings UI lives in app.js).
+├── app.js              Router, screens, modals — the main app logic.
+├── _test_csv.js        Node test for csv.js (21 assertions, no jsdom).
+├── _test_boot.js       Boot smoke test: loads all scripts, runs import flow.
+├── _test_selectors.js  Pure tests for selectors.js + Fmt.* formatters.
+├── eslint.config.js    Flat config for ESLint 9 (lint, dev only).
+├── package.json        CommonJS so Node tests run; lists ESLint as devDep.
+└── statements/         Real ING Belgium bank statements used as fixtures.
 ```
 
-No build step. No dependencies. Open `index.html` in a browser or serve the folder with any static server.
+No runtime dependencies. ESLint is a **devDependency only** for `npm run lint` — not loaded by `index.html`. Open `index.html` in a browser or serve the folder with any static server.
 
 ## Run it
 
@@ -54,12 +59,26 @@ python3 -m http.server 8001
 
 ## Test it (optional, dev only)
 
-The Node test suite covers the CSV import pipeline (parsing, classification, dedup, mapping) plus a stubbed-DOM boot smoke test that walks the full import flow against the real statement files. No jsdom required.
+The Node test suite covers three surfaces:
+
+- **CSV pipeline** — pure parser, classifier, dedup, mapper. No DOM.
+- **App boot** — stubbed-DOM smoke test that walks the full import flow against the real statement files. No jsdom required.
+- **Pure layer** — every public function in `selectors.js` (scope, sources, balance series, monthly flows, …) and `utils.js` (`Fmt.*` formatters, `el`/`$` helpers).
+
+Run them all with `npm test`:
 
 ```bash
 cd cozy-ledger
-node _test_csv.js   # 21 assertions: parser + classifier + dedup + mapper
-node _test_boot.js  # 9 assertions: globals exposed, App.init, end-to-end import
+npm test          # 158 assertions across 3 files, no extra deps
+npm run lint      # ESLint 9 flat config, 0 errors expected
+```
+
+Or run an individual file:
+
+```bash
+node _test_csv.js        # CSV pipeline
+node _test_boot.js       # stubbed-DOM boot smoke test
+node _test_selectors.js  # pure selectors + formatters
 ```
 
 Tests are not required to run the app — they're a development aid.

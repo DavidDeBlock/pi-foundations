@@ -5,6 +5,10 @@
   "description": "Personal & household budget notebook. Vanilla JS, no build step.",
   "type": "commonjs",
   "scripts": {
-    "test": "node _test_csv.js"
+    "test": "node _test_csv.js && node _test_boot.js && node _test_selectors.js",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0"
   }
 }
