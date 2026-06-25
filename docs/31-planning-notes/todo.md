@@ -111,3 +111,10 @@ I don't understand the graphs in the trends tab, like the balance over time per 
 
 
 The two graphs in the trend step are not showing correctly. For example, in the first graph, income versus expenses by month, they are all green. If you base the balance track per source and the net worth on the converse, is expensive by month graph, then the line is not showing or the graph is not showing correctly. Verify my problem. 
+
+1.Reading is okay. 
+2.Don't overdo in sound. 
+3.Tablet and phone. 
+4.I think every day for a short period of time. 
+5.Cat is her favorite animal. 
+

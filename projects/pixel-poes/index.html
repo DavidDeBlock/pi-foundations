@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#ffd9b3" />
+  <title>Pixel Poes – Mijn Digitale Huisdier</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%90%B1%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <!-- ───── INTRO / NAME SCREEN ───── -->
+  <section id="intro" class="screen visible" aria-label="Welkom">
+    <div class="card center">
+      <div class="logo">🐱</div>
+      <h1>Pixel Poes</h1>
+      <p class="sub">Een klein digitaal huisdier<br/>om voor te zorgen 💛</p>
+
+      <label class="field">
+        <span>Noem je huisdier</span>
+        <input id="nameInput" type="text" maxlength="12" placeholder="Bijv. Pluis" autocomplete="off" />
+      </label>
+
+      <button id="startBtn" class="btn big primary" type="button">
+        <span class="emoji">✨</span><span>Start!</span>
+      </button>
+
+      <button id="continueBtn" class="btn ghost hidden" type="button">
+        Doorgaan met <span id="continueName">mijn huisdier</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ───── MAIN GAME SCREEN ───── -->
+  <section id="game" class="screen" aria-label="Spel">
+    <header class="topbar">
+      <div class="petname" id="petName">Poes</div>
+      <div class="chips">
+        <span class="chip" title="Niveau">⭐ <b id="levelLabel">1</b></span>
+        <span class="chip" title="Munten">🪙 <b id="coinsLabel">0</b></span>
+        <span class="chip" title="Dagen streak">🔥 <b id="streakLabel">0</b></span>
+      </div>
+      <button id="settingsBtn" class="icon-btn" type="button" aria-label="Instellingen">⚙️</button>
+    </header>
+
+    <!-- Pet stage -->
+    <div class="stage card" id="stage">
+      <div class="pet-canvas" id="petCanvas" aria-live="polite" aria-label="Mijn huisdier">
+        <!-- Pixel spans will be inserted here by the renderer (F2). -->
+        <div class="scaffold-note">
+          <div class="big-emoji">🐱</div>
+          <div class="muted">De kat wordt zo getekend…</div>
+        </div>
+      </div>
+      <div class="bubble hidden" id="bubble">Hallo!</div>
+    </div>
+
+    <!-- Stat bars -->
+    <div class="stats card" id="stats">
+      <!-- Stat bars inserted by app.js (scaffold) -->
+    </div>
+
+    <!-- Action buttons -->
+    <div class="actions">
+      <button class="action" data-action="feed"  type="button"><span class="big">🍎</span><span class="lbl">Voeden</span></button>
+      <button class="action" data-action="play"  type="button"><span class="big">🎈</span><span class="lbl">Spelen</span></button>
+      <button class="action" data-action="wash"  type="button"><span class="big">🛁</span><span class="lbl">Wassen</span></button>
+      <button class="action" data-action="sleep" type="button"><span class="big">😴</span><span class="lbl">Slapen</span></button>
+    </div>
+
+    <!-- Day overview (vinkjes) -->
+    <div class="day-overview card" id="dayOverview" aria-label="Vandaag">
+      <div class="day-title">Vandaag</div>
+      <div class="day-vinkjes" id="dayVinkjes">
+        <!-- vinkjes inserted by app.js -->
+      </div>
+    </div>
+
+    <!-- Shop + stickers bar -->
+    <div class="shopbar">
+      <button id="shopBtn" class="btn primary" type="button">
+        <span>🛍️</span><span>Winkeltje</span>
+      </button>
+      <button id="stickersBtn" class="btn ghost" type="button">
+        <span>🏆</span><span>Stickers</span>
+      </button>
+    </div>
+
+    <footer class="foot">
+      <button id="resetBtn" class="link" type="button">Opnieuw beginnen</button>
+    </footer>
+  </section>
+
+  <!-- ───── SHOP MODAL ───── -->
+  <div id="shopModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Winkeltje">
+    <div class="modal-card">
+      <div class="modal-title">🛍️ Winkeltje</div>
+      <div class="shop-balance">Je hebt <b id="shopCoins">0</b> 🪙</div>
+      <div class="shop-grid" id="shopGrid"></div>
+      <button id="closeShop" class="btn ghost" type="button">Sluiten</button>
+    </div>
+  </div>
+
+  <!-- ───── STICKERS MODAL ───── -->
+  <div id="stickersModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Sticker-album">
+    <div class="modal-card">
+      <div class="modal-title">🏆 Sticker-album</div>
+      <div class="stickers-grid" id="stickersGrid"></div>
+      <button id="closeStickers" class="btn ghost" type="button">Sluiten</button>
+    </div>
+  </div>
+
+  <!-- ───── SETTINGS MODAL ───── -->
+  <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Instellingen">
+    <div class="modal-card">
+      <div class="modal-title">⚙️ Instellingen</div>
+      <div class="settings-list">
+        <label class="settings-row">
+          <span>Geluid</span>
+          <input id="soundToggle" type="checkbox" />
+        </label>
+        <button id="resetBtnSettings" class="btn ghost" type="button">Opnieuw beginnen</button>
+        <div class="settings-about">
+          <p>Pixel Poes is een klein virtueel huisdier-spel. Geen reclame, geen account, alles blijft op dit apparaat.</p>
+        </div>
+      </div>
+      <button id="closeSettings" class="btn ghost" type="button">Sluiten</button>
+    </div>
+  </div>
+
+  <script src="data/pet-kat.js"></script>
+  <script src="data/shop.js"></script>
+  <script src="data/stickers.js"></script>
+  <script src="data/messages.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
