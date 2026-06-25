@@ -23,6 +23,23 @@ class StubNode {}
     if (!n || !part) return false;
     if (part.startsWith('#')) return n.attributes && n.attributes.id === part.slice(1);
     if (part.startsWith('.')) return n.classList && n.classList._set && n.classList._set.has(part.slice(1));
+    // ISSUE-010: production code uses attribute selectors to find the
+    // sidebar badges (`[data-badge-for="transactions"]`) and other
+    // data-anchored nodes. Support `[attr]` and `[attr="value"]` here.
+    if (part.startsWith('[') && part.endsWith(']')) {
+      const inner = part.slice(1, -1);
+      const eq = inner.indexOf('=');
+      if (eq === -1) {
+        return n.attributes && Object.prototype.hasOwnProperty.call(n.attributes, inner);
+      }
+      let attr = inner.slice(0, eq);
+      let val  = inner.slice(eq + 1);
+      // Strip optional quotes around the value.
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      return n.attributes && n.attributes[attr] === val;
+    }
     return (n.tagName || '').toLowerCase() === part.toLowerCase();
   }
   function matchSelector(root, sel) {
@@ -230,7 +247,10 @@ const documentStub = {
   querySelector: (sel) => {
     if (typeof sel !== 'string') return null;
     if (sel.startsWith('#')) return findById(sel.slice(1));
-    return findAll(documentStub.body, n => (n.tagName || '').toLowerCase() === sel.toLowerCase())[0] || null;
+    // For any other selector pattern, defer to the per-element
+    // matchSelector which understands `.class`, `[attr=value]`, and
+    // descendants in addition to tag names.
+    return matchSelector(documentStub.body, sel)[0] || null;
   },
   querySelectorAll: (sel) => {
     if (typeof sel !== 'string') return [];
@@ -238,7 +258,7 @@ const documentStub = {
       const el = findById(sel.slice(1));
       return el ? [el] : [];
     }
-    return findAll(documentStub.body, n => (n.tagName || '').toLowerCase() === sel.toLowerCase());
+    return matchSelector(documentStub.body, sel);
   },
   getElementById: (id) => findById(id),
   addEventListener: () => {},
@@ -517,6 +537,164 @@ test('Fmt.date always includes the year (no short option that drops it)', () => 
   const full    = F.date('2025-12-25');
   const fullOpt = F.date('2025-12-25', { short: true });
   if (full !== fullOpt) throw new Error(`short option should be ignored: '${full}' vs '${fullOpt}'`);
+});
+
+// =====================================================================
+// ISSUE-010: Re-render storm fix
+// =====================================================================
+// The shell (sidebar + topbar) is built once at boot. Subsequent
+// `store:changed` events only re-render the active view, while sidebar
+// badges, the active nav class, scope pills, and the month picker label
+// update in place.
+console.log('\n— ISSUE-010: re-render storm —');
+
+// Reset the test state so the shell render count is predictable.
+function freshInit010() {
+  // Wipe backdrops/modal nodes from earlier tests. Earlier modal tests
+  // also clear `body.children`, which orphans `#app`. `renderShell()`
+  // only mutates `#app`'s children — it never re-attaches `#app` to
+  // `<body>` — so we re-attach the `#app` div here when it's missing.
+  for (const c of [...documentStub.body.children]) {
+    if (c.getAttribute && c.getAttribute('id') !== 'app') c.remove();
+  }
+  if (!documentStub.body.children.find(c => c.getAttribute?.('id') === 'app')) {
+    documentStub.body.appendChild(documentStub.getElementById('app'));
+  }
+  // Reset state to a known baseline: no transactions, default scope
+  // and default view. Earlier ISSUE-010 tests leave settings.scope
+  // at 'shared' and `view` on something other than the boot default;
+  // without this reset, downstream tests assume defaults that no
+  // longer hold.
+  ctx.window.App._state.transactions = [];
+  ctx.window.App._state.settings.scope = 'private';
+  ctx.window.Store.save(ctx.window.App._state);
+  ctx.window.App._resetRenderCount();
+  ctx.window.App._goTo('dashboard');
+  ctx.window.App._resetRenderCount(); // _goTo bumps the counter; reset for the test
+  ctx.window.App.init();
+}
+
+test('ISSUE-010: renderShell runs exactly once at boot (not on every store:changed)', () => {
+  freshInit010();
+  const after1 = ctx.window.App._shellRenderCount;
+  if (after1 !== 1) throw new Error(`after init, expected _shellRenderCount=1, got ${after1}`);
+
+  // Dispatch several store:changed events. The shell should NOT re-render.
+  const s = ctx.window.App._state;
+  for (let i = 0; i < 3; i++) {
+    ctx.window.Store.addTransaction(s, { type: 'expense', amount: 1 + i, date: '2026-06-25', description: `Shell-test ${i}`, categoryId: 'c_eating', paidByUserId: 'u_david', sourceId: 's_david', scope: 'private' });
+    ctx.window.dispatchEvent(new Event('store:changed'));
+  }
+  const after2 = ctx.window.App._shellRenderCount;
+  if (after2 !== 1) throw new Error(`after 3 store:changed events, expected _shellRenderCount=1, got ${after2}`);
+});
+
+test('ISSUE-010: sidebar badge for transactions updates in place after store change', () => {
+  freshInit010();
+  const sidebar = ctx.window.document.getElementById('sidebar');
+  const badge = sidebar.querySelector('[data-badge-for="transactions"]');
+  if (!badge) throw new Error('no [data-badge-for="transactions"] badge in sidebar');
+  const startCount = Number(badge.textContent || '0');
+
+  const s = ctx.window.App._state;
+  ctx.window.Store.addTransaction(s, { type: 'expense', amount: 5, date: '2026-06-25', description: 'Badge test', categoryId: 'c_eating', paidByUserId: 'u_david', sourceId: 's_david', scope: 'private' });
+  ctx.window.dispatchEvent(new Event('store:changed'));
+
+  const newCount = Number(sidebar.querySelector('[data-badge-for="transactions"]').textContent || '0');
+  if (newCount !== startCount + 1) {
+    throw new Error(`badge should be ${startCount + 1}, got ${newCount}`);
+  }
+  // Verify it is the SAME element (in-place update, not a fresh node).
+  if (sidebar.querySelector('[data-badge-for="transactions"]') !== badge) {
+    throw new Error('badge node was replaced instead of updated in place');
+  }
+});
+
+test('ISSUE-010: sidebar payees badge hides when no payees need a category', () => {
+  freshInit010();
+  const sidebar = ctx.window.document.getElementById('sidebar');
+  const payeesBadge = sidebar.querySelector('[data-badge-for="payees"]');
+  if (!payeesBadge) throw new Error('no [data-badge-for="payees"] badge in sidebar');
+  // After a fresh boot with no transactions, the payees badge should be hidden.
+  if (payeesBadge.style.display !== 'none') {
+    throw new Error(`payees badge should be hidden initially, display='${payeesBadge.style.display}'`);
+  }
+});
+
+test('ISSUE-010: scope pill active class moves in place on store change (no re-render)', () => {
+  freshInit010();
+  const s = ctx.window.App._state;
+  s.settings.scope = 'private'; // ensure we know the starting pill
+  ctx.window.Store.save(s); // the store:changed handler reloads from Store.load()
+  ctx.window.dispatchEvent(new Event('store:changed'));
+  const pillsBefore = ctx.window.document.querySelectorAll('.scope-pill');
+  if (pillsBefore.length !== 3) throw new Error(`expected 3 scope pills, got ${pillsBefore.length}`);
+  // Snapshot the pill DOM nodes so we can verify they don't get replaced.
+  const pillNodes = [...pillsBefore];
+  const privatePill = pillNodes.find(p => p.getAttribute('data-scope') === 'private');
+  const sharedPill  = pillNodes.find(p => p.getAttribute('data-scope') === 'shared');
+  if (!privatePill.classList._set.has('active')) {
+    throw new Error('private pill should start as active');
+  }
+  // Simulate the user clicking 'shared': update state, save, dispatch event.
+  s.settings.scope = 'shared';
+  ctx.window.Store.save(s);
+  ctx.window.dispatchEvent(new Event('store:changed'));
+  // The shared pill should now be active; the private one should not.
+  if (!sharedPill.classList._set.has('active')) {
+    throw new Error('shared pill should be active after scope change');
+  }
+  if (privatePill.classList._set.has('active')) {
+    throw new Error('private pill should no longer be active');
+  }
+  // The pill DOM nodes must be the same (in-place update).
+  const pillsAfter = [...ctx.window.document.querySelectorAll('.scope-pill')];
+  for (let i = 0; i < pillNodes.length; i++) {
+    if (pillNodes[i] !== pillsAfter[i]) {
+      throw new Error(`scope pill at index ${i} was replaced, not updated in place`);
+    }
+  }
+});
+
+test('ISSUE-010: goTo updates the sidebar active class in place (no shell re-render)', () => {
+  freshInit010();
+  const startCount = ctx.window.App._shellRenderCount;
+  const sidebar = ctx.window.document.getElementById('sidebar');
+  const dashboardBtn = sidebar.querySelector('[data-view="dashboard"]');
+  const categoriesBtn = sidebar.querySelector('[data-view="categories"]');
+  if (!dashboardBtn.classList._set.has('active')) {
+    throw new Error('dashboard nav should start as active');
+  }
+  ctx.window.App._goTo('categories');
+  if (!categoriesBtn.classList._set.has('active')) {
+    throw new Error('categories nav should be active after goTo');
+  }
+  if (dashboardBtn.classList._set.has('active')) {
+    throw new Error('dashboard nav should no longer be active');
+  }
+  if (ctx.window.App._shellRenderCount !== startCount) {
+    throw new Error('goTo should not re-render the shell');
+  }
+});
+
+test('ISSUE-010: month picker label updates in place when monthKey changes', () => {
+  freshInit010();
+  // Navigate to the transactions view so the month picker is mounted.
+  ctx.window.App._goTo('transactions');
+  const host = ctx.window.document.getElementById('month-picker');
+  if (host.children.length === 0) throw new Error('month picker should be mounted on transactions');
+  const startLabel = host.querySelector('.mp-label')?.textContent;
+  if (!startLabel) throw new Error('month picker label missing');
+  // Click the prev button (simulates the user going one month back).
+  const prevBtn = host.querySelector('button');
+  prevBtn.dispatchEvent({ type: 'click' });
+  const newLabel = ctx.window.document.getElementById('month-picker').querySelector('.mp-label')?.textContent;
+  if (newLabel === startLabel) {
+    throw new Error(`month label should have changed, still '${newLabel}'`);
+  }
+  if (ctx.window.App._shellRenderCount !== 1) {
+    throw new Error('month change should not re-render the shell');
+  }
 });
 
 test('Icons is on window', () => {

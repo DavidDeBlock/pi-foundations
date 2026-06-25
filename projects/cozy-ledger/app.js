@@ -12,6 +12,11 @@ const App = (() => {
   let trendRange = '1y';  // '1y' | '2y' | '3y' | 'all' — window for the trends charts
 
   // ---- Boot ---------------------------------------------------------
+  // ISSUE-010: renderShell() runs exactly once at boot. After that,
+  // store changes call renderView() only; the sidebar and topbar stay
+  // mounted and are updated in place (badges, active classes, picker
+  // label, scope pills).
+  let _shellRenderCount = 0;
   function init() {
     renderShell();
     renderView();
@@ -19,7 +24,10 @@ const App = (() => {
   }
 
   // ---- Shell (sidebar + topbar + main area) -------------------------
+  // ISSUE-010: renderShell() runs once at boot. After that, view-only
+  // updates go through renderView() and never re-render the shell.
   function renderShell() {
+    _shellRenderCount++;
     const root = $('#app');
     root.innerHTML = '';
     root.appendChild(renderSidebar());
@@ -35,11 +43,19 @@ const App = (() => {
     const back = el('div', { class: 'sidebar-backdrop', id: 'sb-back', onclick: closeSidebar });
     document.body.appendChild(back);
 
+    // ISSUE-010: each nav badge gets a `data-badge-for` slot so that
+    // updateSidebarBadges() can find it and rewrite the text in place
+    // on store changes. The badge span is always present; its visibility
+    // is toggled based on the count (null/0 → hidden, > 0 → visible).
     const navItem = (id, label, icon, badge) =>
       el('button', { class: 'nav-item' + (view === id ? ' active' : ''), 'data-view': id, onclick: () => goTo(id) },
         el('span', { class: 'ni-icon', html: icon }),
         label,
-        badge != null ? el('span', { class: 'ni-badge' }, String(badge)) : null,
+        el('span', {
+          class: 'ni-badge',
+          'data-badge-for': id,
+          style: { display: badge == null ? 'none' : '' },
+        }, badge != null ? String(badge) : ''),
       );
 
     return el('aside', { class: 'sidebar', id: 'sidebar' },
@@ -70,6 +86,11 @@ const App = (() => {
   }
 
   function renderTopbar() {
+    // ISSUE-010: the topbar (and the static scope-pills host it owns) is
+    // built once at boot. The scope pills are populated here; renderView
+    // later toggles their `active` class via updateScopePills().
+    const scopeHost = el('div', { class: 'scope-pills', id: 'scope-pills' });
+    renderScopeSelector(scopeHost);
     return el('div', { class: 'topbar' },
       el('div', {},
         el('button', { class: 'menu-btn', onclick: openSidebar, html: Icons.menu }),
@@ -78,7 +99,7 @@ const App = (() => {
       ),
       el('div', { class: 'flex center gap-8' },
         el('div', { class: 'month-picker', id: 'month-picker' }),
-        el('div', { class: 'scope-pills', id: 'scope-pills' }),
+        scopeHost,
         el('button', { class: 'btn btn-ghost', onclick: () => window.Modals.import(), id: 'import-btn', title: t('topbar.import.title') },
           el('span', { html: Icons.upload }), t('topbar.import')),
         el('button', { class: 'btn btn-primary', onclick: () => window.Modals.transaction(), id: 'add-txn-btn' },
@@ -123,10 +144,12 @@ const App = (() => {
   }
 
   function bindGlobal() {
-    // Re-render after any store change
+    // ISSUE-010: re-render the active view after any store change, but
+    // leave the shell alone. renderView() updates sidebar badges, the
+    // active nav class, scope pills, and the month picker label in
+    // place; only `#view` is destroyed and rebuilt.
     window.addEventListener('store:changed', () => {
       state = Store.load();
-      renderShell();
       renderView();
     });
   }
@@ -135,12 +158,85 @@ const App = (() => {
   function goTo(v) {
     view = v;
     closeSidebar();
-    renderShell();
     renderView();
   }
 
+  // ---- In-place shell updaters (ISSUE-010) --------------------------
+  // The shell is mounted once at boot. Subsequent state changes update
+  // its parts in place via the helpers below, so a `store:changed` event
+  // does not tear down the sidebar or topbar.
+
+  // Counts that drive the sidebar nav badges. Payees shows the number of
+  // distinct payees that still have no category assigned; null hides the
+  // badge. The other counts are simply the length of the relevant
+  // collection (0 is shown as "0", consistent with the previous
+  // behaviour of `navItem(id, label, icon, count)`).
+  function sidebarBadgeCounts() {
+    return {
+      transactions: state.transactions.length,
+      categories: state.categories.length,
+      sources: state.sources.length,
+      users: state.users.length,
+      payees: distinctPayees().filter(p => p.noCategory > 0).length || null,
+    };
+  }
+
+  function updateSidebarBadges() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    const counts = sidebarBadgeCounts();
+    for (const [key, count] of Object.entries(counts)) {
+      const badge = sidebar.querySelector(`[data-badge-for="${key}"]`);
+      if (!badge) continue;
+      if (count == null) {
+        badge.textContent = '';
+        badge.style.display = 'none';
+      } else {
+        badge.textContent = String(count);
+        badge.style.display = '';
+      }
+    }
+  }
+
+  function updateSidebarActiveClass() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    for (const btn of sidebar.querySelectorAll('.nav-item')) {
+      if (btn.getAttribute('data-view') === view) btn.classList.add('active');
+      else btn.classList.remove('active');
+    }
+  }
+
+  function updateScopePills() {
+    const host = document.getElementById('scope-pills');
+    if (!host) return;
+    const current = state.settings && state.settings.scope;
+    for (const pill of host.querySelectorAll('.scope-pill')) {
+      if (pill.getAttribute('data-scope') === current) pill.classList.add('active');
+      else pill.classList.remove('active');
+    }
+  }
+
+  // The month picker lives inside the static topbar shell. On the first
+  // call for a view that shows the picker, build the three child
+  // elements (prev / label / next). On subsequent calls (e.g. after a
+  // store change) the picker is already mounted; just rewrite the label
+  // text. When the active view hides the picker, clear the host so the
+  // empty space collapses.
+  function ensureMonthPicker() {
+    const host = document.getElementById('month-picker');
+    if (!host) return;
+    const showMonth = (view === 'dashboard' || view === 'transactions');
+    if (!showMonth) { host.innerHTML = ''; return; }
+    if (host.children.length === 0) {
+      renderMonthPicker(host);
+      return;
+    }
+    const label = host.querySelector('.mp-label');
+    if (label) label.textContent = Fmt.monthLabel(monthKey);
+  }
+
   function renderView() {
-    const main = $('#main');
     const view_ = $('#view');
     view_.innerHTML = '';
 
@@ -158,18 +254,15 @@ const App = (() => {
     $('#page-title').innerHTML = titles[view][0];
     $('#page-sub').textContent = titles[view][1];
 
-    // Month picker visibility: only relevant on dashboard/transactions
-    const showMonth = (view === 'dashboard' || view === 'transactions');
-    const mp = $('#month-picker');
-    if (showMonth) renderMonthPicker(mp);
-    else mp.innerHTML = '';
-
-    // Scope pills live in the topbar; render on every view so the user
-    // can change scope without first navigating somewhere specific.
-    renderScopeSelector($('#scope-pills'));
-
+    // Topbar in-place updates: add-txn-btn visibility, month picker, scope pills.
     const at = $('#add-txn-btn');
     at.style.display = (view === 'categories' || view === 'sources' || view === 'users' || view === 'settings') ? 'none' : 'inline-flex';
+    ensureMonthPicker();
+    updateScopePills();
+
+    // Sidebar in-place updates: badges + active class.
+    updateSidebarBadges();
+    updateSidebarActiveClass();
 
     if (view === 'dashboard') view_.appendChild(renderDashboard());
     else if (view === 'trends') view_.appendChild(renderTrends());
@@ -1609,6 +1702,18 @@ const App = (() => {
   function escapeAttr(s) { return String(s ?? '').replace(/"/g, '&quot;'); }
   function escapeText(s) { return String(s ?? '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
-  return { init, get _state() { return state; }, bulkUpdatePayeeCategory };
+  // ISSUE-010: `_shellRenderCount` and `_resetRenderCount` are exposed
+  // so the test harness can assert the shell renders exactly once at
+  // boot and is not re-rendered on store:changed. `goTo` is exposed as
+  // `_goTo` so tests can navigate between views without dispatching a
+  // synthetic click event.
+  return {
+    init,
+    get _state() { return state; },
+    bulkUpdatePayeeCategory,
+    get _shellRenderCount() { return _shellRenderCount; },
+    _resetRenderCount() { _shellRenderCount = 0; },
+    _goTo: goTo,
+  };
 })();
 window.App = App;
