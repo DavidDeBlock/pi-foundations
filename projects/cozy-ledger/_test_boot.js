@@ -19,14 +19,16 @@ class StubNode {}
 // ISSUE-009: tiny CSS-selector matcher supporting the patterns the
   // production code uses: #id, .class, tag, and space-separated compounds
   // (descendant). Returns every matching node under `root`.
+  function matchesPartHelper(n, part) {
+    if (!n || !part) return false;
+    if (part.startsWith('#')) return n.attributes && n.attributes.id === part.slice(1);
+    if (part.startsWith('.')) return n.classList && n.classList._set && n.classList._set.has(part.slice(1));
+    return (n.tagName || '').toLowerCase() === part.toLowerCase();
+  }
   function matchSelector(root, sel) {
     if (typeof sel !== 'string') return [];
     const parts = sel.split(/\s+/).filter(Boolean);
-    const matchesPart = (n, part) => {
-      if (part.startsWith('#')) return n.attributes && n.attributes.id === part.slice(1);
-      if (part.startsWith('.')) return n.classList && n.classList._set && n.classList._set.has(part.slice(1));
-      return (n.tagName || '').toLowerCase() === part.toLowerCase();
-    };
+    const matchesPart = matchesPartHelper;
     const results = [];
     const walk = (n, partIdx) => {
       if (!isElement(n)) return;
@@ -67,9 +69,26 @@ class StubNode {}
   };
   obj.attributes = {};
   obj._listeners = {};
-  obj.appendChild = function (c) { if (c) this.children.push(c); return c; };
+  obj.appendChild = function (c) {
+    if (!c) return c;
+    this.children.push(c);
+    // Track a parent link so the stub's `remove()` can detach correctly.
+    // The production code only uses parent for traversal in error paths;
+    // walking the tree in tests is done via findAll on `this` roots.
+    c._parent = this;
+    return c;
+  };
   obj.removeChild = function (c) { this.children = this.children.filter(x => x !== c); };
-  obj.remove = function () {};
+  // ISSUE-009: real `Element.remove()` detaches the node from its parent.
+  // The stub's bare no-op left earlier-test modals in the DOM, so the
+  // next test's `querySelector('.modal-backdrop')` returned the OLD
+  // modal (which the user thought was a new one). Walk up a fake
+  // parent link to the host and detach.
+  obj.remove = function () {
+    if (!this._parent) return; // not yet attached to anything
+    this._parent.children = this._parent.children.filter(c => c !== this);
+    this._parent = null;
+  };
   obj.click = function () { (this._listeners['click'] || []).forEach(fn => fn({ type: 'click', target: this, currentTarget: this })); };
   // ISSUE-009: the Modal helper uses element.querySelector('#id') and
   // compound selectors like '.modal-head .modal-title'. Production
@@ -113,6 +132,18 @@ class StubNode {}
     if (!ev.target) ev.target = this;
     ev.currentTarget = this;
     (this._listeners[ev.type] || []).forEach(fn => fn(ev));
+  };
+  // The Modal helper uses target.closest('.form-field, .apply-all-opt')
+  // to find the field wrapper. Production browsers provide this; mirror
+  // it on the stub.
+  obj.closest = function (sel) {
+    if (typeof sel !== 'string') return null;
+    let cur = this;
+    while (cur) {
+      if (matchesPartHelper(cur, sel)) return cur;
+      cur = cur._parent || null;
+    }
+    return null;
   };
   obj.focus = function () {};
   Object.defineProperty(obj, 'className', {
@@ -367,6 +398,106 @@ test('ISSUE-009: Modal.create returns false from onSave to keep modal open', () 
     throw new Error('modal should still be open after onSave returned false');
   }
   backdrop.querySelector('#m-cancel').click(); // cleanup
+});
+
+test('ISSUE-009: pencil button on a transaction row opens the edit modal with the right values', () => {
+  // Clean up any leftover modals from earlier tests, and re-init the app
+  // shell so the nav buttons are reliably in the DOM.
+  documentStub.body.children.length = 0;
+  ctx.window.App.init();
+
+  // Seed a few transactions via Store so renderTransactions has rows to draw.
+  const s = ctx.window.App._state;
+  ctx.window.Store.addTransaction(s, { type: 'expense', amount: 12.5, date: '2026-06-25', description: 'Pencil 1', categoryId: 'c_groceries', paidByUserId: 'u_david', sourceId: 's_david', scope: 'private' });
+  ctx.window.Store.addTransaction(s, { type: 'expense', amount: 7.5,  date: '2026-06-24', description: 'Pencil 2', categoryId: 'c_groceries', paidByUserId: 'u_david', sourceId: 's_david', scope: 'private' });
+  ctx.window.Store.addTransaction(s, { type: 'expense', amount: 3,    date: '2026-06-23', description: 'Pencil 3', categoryId: 'c_groceries', paidByUserId: 'u_david', sourceId: 's_david', scope: 'private' });
+  s.settings.scope = 'all';
+  ctx.window.dispatchEvent(new Event('store:changed'));
+
+  navigateToView('transactions');
+
+  const appRoot = ctx.window.document.querySelector('#app');
+  // Click every pencil in turn and assert the modal opens with the right
+  // values for THAT row. This catches intermittent failures where some
+  // rows' click handlers don't fire or capture the wrong txn.
+  const expected = [
+    { desc: 'Pencil 1', amount: 12.5 },
+    { desc: 'Pencil 2', amount: 7.5 },
+    { desc: 'Pencil 3', amount: 3 },
+  ];
+  for (let i = 0; i < expected.length; i++) {
+    // Re-query on each iteration in case the table re-rendered after the
+    // previous close. (The Modal.close() path doesn't currently re-render,
+    // but defensive re-query keeps the test honest.)
+    const btns = findAll(appRoot, n => n.tagName === 'BUTTON' && n.getAttribute('title') === 'Bewerken');
+    if (btns.length < expected.length) {
+      throw new Error(`row ${i}: expected ${expected.length} edit buttons, got ${btns.length}`);
+    }
+    btns[i].dispatchEvent({ type: 'click' });
+    const backdrop = documentStub.body.querySelector('.modal-backdrop');
+    if (!backdrop) throw new Error(`row ${i} (${expected[i].desc}): no modal-backdrop after click`);
+    const title = backdrop.querySelector('.modal-title')?.textContent || '';
+    if (title !== 'Transactie bewerken') {
+      throw new Error(`row ${i} (${expected[i].desc}): expected "Transactie bewerken", got "${title}"`);
+    }
+    const descInput = backdrop.querySelector('#f-description');
+    if (!descInput) throw new Error(`row ${i}: no #f-description in modal`);
+    if (descInput.value !== expected[i].desc) {
+      throw new Error(`row ${i}: expected description "${expected[i].desc}", got "${descInput.value}"`);
+    }
+    const amountInput = backdrop.querySelector('#f-amount');
+    if (!amountInput) throw new Error(`row ${i}: no #f-amount in modal`);
+    if (Number(amountInput.value) !== expected[i].amount) {
+      throw new Error(`row ${i}: expected amount ${expected[i].amount}, got "${amountInput.value}"`);
+    }
+    backdrop.querySelector('#m-cancel').click();
+  }
+});
+
+test('ISSUE-009: opening the edit modal does not throw when an applyAll field exists and the payee matches multiple rows', () => {
+  // Regression: in production, opening the edit modal on a transaction
+  // whose payee matches several others (so the "applyAll" checkbox is
+  // visible) used to throw "Cannot read properties of undefined (reading
+  // 'body')". The checkbox renderer's `bind()` hook called `f.visible(values)`
+  // with only one argument, before `visCtx` was constructed; the applyAll
+  // callback expected `(values, ctx)` and crashed on `ctx.body`.
+  // Reset state to start clean — earlier tests have left txns in localStorage.
+  ctx.window.App._state.transactions = [];
+  ctx.window.Store.save(ctx.window.App._state);
+  documentStub.body.children.length = 0;
+  ctx.window.App.init();
+  const s = ctx.window.App._state;
+  // Seed three rows with the SAME payee so the applyAll checkbox appears.
+  ctx.window.Store.addTransaction(s, { type: 'expense', amount: 10, date: '2026-06-25', description: 'Deliveroo Belgium', categoryId: 'c_eating', paidByUserId: 'u_david', sourceId: 's_david', scope: 'private' });
+  ctx.window.Store.addTransaction(s, { type: 'expense', amount: 20, date: '2026-06-24', description: 'Deliveroo Belgium', categoryId: 'c_eating', paidByUserId: 'u_david', sourceId: 's_david', scope: 'private' });
+  ctx.window.Store.addTransaction(s, { type: 'expense', amount: 30, date: '2026-06-23', description: 'Deliveroo Belgium', categoryId: 'c_eating', paidByUserId: 'u_david', sourceId: 's_david', scope: 'private' });
+  s.settings.scope = 'all';
+  ctx.window.dispatchEvent(new Event('store:changed'));
+
+  navigateToView('transactions');
+
+  const appRoot = ctx.window.document.querySelector('#app');
+  const btns = findAll(appRoot, n => n.tagName === 'BUTTON' && n.getAttribute('title') === 'Bewerken');
+  if (btns.length !== 3) throw new Error(`expected 3 edit buttons, got ${btns.length}`);
+
+  // Clicking the pencil on any of these MUST open the edit modal without
+  // throwing — the previous bug threw here for every matching row.
+  let lastError = null;
+  for (let i = 0; i < btns.length; i++) {
+    btns[i].dispatchEvent({ type: 'click' });
+    const backdrop = documentStub.body.querySelector('.modal-backdrop');
+    if (!backdrop) {
+      lastError = `row ${i}: no modal-backdrop after click`;
+      break;
+    }
+    const title = backdrop.querySelector('.modal-title')?.textContent || '';
+    if (title !== 'Transactie bewerken') {
+      lastError = `row ${i}: expected "Transactie bewerken", got "${title}"`;
+      break;
+    }
+    backdrop.querySelector('#m-cancel').click();
+  }
+  if (lastError) throw new Error(lastError);
 });
 
 test('Fmt.date always includes the year (no short option that drops it)', () => {

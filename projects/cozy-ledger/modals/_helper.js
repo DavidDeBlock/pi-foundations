@@ -155,7 +155,12 @@
       return {
         node: lbl,
         collect: (v) => { v[f.id] = cb.checked; },
-        bind: () => { lbl.style.display = (typeof f.visible === 'function' && !f.visible(values)) ? 'none' : ''; },
+        // NOTE: visCtx isn't built until after all `bind()` hooks have
+        // run, so a checkbox with a `visible` callback that needs the
+        // modal body (e.g. the transaction modal's `applyAll`) cannot
+        // safely touch `visCtx.body` here. Defer that to applyVisibility()
+        // which runs immediately after visCtx is constructed.
+        bind: () => { lbl.style.display = ''; },
       };
     },
     toggle(f, values) {
@@ -284,9 +289,28 @@
     // Run bind hooks (e.g. select repopulate after default values land)
     for (const r of renderers) r.bind && r.bind(values);
 
-    // Visibility: re-evaluate on every input/change in the body
+    // Visibility: re-evaluate on every input/change in the body.
+    // visCtx is exposed so conditional fields like `applyAll` can query
+    // the modal body for related elements (e.g. `#f-applyAll-text`) and
+    // call `setValue()` to mutate other fields' values.
     const visibilityFields = fields.filter(f => typeof f.visible === 'function');
     const visCtx = { body, values, setValue: (id, v) => { values[id] = v; } };
+
+    // After visCtx exists, run initial visibility evaluation. Some
+    // field kinds (e.g. checkbox) also call `f.visible(values, visCtx)`
+    // from their `bind()` hook. Those bind hooks run before visCtx is
+    // defined here, so the visibility call must be deferred to NOW so
+    // the callback can safely read `visCtx.body` etc.
+    function applyVisibility() {
+      for (const f of visibilityFields) {
+        const target = body.querySelector(`#f-${f.id}`);
+        if (!target) continue;
+        const wrap = target.closest('.form-field, .apply-all-opt') || target;
+        if (wrap) wrap.style.display = f.visible(values, visCtx) ? '' : 'none';
+      }
+    }
+    applyVisibility();
+
     function reevaluate() {
       for (const r of renderers) r.collect && r.collect(values);
       for (const f of visibilityFields) {
