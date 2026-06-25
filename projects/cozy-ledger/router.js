@@ -15,6 +15,62 @@ const Router = (() => {
   /** @type {'1y'|'2y'|'3y'|'all'} */
   let trendRange = '1y';
 
+  // -- Period state (ISSUE-013 / PRD-004) ----------------------------
+  // Shared "what time range am I looking at" state for the dashboard
+  // and trends view. `preset` is one of the rolling windows from the
+  // PRD table, or 'custom' when the user picked a manual range.
+  // The view-default map keeps the per-view default (`1m` for
+  // dashboard, `1y` for trends) in one place so ISSUE-014/015/016
+  // can ask "what's my default?" without reaching into Router internals.
+  const PERIOD_KEY = 'cozy.ledger.period';
+  const periodDefaultsByView = { dashboard: '1m', trends: '1y' };
+  /** @type {{ preset: '1m'|'3m'|'6m'|'1y'|'2y'|'all'|'custom', from: string, to: string }} */
+  let period = { preset: '1m', from: Fmt.ymKey(new Date()) + '-01', to: Fmt.today() };
+
+  function persistPeriod() {
+    try {
+      window.localStorage.setItem(PERIOD_KEY, JSON.stringify(period));
+    } catch (_) { /* localStorage may be disabled; in-memory still works */ }
+  }
+
+  function isIsoDate(s) {
+    if (typeof s !== 'string') return false;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    const d = new Date(s + 'T00:00:00');
+    return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+  }
+
+  function isValidStoredPeriod(raw) {
+    if (!raw || typeof raw !== 'object') return false;
+    const validPresets = ['1m', '3m', '6m', '1y', '2y', 'all', 'custom'];
+    if (!validPresets.includes(raw.preset)) return false;
+    if (!isIsoDate(raw.from) || !isIsoDate(raw.to)) return false;
+    if (raw.from > raw.to) return false;
+    const todayIso = Fmt.today();
+    if (raw.to > todayIso) return false;
+    return true;
+  }
+
+  function defaultPeriodFor(viewKey) {
+    const preset = periodDefaultsByView[viewKey] || periodDefaultsByView.dashboard;
+    const range = Selectors.periodRangeForPreset(preset);
+    return { preset, from: range.from, to: range.to };
+  }
+
+  function restorePeriod() {
+    try {
+      const raw = JSON.parse(window.localStorage.getItem(PERIOD_KEY) || 'null');
+      if (isValidStoredPeriod(raw)) {
+        period = { preset: raw.preset, from: raw.from, to: raw.to };
+      } else {
+        period = defaultPeriodFor('dashboard');
+        persistPeriod();
+      }
+    } catch (_) {
+      period = defaultPeriodFor('dashboard');
+    }
+  }
+
   // -- Routing -------------------------------------------------------
   function goTo(v) {
     view = v;
@@ -40,20 +96,62 @@ const Router = (() => {
   // month count. For 'all' we use the oldest in-scope transaction so
   // the chart naturally grows with the user's history. Capped at 240
   // months (20 years) so the SVG can't blow up.
+  //
+  // ISSUE-013: thin wrapper around `Selectors.monthsInPeriod` over the
+  // shared period range. Kept until ISSUE-016 finishes removing all
+  // legacy `trendRange` callers.
   function monthsForRange(range) {
     if (range === 'all') {
-      const sources = Selectors.sourcesInScope(App._state);
-      const inScope = new Set(sources.map(s => s.id));
-      const txns = (App._state.transactions || []).filter(t => inScope.has(t.sourceId));
-      if (!txns.length) return 12;
-      const oldest = txns.reduce((m, t) => t.date < m ? t.date : m, txns[0].date);
-      const oldestDate = new Date(oldest);
-      const now = new Date();
-      const n = (now.getFullYear() - oldestDate.getFullYear()) * 12
-              + (now.getMonth() - oldestDate.getMonth()) + 1;
-      return Math.max(12, Math.min(240, n));
+      const months = Selectors.monthsInPeriod(Router.periodRange());
+      return months.length || 12;
     }
     return { '1y': 12, '2y': 24, '3y': 36 }[range] || 12;
+  }
+
+  // -- Period state (ISSUE-013 / PRD-004) ----------------------------
+  // `periodRange()` returns the active {from, to} as ISO strings.
+  // `setPeriodPreset(preset)` re-derives from/to rolling from today
+  // (or, for 'all', from the earliest in-scope transaction) and
+  // re-renders. `setPeriodRange({from, to})` switches the preset to
+  // 'custom' and validates the range (`from <= to`, `to` not in the
+  // future). `resetPeriod(viewKey)` returns the view to its default
+  // preset (1m for dashboard, 1y for trends).
+  function periodRange() { return { from: period.from, to: period.to }; }
+  function defaultPresetFor(viewKey) {
+    return periodDefaultsByView[viewKey] || periodDefaultsByView.dashboard;
+  }
+  function setPeriodPreset(preset) {
+    let range;
+    if (preset === 'all') range = Selectors.periodRangeForAll(App._state);
+    else                  range = Selectors.periodRangeForPreset(preset);
+    if (!range) return;
+    period = { preset, from: range.from, to: range.to };
+    persistPeriod();
+    renderView();
+  }
+  function setPeriodRange(range) {
+    if (!range || typeof range.from !== 'string' || typeof range.to !== 'string') return;
+    if (!isIsoDate(range.from) || !isIsoDate(range.to)) return;
+    if (range.from > range.to) return;
+    const todayIso = Fmt.today();
+    const to = range.to > todayIso ? todayIso : range.to;
+    period = { preset: 'custom', from: range.from, to };
+    persistPeriod();
+    renderView();
+  }
+  function resetPeriod(viewKey) {
+    period = defaultPeriodFor(viewKey);
+    persistPeriod();
+    renderView();
+  }
+
+  // Called once from App.init(). Pulls the persisted period out of
+  // localStorage (if any), validates it, and falls back to the
+  // dashboard default on any failure. Kept out of the IIFE body so
+  // pure-function tests that load router.js without booting App
+  // never touch localStorage.
+  function boot() {
+    restorePeriod();
   }
 
   // -- Month picker --------------------------------------------------
@@ -117,6 +215,8 @@ const Router = (() => {
   }
 
   return {
+    // Boot (called once from App.init())
+    boot,
     // Render
     renderView,
     // Routing
@@ -127,6 +227,13 @@ const Router = (() => {
     get txnFilters() { return txnFilters; },
     get balanceViewMode() { return balanceViewMode; },
     get trendRange() { return trendRange; },
+    get period() { return period; },
+    // Period helpers (ISSUE-013)
+    periodRange,
+    setPeriodPreset,
+    setPeriodRange,
+    resetPeriod,
+    defaultPresetFor,
     // Mutators
     shiftMonth,
     setTxnFilter,

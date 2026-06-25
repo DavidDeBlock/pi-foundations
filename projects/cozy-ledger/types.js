@@ -118,3 +118,16 @@
  * @typedef {Object} FmtMoneyOpts
  * @property {boolean} [signed]      Prepend '+' to positive values.
  */
+
+/**
+ * @typedef {'1m'|'3m'|'6m'|'1y'|'2y'|'all'|'custom'} PeriodPreset
+ *   The rolling-window preset selected by the user, or 'custom' when
+ *   the user picked a manual date range. ISSUE-013 / PRD-004.
+ */
+
+/**
+ * @typedef {Object} Period
+ * @property {PeriodPreset} preset
+ * @property {string} from  ISO YYYY-MM-DD, inclusive
+ * @property {string} to    ISO YYYY-MM-DD, inclusive (clamped to today)
+ */

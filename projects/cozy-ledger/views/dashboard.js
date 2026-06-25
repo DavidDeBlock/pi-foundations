@@ -1,9 +1,12 @@
 // =====================================================================
 // views/dashboard.js — Home: summary cards + donut + recent + top cats
 // =====================================================================
-// Reads: App._state, Router.view/monthKey
+// Reads: App._state, Router.view, Router.periodRange
 // Calls: Router.goTo, Router.renderView, ViewHelpers.{sum,countTxns,
 //        aggregateBy,emptyState,escapeText}, Store.setDashboardByGroup
+// Period: every widget (summary cards, donut, recent, top cats) is
+//         scoped to the active period (Router.periodRange()), not a
+//         single month. See ISSUE-015.
 // =====================================================================
 
 const Dashboard = (() => {
@@ -69,7 +72,11 @@ const Dashboard = (() => {
       </div>
     </div>`;
     const legend = el('div', { class: 'donut-legend' });
-    items.forEach(({ cat, amount: _amount, frac }) => {
+    items.forEach(({ cat, amount }) => {
+      // Compute frac the same way the SVG segments do — the items
+      // array doesn't carry a `frac` field, so destructuring it here
+      // would silently produce `NaN%` (pre-ISSUE-016 bug).
+      const frac = total ? amount / total : 0;
       legend.appendChild(el('div', { class: 'dl-row' },
         el('span', { class: 'dl-dot', style: { background: cat.color } }),
         el('span', { class: 'dl-name' }, cat.name),
@@ -150,9 +157,8 @@ const Dashboard = (() => {
   // -- Top-level render ---------------------------------------------
   function render() {
     const state = App._state;
-    const monthKey = Router.monthKey;
-    const inScopeTxns = Selectors.transactionsInScope(state);
-    const txns = inScopeTxns.filter(x => Fmt.inMonth(x.date, monthKey));
+    const range = Router.periodRange();
+    const txns = Selectors.txnsInPeriod(state, range);
     const totalIncome  = ViewHelpers.sum(txns.filter(x => x.type === 'income'),  'amount');
     const totalExpense = ViewHelpers.sum(txns.filter(x => x.type === 'expense'), 'amount');
     const balance = totalIncome - totalExpense;
@@ -161,11 +167,18 @@ const Dashboard = (() => {
 
     const topCats = topCategories(txns, totalExpense);
 
-    const recent = [...inScopeTxns]
-      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
-      .filter(x => Fmt.inMonth(x.date, monthKey));
+    // "Recent transactions" now means "all transactions in the period,
+    // newest first" (ISSUE-015). The compact table renders fine even
+    // when the period yields >20 rows.
+    const recent = [...txns]
+      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
 
     const wrap = el('div', { class: 'view-dashboard' });
+
+    // Period selector (ISSUE-014) sits at the top of the dashboard,
+    // full width. ISSUE-015 only mounts it here; the view itself
+    // drives the re-mount on every render.
+    wrap.appendChild(PeriodSelector.render('dashboard'));
 
     const sCard = (cls, label, value, foot, icon, valClass = '') =>
       el('div', { class: 'summary ' + cls },

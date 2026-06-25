@@ -62,16 +62,135 @@ The dashboard and Trends view need a single shared notion of "what time range am
 
 ## Acceptance criteria
 
-- [ ] `Router.periodRange()` returns a `{ from, to }` object whose values are ISO date strings.
-- [ ] `Router.setPeriodPreset('3m')` re-derives `from`/`to` rolling from today, writes to localStorage, and triggers a re-render.
-- [ ] `Router.setPeriodRange({ from: '2026-01-15', to: '2026-03-10' })` sets `preset = 'custom'`, persists, re-renders.
-- [ ] `Router.resetPeriod('dashboard')` resets to `1m` preset; `Router.resetPeriod('trends')` resets to `1y`.
-- [ ] `Selectors.periodRangeForPreset` matches the PRD table for each preset.
-- [ ] `Selectors.txnsInPeriod` boundary dates are inclusive on both ends.
-- [ ] `Selectors.monthsInPeriod` is ordered, capped at 240, and returns `[]` on `from > to`.
-- [ ] Persistence: writing and reading back round-trips correctly; a malformed stored value falls back to the dashboard default without throwing.
-- [ ] At least 12 assertions across the new tests; all existing tests still pass (`npm test`).
-- [ ] `npm run lint` is clean.
+- [x] `Router.periodRange()` returns a `{ from, to }` object whose values are ISO date strings.
+- [x] `Router.setPeriodPreset('3m')` re-derives `from`/`to` rolling from today, writes to localStorage, and triggers a re-render.
+- [x] `Router.setPeriodRange({ from: '2026-01-15', to: '2026-03-10' })` sets `preset = 'custom'`, persists, re-renders.
+- [x] `Router.resetPeriod('dashboard')` resets to `1m` preset; `Router.resetPeriod('trends')` resets to `1y`.
+- [x] `Selectors.periodRangeForPreset` matches the PRD table for each preset.
+- [x] `Selectors.txnsInPeriod` boundary dates are inclusive on both ends.
+- [x] `Selectors.monthsInPeriod` is ordered, capped at 240, and returns `[]` on `from > to`.
+- [x] Persistence: writing and reading back round-trips correctly; a malformed stored value falls back to the dashboard default without throwing.
+- [x] At least 12 assertions across the new tests; all existing tests still pass (`npm test`).
+- [x] `npm run lint` is clean.
+
+## Implementation log
+
+Captured during implementation.
+
+### What was built
+
+A new shared period concept (`{ preset, from, to }`) owned by `Router` and consumed by `Selectors` helpers, with localStorage persistence under the key `cozy.ledger.period`. The component (ISSUE-014) and wiring (ISSUE-015/016) will consume this stable API.
+
+### File layout
+
+| File | Δ |
+|---|---|
+| `selectors.js` | **+** `periodRangeForPreset`, `periodRangeForAll`, `txnsInPeriod`, `monthsInPeriod` (+ JSDoc) |
+| `router.js` | **+** period state, `periodRange()`, `setPeriodPreset()`, `setPeriodRange()`, `resetPeriod()`, `defaultPresetFor()`, `boot()`; **~** `monthsForRange()` now a thin wrapper over `Selectors.monthsInPeriod(Router.periodRange())` |
+| `app.js` | **~** `init()` now calls `Router.boot()` to restore the persisted period before the first render |
+| `types.js` | **+** `PeriodPreset` and `Period` typedefs |
+| `globals.d.ts` | **+** `Period` + `PeriodPreset` + new methods on `Window.Router` and `Window.Selectors` |
+| `_test_period.js` | **new** — 34 assertions across 5 sections |
+| `package.json` | **~** `npm test` now runs `_test_period.js` too |
+| `eslint.config.js` | **~** `caughtErrorsIgnorePattern: '^_'` so `catch (_)` lints clean |
+| `index.html` | **~** `?v=16` → `?v=17` |
+
+### Period state shape
+
+```js
+period = {
+  preset: '1m'|'3m'|'6m'|'1y'|'2y'|'all'|'custom',
+  from:   'YYYY-MM-DD',  // ISO date, inclusive, snapped to first-of-month
+  to:     'YYYY-MM-DD',  // ISO date, inclusive (clamped to today)
+}
+```
+
+When `preset ∈ {1m, 3m, 6m, 1y, 2y, all}`, `from` / `to` are derived. When `preset === 'custom'`, `from` / `to` are user-set.
+
+### Preset semantics (rolling)
+
+| preset | months back (snap to first of month) | example (today = 2026-06-25) |
+|---|---|---|
+| `1m` | 0  | from 2026-06-01, to 2026-06-25 |
+| `3m` | 2  | from 2026-04-01, to 2026-06-25 |
+| `6m` | 5  | from 2026-01-01, to 2026-06-25 |
+| `1y` | 11 | from 2025-07-01, to 2026-06-25 |
+| `2y` | 23 | from 2024-07-01, to 2026-06-25 |
+| `all` | earliest in-scope tx (snapped to first of month) | depends on data |
+
+### Defaults per view
+
+- `dashboard` → `1m`
+- `trends` → `1y`
+- Unknown view key → `1m` (fallback to dashboard)
+
+### Router API additions
+
+```js
+Router.boot()                          // Called once from App.init()
+Router.period                          // Read-only view of { preset, from, to }
+Router.periodRange()                   // → { from, to }
+Router.setPeriodPreset(preset)         // re-derive, persist, re-render
+Router.setPeriodRange({ from, to })    // switches to 'custom', clamps to today, persists, re-renders
+Router.resetPeriod(viewKey)            // returns to view's default preset
+Router.defaultPresetFor(viewKey)       // '1m' for dashboard, '1y' for trends
+```
+
+### Persistence
+
+- Storage key: `cozy.ledger.period`
+- Stored shape: full `{ preset, from, to }` so a stale preset doesn't override the freshly-snapped range
+- Read on `Router.boot()` (called from `App.init()`). Validated; falls back to dashboard default on any of:
+  - Missing key
+  - JSON parse error
+  - `preset` not in known list
+  - `from` / `to` not ISO dates
+  - `from > to`
+  - `to` in the future
+- Wrapped in try/catch on both sides; localStorage being disabled (private mode) doesn't crash boot or break in-memory state.
+
+### `monthsForRange` wrapper
+
+Replaced with a thin wrapper that calls `Selectors.monthsInPeriod(Router.periodRange())`. Kept (not deleted) for ISSUE-016 to migrate the last `trendRange` callers without an interim regression. Will be deleted in ISSUE-016.
+
+### Test results
+
+| File | Before | After |
+|---|---|---|
+| `_test_csv.js` | 21 | 21 |
+| `_test_selectors.js` | 73 | 73 |
+| `_test_period.js` | — | **34** |
+| `_test_boot.js` | 76 | 76 |
+| **total** | 170 | **204** |
+
+Lint: 0 errors, 11 pre-existing warnings (none introduced by this issue; the 2 new warnings were pre-empted by adding `caughtErrorsIgnorePattern: '^_'` to the ESLint config).
+
+### Real-browser verification
+
+```
+Initial period:        { preset: '1m', from: '2026-06-01', to: '2026-06-25' }
+After setPeriodPreset(3m):    { preset: '3m', from: '2026-04-01', to: '2026-06-25' }
+After setPeriodRange(custom): { preset: 'custom', from: '2026-01-15', to: '2026-03-10' }
+localStorage[cozy.ledger.period]: {"preset":"custom","from":"2026-01-15","to":"2026-03-10"}
+After resetPeriod(trends):     { preset: '1y', from: '2025-07-01', to: '2026-06-25' }
+After reload (persistence):    { preset: '1y', from: '2025-07-01', to: '2025-07-01' ✓
+Shell render count after nav: 1   (ISSUE-010 invariant preserved)
+Errors: none
+```
+
+### Known follow-ups (out of scope)
+
+- ISSUE-014: build the `PeriodSelector` component that consumes this API.
+- ISSUE-015: wire the dashboard to use `Selectors.txnsInPeriod(state, Router.periodRange())` everywhere.
+- ISSUE-016: wire Trends, then delete `Router.monthKey`, `Router.trendRange`, `Router.monthsForRange`, and the `range-buttons` element.
+
+### Decision log
+
+- **`period` is a plain object, not a Map.** No nesting, no class — matches the existing `txnFilters` style and keeps editor intellisense simple.
+- **`Router.boot()` is explicit, not auto-run at module load.** The pure `_test_period.js` loads `router.js` without booting it; the module-level body never touches localStorage, so the test harness stays clean.
+- **`periodRangeForPreset` returns `null` for `all` / `custom` / unknown** rather than throwing. The Router wrapper interprets `null` as "this preset can't be derived here, skip the update" — which matches the existing pattern for invalid `setTrendRange` calls.
+- **`setPeriodRange` clamps `to` to today silently** rather than rejecting the call. The user's intent ("the period ending today") is preserved; the chart will be self-correcting instead of leaving a future date in storage that would re-trigger the validation fallback on next boot.
+- **Re-render on every mutation** so subscribers (Dashboard, Trends) stay in sync without us having to broadcast events. This matches the existing `setTrendRange` / `setBalanceViewMode` / `setTxnFilter` pattern.
 
 ## Blocked by
 

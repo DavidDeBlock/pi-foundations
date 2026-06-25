@@ -1533,3 +1533,78 @@ body::before {
   background: var(--cat-color, var(--line-strong));
   border-radius: 12px 12px 0 0;
 }
+
+/* --- Period selector (ISSUE-014) ------------------------------- */
+/* The container sits inside a card-head. Wraps onto two lines on
+   narrow screens so the date inputs don't squeeze the pills. */
+.period-selector {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+}
+.period-selector .period-label {
+  font-weight: 600;
+  color: var(--ink);
+  margin-right: 4px;
+}
+.period-pills {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--cream);
+  border: 1px solid var(--paper-edge);
+  border-radius: 999px;
+}
+.period-pill {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-mute);
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.period-pill:hover { color: var(--ink); }
+.period-pill.active {
+  background: var(--sage);
+  color: var(--paper);
+}
+.period-dates {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--ink-mute);
+}
+.period-dates label {
+  font-weight: 600;
+}
+.period-date-input {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 3px 8px;
+  border: 1px solid var(--paper-edge);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.period-reset {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-mute);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 2px 6px;
+  margin-left: auto;
+}
+.period-reset:hover { color: var(--ink); }

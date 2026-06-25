@@ -136,10 +136,13 @@ const Shell = (() => {
   // elements (prev / label / next). On subsequent calls just rewrite
   // the label text. When the active view hides the picker, clear the
   // host so the empty space collapses.
+  // ISSUE-015: dashboard no longer uses Router.monthKey — the period
+  // selector owns the dashboard's time scope now. The picker is only
+  // shown on the transactions view.
   function ensureMonthPicker() {
     const host = document.getElementById('month-picker');
     if (!host) return;
-    const showMonth = (Router.view === 'dashboard' || Router.view === 'transactions');
+    const showMonth = (Router.view === 'transactions');
     if (!showMonth) { host.innerHTML = ''; return; }
     if (host.children.length === 0) {
       renderMonthPicker(host);

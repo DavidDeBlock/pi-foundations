@@ -21,6 +21,13 @@ class StubNode {}
   // (descendant). Returns every matching node under `root`.
   function matchesPartHelper(n, part) {
     if (!n || !part) return false;
+    // ISSUE-014: production code uses compound selectors with no space
+    // (e.g. `.period-pill.active`, `.scope-pill.active`). Split the
+    // part into sub-tokens and require each to match the same node.
+    const tokens = part.match(/(?:[.#][\w-]+|\[[^\]]+\]|[\w-]+)/g) || [];
+    if (tokens.length > 1) {
+      return tokens.every(t => matchesPartHelper(n, t));
+    }
     if (part.startsWith('#')) return n.attributes && n.attributes.id === part.slice(1);
     if (part.startsWith('.')) return n.classList && n.classList._set && n.classList._set.has(part.slice(1));
     // ISSUE-010: production code uses attribute selectors to find the
@@ -336,7 +343,7 @@ function test(name, fn) {
 }
 
 // ---- Load all scripts in order --------------------------------------
-const scripts = ['types.js', 'data.js', 'utils.js', 'icons.js', 'csv.js', 'selectors.js', 'i18n.js', 'backup.js', 'router.js', 'shell.js', 'views/_helpers.js', 'views/dashboard.js', 'views/trends.js', 'views/transactions.js', 'views/categories.js', 'views/sources.js', 'views/users.js', 'views/payees.js', 'views/settings.js', 'charts/_helpers.js', 'charts/monthly-flow.js', 'charts/balance-trajectory.js', 'modals/_helper.js', 'modals/import-preview.js', 'modals/transaction.js', 'modals/category.js', 'modals/group.js', 'modals/source.js', 'modals/user.js', 'modals/import.js', 'modals/import-confirm.js', 'app.js'];
+const scripts = ['types.js', 'data.js', 'utils.js', 'icons.js', 'csv.js', 'selectors.js', 'i18n.js', 'backup.js', 'router.js', 'shell.js', 'views/_helpers.js', 'views/dashboard.js', 'views/trends.js', 'views/_period-selector.js', 'views/transactions.js', 'views/categories.js', 'views/sources.js', 'views/users.js', 'views/payees.js', 'views/settings.js', 'charts/_helpers.js', 'charts/monthly-flow.js', 'charts/balance-trajectory.js', 'modals/_helper.js', 'modals/import-preview.js', 'modals/transaction.js', 'modals/category.js', 'modals/group.js', 'modals/source.js', 'modals/user.js', 'modals/import.js', 'modals/import-confirm.js', 'app.js'];
 for (const s of scripts) {
   const code = fs.readFileSync(path.join(__dirname, s), 'utf8');
   vm.runInContext(code, ctx, { filename: s });
@@ -707,6 +714,380 @@ test('CSVImport is on window', () => {
 
 test('App is on window', () => {
   if (!ctx.window.App || typeof ctx.window.App.init !== 'function') throw new Error('no App');
+});
+
+console.log('\n— ISSUE-014: PeriodSelector component —');
+
+// Helper to assert the rendered selector has the expected DOM shape.
+function assertSelectorShape(sel, viewKey) {
+  if (!sel) throw new Error('render() returned null/undefined');
+  if (sel.tagName !== 'DIV') throw new Error(`expected <div>, got ${sel.tagName}`);
+  if (sel.getAttribute('class') !== 'period-selector') throw new Error(`class=${sel.getAttribute('class')}`);
+  if (sel.getAttribute('data-view') !== viewKey) throw new Error(`data-view=${sel.getAttribute('data-view')}`);
+  if (!sel.querySelector('.period-label'))   throw new Error('no .period-label');
+  if (!sel.querySelector('.period-pills'))   throw new Error('no .period-pills');
+  if (!sel.querySelector('.period-dates'))   throw new Error('no .period-dates');
+  if (!sel.querySelector('.period-reset'))   throw new Error('no .period-reset');
+  if (!sel.querySelector('#period-from'))    throw new Error('no #period-from');
+  if (!sel.querySelector('#period-to'))      throw new Error('no #period-to');
+}
+
+test('ISSUE-014: PeriodSelector is exposed on window with a render function', () => {
+  const ps = ctx.window.PeriodSelector;
+  if (!ps) throw new Error('PeriodSelector is not on window');
+  if (typeof ps.render !== 'function') throw new Error('PeriodSelector.render is not a function');
+});
+
+test('ISSUE-014: render(viewKey) returns the full selector DOM', () => {
+  freshInit010();
+  const sel = ctx.window.PeriodSelector.render('dashboard');
+  assertSelectorShape(sel, 'dashboard');
+  // 6 pills, one per preset.
+  const pills = sel.querySelectorAll('.period-pill');
+  if (pills.length !== 6) throw new Error(`expected 6 pills, got ${pills.length}`);
+  for (const p of ['1m', '3m', '6m', '1y', '2y', 'all']) {
+    if (!sel.querySelector(`[data-preset="${p}"]`)) throw new Error(`missing pill ${p}`);
+  }
+});
+
+test('ISSUE-014: active pill matches Router.period.preset', () => {
+  freshInit010();
+  // Earlier tests in this file leave a non-default preset in
+  // localStorage. Reset to the dashboard default before asserting.
+  ctx.window.Router.resetPeriod('dashboard');
+  let sel = ctx.window.PeriodSelector.render('dashboard');
+  const activePill = sel.querySelector('.period-pill.active');
+  if (!activePill || activePill.getAttribute('data-preset') !== '1m') {
+    throw new Error('expected 1m pill to be active');
+  }
+  // Switch to '3m' via the API and re-render.
+  ctx.window.Router.setPeriodPreset('3m');
+  sel = ctx.window.PeriodSelector.render('dashboard');
+  const p = sel.querySelector('.period-pill.active');
+  if (!p || p.getAttribute('data-preset') !== '3m') {
+    throw new Error(`expected 3m pill to be active, got ${p ? p.getAttribute('data-preset') : 'none'}`);
+  }
+});
+
+test('ISSUE-014: clicking a preset pill calls Router.setPeriodPreset', () => {
+  freshInit010();
+  const sel = ctx.window.PeriodSelector.render('dashboard');
+  const pill6m = sel.querySelector('[data-preset="6m"]');
+  if (!pill6m) throw new Error('no 6m pill');
+  pill6m.click();
+  if (ctx.window.Router.period.preset !== '6m') {
+    throw new Error(`preset should be 6m, got ${ctx.window.Router.period.preset}`);
+  }
+});
+
+test('ISSUE-014: preset "custom" leaves no pill active', () => {
+  freshInit010();
+  ctx.window.Router.setPeriodRange({ from: '2026-01-15', to: '2026-03-10' });
+  if (ctx.window.Router.period.preset !== 'custom') {
+    throw new Error(`setup: expected custom, got ${ctx.window.Router.period.preset}`);
+  }
+  const sel = ctx.window.PeriodSelector.render('dashboard');
+  const anyActive = sel.querySelector('.period-pill.active');
+  if (anyActive) throw new Error(`expected no active pill, got ${anyActive.getAttribute('data-preset')}`);
+});
+
+test('ISSUE-014: date inputs reflect Router.period.from / Router.period.to', () => {
+  freshInit010();
+  ctx.window.Router.setPeriodRange({ from: '2026-01-15', to: '2026-03-10' });
+  const sel = ctx.window.PeriodSelector.render('dashboard');
+  if (sel.querySelector('#period-from').value !== '2026-01-15') throw new Error('from value mismatch');
+  if (sel.querySelector('#period-to').value !== '2026-03-10') throw new Error('to value mismatch');
+});
+
+test('ISSUE-014: editing a date input calls Router.setPeriodRange (custom preset)', () => {
+  freshInit010();
+  const sel = ctx.window.PeriodSelector.render('dashboard');
+  const fromInput = sel.querySelector('#period-from');
+  const toInput = sel.querySelector('#period-to');
+  fromInput.value = '2025-08-01';
+  toInput.value = '2025-12-15';
+  // 'change' event fires on commit (blur after edit); dispatch as a
+  // plain object literal — the stub Element dispatches any object
+  // with a `type` field.
+  fromInput.dispatchEvent({ type: 'change' });
+  toInput.dispatchEvent({ type: 'change' });
+  if (ctx.window.Router.period.preset !== 'custom') {
+    throw new Error(`expected preset=custom, got ${ctx.window.Router.period.preset}`);
+  }
+  if (ctx.window.Router.period.from !== '2025-08-01') {
+    throw new Error(`from=${ctx.window.Router.period.from}`);
+  }
+  if (ctx.window.Router.period.to !== '2025-12-15') {
+    throw new Error(`to=${ctx.window.Router.period.to}`);
+  }
+});
+
+test('ISSUE-014: reset link calls Router.resetPeriod(viewKey)', () => {
+  freshInit010();
+  // Pick a non-default preset for both views.
+  ctx.window.Router.setPeriodPreset('2y');
+  // Render the trends version of the selector so reset targets 'trends'.
+  const sel = ctx.window.PeriodSelector.render('trends');
+  sel.querySelector('.period-reset').click();
+  if (ctx.window.Router.period.preset !== '1y') {
+    throw new Error(`expected trends default 1y, got ${ctx.window.Router.period.preset}`);
+  }
+  // Render the dashboard version, reset, should target dashboard default.
+  ctx.window.Router.setPeriodPreset('all');
+  ctx.window.PeriodSelector.render('dashboard').querySelector('.period-reset').click();
+  if (ctx.window.Router.period.preset !== '1m') {
+    throw new Error(`expected dashboard default 1m, got ${ctx.window.Router.period.preset}`);
+  }
+});
+
+test('ISSUE-014: all ten period i18n keys exist and resolve in Dutch', () => {
+  const t = ctx.window.t;
+  const expected = {
+    'period.label':       'Periode',
+    'period.preset.1m':   '1 maand',
+    'period.preset.3m':   '3 maanden',
+    'period.preset.6m':   '6 maanden',
+    'period.preset.1y':   '1 jaar',
+    'period.preset.2y':   '2 jaar',
+    'period.preset.all':  'Alles',
+    'period.from':        'Van',
+    'period.to':          'Tot',
+    'period.reset':       'Standaard',
+  };
+  for (const [key, value] of Object.entries(expected)) {
+    if (t(key) !== value) throw new Error(`${key}: expected "${value}", got "${t(key)}"`);
+  }
+});
+
+test('ISSUE-014: pill labels come from i18n, not hardcoded', () => {
+  freshInit010();
+  const sel = ctx.window.PeriodSelector.render('dashboard');
+  for (const preset of ctx.window.PeriodSelector.PRESETS) {
+    const pill = sel.querySelector(`[data-preset="${preset}"]`);
+    if (!pill) throw new Error(`missing pill ${preset}`);
+    if (pill.textContent !== ctx.window.t('period.preset.' + preset)) {
+      throw new Error(`${preset}: expected "${ctx.window.t('period.preset.' + preset)}", got "${pill.textContent}"`);
+  }
+  }
+});
+
+test('ISSUE-014: selector mounts automatically on dashboard (ISSUE-015)', () => {
+  // ISSUE-015 wires the period selector into the dashboard view. After
+  // App.init() + App._goTo('dashboard'), a .period-selector element
+  // should be present inside the rendered dashboard without manual
+  // mounting. The other views (transactions, trends, …) still don't
+  // auto-mount the selector — that's ISSUE-016's job.
+  freshInit010();
+  ctx.window.App._goTo('dashboard');
+  const view = ctx.window.document.getElementById('view');
+  if (!view) throw new Error('no #view');
+  const sel = view.querySelector('.period-selector');
+  if (!sel) throw new Error('dashboard should auto-mount the period selector');
+  if (sel.getAttribute('data-view') !== 'dashboard') {
+    throw new Error(`selector data-view=${sel.getAttribute('data-view')}`);
+  }
+  // Manual mount still works as well (manual append to a different host):
+  const host = ctx.window.document.createElement('div');
+  const manual = ctx.window.PeriodSelector.render('dashboard');
+  host.appendChild(manual);
+  if (!host.querySelector('.period-selector')) throw new Error('manual mount failed');
+});
+
+console.log('\n— ISSUE-015: Dashboard period wiring —');
+
+// Helper: read the dashboard's view-dashboard root.
+function dashboardRoot() {
+  const view = ctx.window.document.getElementById('view');
+  return view ? view.querySelector('.view-dashboard') : null;
+}
+
+test('ISSUE-015: dashboard mounts the period selector at the top', () => {
+  freshInit010();
+  ctx.window.App._goTo('dashboard');
+  const root = dashboardRoot();
+  if (!root) throw new Error('no .view-dashboard rendered');
+  // First child should be the period selector. The stub Element uses
+  // `children` rather than `firstElementChild`.
+  const first = root.children[0];
+  if (!first || first.getAttribute('class') !== 'period-selector') {
+    throw new Error(`first child should be period-selector, got ${first && first.getAttribute('class')}`);
+  }
+});
+
+test('ISSUE-015: dashboard no longer references Router.monthKey', () => {
+  freshInit010();
+  ctx.window.App._goTo('dashboard');
+  // The implementation file should not import Router.monthKey at all
+  // any more. Read it back from disk so we catch both compile-time and
+  // runtime regressions.
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, 'views/dashboard.js'), 'utf8');
+  if (/Router\.monthKey/.test(src)) {
+    throw new Error('dashboard.js still references Router.monthKey');
+  }
+  if (/Fmt\.inMonth/.test(src)) {
+    throw new Error('dashboard.js still uses Fmt.inMonth');
+  }
+});
+
+test('ISSUE-015: summary cards reflect Selectors.txnsInPeriod totals', () => {
+  freshInit010();
+  ctx.window.App._goTo('dashboard');
+  const s = ctx.window.App._state;
+  // Use a 6m preset so the period spans multiple months — this
+  // catches a regression where the dashboard still filters to a
+  // single month.
+  ctx.window.Router.setPeriodPreset('6m');
+  const range = ctx.window.Router.periodRange();
+  const expectedTxns = ctx.window.Selectors.txnsInPeriod(s, range);
+  const exp = expectedTxns.filter(t => t.type === 'expense').reduce((a, t) => a + t.amount, 0);
+  const inc = expectedTxns.filter(t => t.type === 'income').reduce((a, t) => a + t.amount, 0);
+  // The expense card renders Fmt.money(totalExpense); rebuild the
+  // expected display string the same way.
+  const expectedExpenseStr = ctx.window.Fmt.money(exp);
+  const expectedIncomeStr = ctx.window.Fmt.money(inc);
+  // After setPeriodPreset the view re-rendered, so re-query.
+  ctx.window.App._goTo('dashboard');
+  const text = dashboardRoot().textContent;
+  if (!text.includes(expectedExpenseStr)) {
+    throw new Error(`expected expense "${expectedExpenseStr}" in dashboard, not found`);
+  }
+  if (!text.includes(expectedIncomeStr)) {
+    throw new Error(`expected income "${expectedIncomeStr}" in dashboard, not found`);
+  }
+});
+
+test('ISSUE-015: donut centre total equals totalExpense for the period', () => {
+  freshInit010();
+  ctx.window.App._goTo('dashboard');
+  // Default preset is 1m (current month). For the dashboard's seed
+  // data that may have no expense; compute the expected total from
+  // txnsInPeriod and look for Fmt.money(total) inside the donut centre.
+  const range = ctx.window.Router.periodRange();
+  const exp = ctx.window.Selectors.txnsInPeriod(ctx.window.App._state, range)
+    .filter(t => t.type === 'expense').reduce((a, t) => a + t.amount, 0);
+  // Empty-state donut won't have a centre value, only skip the strict
+  // match if exp is 0 and the donut shows an empty state.
+  if (exp === 0) return;
+  const expectedStr = ctx.window.Fmt.money(exp);
+  const root = dashboardRoot();
+  const donutCenter = root.querySelector('.dc-val');
+  if (!donutCenter) throw new Error('no .dc-val element found for non-empty expense period');
+  if (!donutCenter.textContent.includes(expectedStr)) {
+    throw new Error(`donut centre expected "${expectedStr}", got "${donutCenter.textContent}"`);
+  }
+});
+
+test('ISSUE-015: topbar month picker is hidden on dashboard view', () => {
+  freshInit010();
+  ctx.window.App._goTo('dashboard');
+  const host = ctx.window.document.getElementById('month-picker');
+  if (!host) throw new Error('no #month-picker host in shell');
+  if (host.children.length !== 0) {
+    throw new Error('month picker should be empty on dashboard (ISSUE-015)');
+  }
+});
+
+test('ISSUE-015: topbar month picker is still mounted on transactions view', () => {
+  freshInit010();
+  ctx.window.App._goTo('transactions');
+  const host = ctx.window.document.getElementById('month-picker');
+  if (!host) throw new Error('no #month-picker host in shell');
+  if (host.children.length === 0) {
+    throw new Error('month picker should be mounted on transactions');
+  }
+  if (!host.querySelector('.mp-label')) {
+    throw new Error('transactions month picker missing .mp-label');
+  }
+});
+
+test('ISSUE-015: switching the period re-renders the dashboard widgets', () => {
+  freshInit010();
+  ctx.window.App._goTo('dashboard');
+  const shellBefore = ctx.window.App._shellRenderCount;
+  // Switching preset triggers Router.renderView(), which must NOT
+  // re-render the shell (ISSUE-010 invariant preserved).
+  ctx.window.Router.setPeriodPreset('3m');
+  if (ctx.window.App._shellRenderCount !== shellBefore) {
+    throw new Error('period change should not re-render the shell');
+  }
+  const root = dashboardRoot();
+  if (!root) throw new Error('dashboard root missing after preset change');
+  const sel = root.querySelector('.period-selector');
+  if (!sel) throw new Error('selector should be re-mounted after preset change');
+  // The active pill should reflect the new preset.
+  const active = sel.querySelector('.period-pill.active');
+  if (!active || active.getAttribute('data-preset') !== '3m') {
+    throw new Error(`expected active=3m, got ${active && active.getAttribute('data-preset')}`);
+  }
+});
+
+test('ISSUE-015: custom period (no active pill) still renders dashboard widgets', () => {
+  freshInit010();
+  ctx.window.App._goTo('dashboard');
+  ctx.window.Router.setPeriodRange({ from: '2020-01-01', to: '2026-12-31' });
+  const root = dashboardRoot();
+  const sel = root.querySelector('.period-selector');
+  if (!sel) throw new Error('selector should be re-mounted after date change');
+  if (sel.querySelector('.period-pill.active')) {
+    throw new Error('no pill should be active for custom preset');
+  }
+});
+
+test('ISSUE-015: i18n keys updated (no "deze maand" in dashboard labels)', () => {
+  const t = ctx.window.t;
+  // The strings that used to say "deze maand" now say something
+  // period-aware.
+  if (/deze maand/i.test(t('dashboard.top.title'))) {
+    throw new Error('dashboard.top.title still says "deze maand"');
+  }
+  if (/deze maand/i.test(t('dashboard.recent.empty.title'))) {
+    throw new Error('dashboard.recent.empty.title still says "deze maand"');
+  }
+  if (/deze maand/i.test(t('dashboard.card.balance.pos'))) {
+    throw new Error('dashboard.card.balance.pos still says "deze maand"');
+  }
+});
+
+test('ISSUE-016: donut legend percentages are numbers, never NaN', () => {
+  // Snapshot the state arrays we touch so we can restore them after
+  // the test — downstream tests (App boots, balance inputs, ISSUE-005
+  // and ISSUE-007) depend on the seed state being intact.
+  const s = ctx.window.App._state;
+  const snap = {
+    categories: s.categories.slice(),
+    transactions: s.transactions.slice(),
+    sources: s.sources.slice(),
+    users: s.users.slice(),
+  };
+  try {
+    const cats = [
+      { id: 'c1', name: 'A', color: '#aaa', icon: '✦' },
+      { id: 'c2', name: 'B', color: '#bbb', icon: '✦' },
+    ];
+    s.categories = cats;
+    s.transactions = [
+      { id: 't1', type: 'expense', date: '2026-06-10', amount: 100, scope: 'private', sourceId: 's', categoryId: 'c1', description: 'a', createdAt: '2026-06-10T00:00:00Z' },
+      { id: 't2', type: 'expense', date: '2026-06-12', amount: 50,  scope: 'private', sourceId: 's', categoryId: 'c2', description: 'b', createdAt: '2026-06-12T00:00:00Z' },
+    ];
+    s.sources = [{ id: 's', name: 'S', ownerId: 'u' }];
+    s.users = [{ id: 'u', name: 'U' }];
+    ctx.window.Router.resetPeriod('dashboard');
+    ctx.window.App._goTo('dashboard');
+    const root = dashboardRoot();
+    const legendVals = [...root.querySelectorAll('.dl-val')].map(n => n.textContent);
+    if (legendVals.length === 0) throw new Error('no legend rows rendered');
+    for (const v of legendVals) {
+      if (/NaN/.test(v)) throw new Error(`legend shows NaN: "${v}"`);
+      if (!/^\d+%$/.test(v)) throw new Error(`legend value not a percent: "${v}"`);
+    }
+  } finally {
+    s.categories = snap.categories;
+    s.transactions = snap.transactions;
+    s.sources = snap.sources;
+    s.users = snap.users;
+  }
 });
 
 console.log('\n— App boots —');

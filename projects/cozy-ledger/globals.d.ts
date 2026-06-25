@@ -188,6 +188,14 @@ declare global {
       monthlyBalance: (state: State, sourceId: string, months?: number) => BalancePoint[];
       monthlyNetWorth: (state: State, months?: number) => BalancePoint[];
       monthlyNetFlow: (state: State, months?: number) => MonthFlow[];
+      // ISSUE-013: period helpers (PRD-004).
+      periodRangeForPreset: (
+        preset: '1m' | '3m' | '6m' | '1y' | '2y',
+        today?: Date,
+      ) => { from: string; to: string } | null;
+      periodRangeForAll: (state: State, today?: Date) => { from: string; to: string };
+      txnsInPeriod: (state: State, range: { from: string; to: string }) => Transaction[];
+      monthsInPeriod: (range: { from: string; to: string }) => string[];
     };
     SelectorScopes: readonly Scope[];
 
@@ -247,11 +255,13 @@ declare global {
       bulkUpdatePayeeCategory: (payeeName: string, categoryId: string) => void;
     };
     Router: {
+      boot: () => void;
       view: string;
       monthKey: string;
       txnFilters: Record<string, string>;
       balanceViewMode: 'sources' | 'networth';
       trendRange: '1y' | '2y' | '3y' | 'all';
+      period: Period;
       renderView: () => void;
       goTo: (id: string) => void;
       shiftMonth: (delta: number) => void;
@@ -260,6 +270,12 @@ declare global {
       setBalanceViewMode: (mode: 'sources' | 'networth') => void;
       setTrendRange: (range: '1y' | '2y' | '3y' | 'all') => void;
       monthsForRange: (range: '1y' | '2y' | '3y' | 'all') => number;
+      // ISSUE-013: shared period state (PRD-004).
+      periodRange: () => { from: string; to: string };
+      setPeriodPreset: (preset: PeriodPreset) => void;
+      setPeriodRange: (range: { from: string; to: string }) => void;
+      resetPeriod: (viewKey: string) => void;
+      defaultPresetFor: (viewKey: string) => PeriodPreset;
     };
     Shell: {
       render: () => void;
@@ -282,6 +298,10 @@ declare global {
     Users: { render: () => HTMLElement };
     Payees: { render: () => HTMLElement };
     Settings: { render: () => HTMLElement };
+    PeriodSelector: {
+      render: (viewKey: string) => HTMLElement;
+      PRESETS: readonly ('1m' | '3m' | '6m' | '1y' | '2y' | 'all')[];
+    };
     ViewHelpers: {
       sum: (arr: object[], key: string) => number;
       countTxns: (txns: Transaction[]) => number;

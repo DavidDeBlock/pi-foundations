@@ -62,6 +62,7 @@ module.exports = [
         Users: 'readonly',
         Payees: 'readonly',
         Settings: 'readonly',
+        PeriodSelector: 'readonly',
         ViewHelpers: 'readonly',
         ChartHelpers: 'readonly',
         MonthlyFlow: 'readonly',
@@ -78,7 +79,7 @@ module.exports = [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
     },
   },

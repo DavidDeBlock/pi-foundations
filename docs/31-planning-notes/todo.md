@@ -199,3 +199,9 @@ or an overview of everything.
 2.A
 3.Dashboard keep monthly and trends 1Y 
 4.Persistance yes 
+
+Now that you have knowledge about our project, I want to brainstorm a bit about a way to implement saving goals.
+- I want to add solar panels to our home, for example, but we need to save up for them. That could be an example.
+- Sometimes we go to a restaurant, but then I want to be able to see how much we spent at a restaurant and set small buckets. For example, if I notice we spent €2,000 on restaurants, we should have a small bucket where we can put in, let's say, $1,000, and that bucket is used for restaurant expenses.
+I'm looking for a system to create buckets for different spendings so we have more control over what we spend.
+

@@ -404,6 +404,112 @@ const Selectors = {
     }
     return monthKeys.map(k => byMonth.get(k));
   },
+
+  // ---- Period selectors (ISSUE-013 / PRD-004) ---------------------
+  // The dashboard and Trends view share one { preset, from, to } state
+  // owned by Router. These helpers turn a preset into a date range and
+  // filter transactions to that range. They are pure: no Router /
+  // Store / DOM coupling, so they can be exercised directly from the
+  // test harness without booting the app.
+  //
+  // Preset semantics (rolling, not "current month + N previous"):
+  //   1m  → [first of this month, today]
+  //   3m  → [first of (today - 2 months), today]
+  //   6m  → [first of (today - 5 months), today]
+  //   1y  → [first of (today - 11 months), today]
+  //   2y  → [first of (today - 23 months), today]
+  //   all → [earliest in-scope transaction date, today]
+  //
+  // All `from` values snap to the first of the month to keep the
+  // chart x-axis tidy.
+  /**
+   * ISO range for a preset, rolling from `today`. Returns null for
+   * presets that need state ('all'); use `periodRangeForAll` for those.
+   * @param {'1m'|'3m'|'6m'|'1y'|'2y'} preset
+   * @param {Date} [today=new Date()]
+   * @returns {{ from: string, to: string } | null}
+   */
+  periodRangeForPreset(preset, today = new Date()) {
+    /** @type {Record<string, number>} */
+    const monthOffsets = { '1m': 0, '3m': 2, '6m': 5, '1y': 11, '2y': 23 };
+    const monthsBack = monthOffsets[preset];
+    if (monthsBack === undefined) return null; // 'all', 'custom', or unknown
+    const firstOfThisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const from = new Date(firstOfThisMonth.getFullYear(), firstOfThisMonth.getMonth() - monthsBack, 1);
+    const to = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return {
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+    };
+  },
+
+  /**
+   * ISO range for the 'all' preset: earliest in-scope transaction
+   * date (snapped to first-of-month) through today. Returns today as
+   * `from` if the scope is empty.
+   * @param {State} state
+   * @param {Date} [today=new Date()]
+   * @returns {{ from: string, to: string }}
+   */
+  periodRangeForAll(state, today = new Date()) {
+    const inScope = Selectors.transactionsInScope(state);
+    let oldestIso = null;
+    for (const t of inScope) {
+      if (!t.date) continue;
+      if (!oldestIso || t.date < oldestIso) oldestIso = t.date;
+    }
+    const toIso = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString().slice(0, 10);
+    if (!oldestIso) {
+      return { from: toIso, to: toIso };
+    }
+    // Snap to first-of-month.
+    const od = new Date(oldestIso + 'T00:00:00');
+    const from = new Date(od.getFullYear(), od.getMonth(), 1);
+    return { from: from.toISOString().slice(0, 10), to: toIso };
+  },
+
+  /**
+   * In-scope transactions whose `date` falls in [from, to] inclusive.
+   * Lexicographic comparison on ISO dates = chronological comparison.
+   * @param {State} state
+   * @param {{ from: string, to: string }} range
+   * @returns {Transaction[]}
+   */
+  txnsInPeriod(state, range) {
+    const inScope = Selectors.transactionsInScope(state);
+    if (!range || !range.from || !range.to) return [];
+    const { from, to } = range;
+    return inScope.filter(t => t && t.date && t.date >= from && t.date <= to);
+  },
+
+  /**
+   * Ordered list of `YYYY-MM` strings covering [from, to] inclusive.
+   * Capped at 240 months (20 years) so chart builders can't blow up.
+   * Returns [] when from > to.
+   * @param {{ from: string, to: string }} range
+   * @returns {string[]}
+   */
+  monthsInPeriod(range) {
+    if (!range || !range.from || !range.to) return [];
+    const { from, to } = range;
+    if (from > to) return [];
+    const [fy, fm] = from.split('-').map(Number);
+    const [ty, tm] = to.split('-').map(Number);
+    if (!fy || !fm || !ty || !tm) return [];
+    const startYearMonth = fy * 12 + (fm - 1);
+    const endYearMonth = ty * 12 + (tm - 1);
+    const total = endYearMonth - startYearMonth + 1;
+    if (total <= 0) return [];
+    const cap = Math.min(total, 240);
+    const out = [];
+    for (let i = 0; i < cap; i++) {
+      const ym = startYearMonth + i;
+      const y = Math.floor(ym / 12);
+      const m = (ym % 12) + 1;
+      out.push(`${y}-${String(m).padStart(2, '0')}`);
+    }
+    return out;
+  },
 };
 
 function round2(n) { return Math.round(n * 100) / 100; }

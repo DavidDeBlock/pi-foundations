@@ -32,6 +32,7 @@ const App = (() => {
   // classes, picker label, scope pills).
   function init() {
     Shell.render();
+    Router.boot();         // ISSUE-013: restore persisted period from localStorage
     Router.renderView();
     bindGlobal();
   }
