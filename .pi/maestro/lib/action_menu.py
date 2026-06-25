@@ -51,11 +51,15 @@ Public surface:
   - :func:`load_default_flow`, :func:`load_available_flows`,
     :func:`resolve_flow` — the config helpers.
 
+Public surface (continued):
+
+  - :func:`launch_monitor` — spawn the ``maestro monitor`` process
+    in the same terminal and block until it exits.
+
 Non-goals:
 
   - Autonomous mode (label-driven polling) — separate slice (#39).
   - Filter issues by label — separate slice (#41).
-  - Launch the monitor from the menu — separate slice (#42).
 """
 
 from __future__ import annotations
@@ -104,6 +108,7 @@ MENU_OPTIONS: list[tuple[str, str]] = [
     ("single", "Start single issue"),
     ("batch", "Start batch"),
     ("autonomous", "Run autonomous"),
+    ("monitor", "Launch monitor"),
     ("show_config", "Show config"),
     ("edit_config", "Edit config"),
     ("quit", "Quit"),
@@ -229,6 +234,36 @@ class SpawnResult:
     issue_num: int
     flow_name: str
     started: bool
+    error: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class LaunchResult:
+    """The outcome of a :func:`launch_monitor` call.
+
+    Fields:
+
+      - ``started``: ``True`` iff the monitor subprocess was
+        launched successfully AND ran to completion. ``False``
+        indicates the launch itself failed (e.g. command not
+        found, broken install); see ``error`` for details.
+      - ``returncode``: The monitor subprocess's exit code, or
+        ``None`` if the launch failed. ``0`` is a clean exit;
+        non-zero indicates the monitor exited with an error.
+      - ``error``: A short human-readable error string when
+        ``started`` is ``False``. ``None`` on success.
+
+    Note that ``started=True`` with ``returncode=0`` is the
+    happy path (the operator launched the monitor, watched it
+    for a while, and quit cleanly). ``started=True`` with
+    ``returncode != 0`` is a successful launch followed by a
+    monitor-side failure (e.g. ``maestro monitor`` itself
+    crashed). The action menu does not surface this in the UI
+    — the operator already saw the monitor's output.
+    """
+
+    started: bool
+    returncode: Optional[int] = None
     error: Optional[str] = None
 
 
