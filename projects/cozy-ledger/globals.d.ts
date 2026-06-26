@@ -260,7 +260,6 @@ declare global {
       monthKey: string;
       txnFilters: Record<string, string>;
       balanceViewMode: 'sources' | 'networth';
-      trendRange: '1y' | '2y' | '3y' | 'all';
       period: Period;
       renderView: () => void;
       goTo: (id: string) => void;
@@ -268,8 +267,6 @@ declare global {
       setTxnFilter: (key: string, value: string) => void;
       resetTxnFilters: () => void;
       setBalanceViewMode: (mode: 'sources' | 'networth') => void;
-      setTrendRange: (range: '1y' | '2y' | '3y' | 'all') => void;
-      monthsForRange: (range: '1y' | '2y' | '3y' | 'all') => number;
       // ISSUE-013: shared period state (PRD-004).
       periodRange: () => { from: string; to: string };
       setPeriodPreset: (preset: PeriodPreset) => void;

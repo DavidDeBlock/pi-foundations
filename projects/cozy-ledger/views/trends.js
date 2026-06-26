@@ -1,16 +1,21 @@
 // =====================================================================
-// views/trends.js — Trends: balance over time + monthly flow + top cats
+// views/trends.js — Trends: balance over time + monthly flow
 // =====================================================================
-// Reads: App._state, Router.balanceViewMode, Router.trendRange,
-//        Router.monthKey
-// Calls: Router.renderView, Router.setBalanceViewMode,
-//        Router.setTrendRange, Selectors, Store.updateSource
+// Reads: App._state, Router.balanceViewMode, Router.periodRange
+// Calls: Router.renderView, Router.setBalanceViewMode, Selectors,
+//        Store.updateSource
 //
 // Chart rendering is delegated to:
 //   charts/monthly-flow.js     — MonthlyFlow.render({...})
 //   charts/balance-trajectory.js — BalanceTrajectory.render({...})
 // This file is responsible only for the trends view's chrome:
-// range toggle, balance-input row, mount points for the charts.
+// PeriodSelector (ISSUE-014/016), per-source / net-worth toggle,
+// balance-input row, and mount points for the charts.
+//
+// Period: both charts and the balance-input commit path consume the
+// shared period (Router.periodRange → Selectors.monthsInPeriod).
+// The old per-view range-buttons (1y / 2y / 3y / all) and the
+// `Router.trendRange` API were removed in ISSUE-016.
 // =====================================================================
 
 const Trends = (() => {
@@ -27,26 +32,6 @@ const Trends = (() => {
         'data-mode': 'networth',
         onclick: () => Router.setBalanceViewMode('networth'),
       }, t('trends.toggle.networth')),
-    );
-  }
-
-  function renderRangeButtons() {
-    const opts = [
-      { id: '1y',  label: t('trends.range.1y')  },
-      { id: '2y',  label: t('trends.range.2y')  },
-      { id: '3y',  label: t('trends.range.3y')  },
-      { id: 'all', label: t('trends.range.all') },
-    ];
-    return el('div', { class: 'range-buttons' },
-      ...opts.map(o => {
-        const btn = el('button', {
-          type: 'button',
-          class: 'range-btn' + (Router.trendRange === o.id ? ' active' : ''),
-          'data-range': o.id,
-        }, o.label);
-        btn.addEventListener('click', () => Router.setTrendRange(o.id));
-        return btn;
-      }),
     );
   }
 
@@ -75,7 +60,7 @@ const Trends = (() => {
     const sources = Selectors.sourcesInScope(App._state);
     chartHost.innerHTML = '';
     chartHost.appendChild(MonthlyFlow.render({
-      months: Selectors.monthlyNetFlow(App._state, Router.monthsForRange(Router.trendRange)),
+      months: Selectors.monthlyNetFlow(App._state, Selectors.monthsInPeriod(Router.periodRange()).length || 12),
       sources,
       isNetWorth: Router.balanceViewMode === 'networth',
       i18n: {
@@ -87,7 +72,6 @@ const Trends = (() => {
         tooltipIn: t('trends.tooltip.in'),
         tooltipOut: t('trends.tooltip.out'),
       },
-      rangeButtons: renderRangeButtons(),
     }));
     chartHost.appendChild(buildTrajectoryChart(sources));
     const saved = $('#saved-' + sourceId);
@@ -122,7 +106,7 @@ const Trends = (() => {
   // -- Monthly flow chart -------------------------------------------
   function buildMonthlyFlowChart(sources) {
     return MonthlyFlow.render({
-      months: Selectors.monthlyNetFlow(App._state, Router.monthsForRange(Router.trendRange)),
+      months: Selectors.monthlyNetFlow(App._state, Selectors.monthsInPeriod(Router.periodRange()).length || 12),
       sources,
       isNetWorth: Router.balanceViewMode === 'networth',
       i18n: {
@@ -134,23 +118,22 @@ const Trends = (() => {
         tooltipIn: t('trends.tooltip.in'),
         tooltipOut: t('trends.tooltip.out'),
       },
-      rangeButtons: renderRangeButtons(),
     });
   }
 
   // -- Balance trajectory chart -------------------------------------
   function buildTrajectoryChart(sources) {
     const isNetWorth = Router.balanceViewMode === 'networth';
-    const trendMonths = Router.monthsForRange(Router.trendRange);
+    const trendMonths = Selectors.monthsInPeriod(Router.periodRange());
     let series;
     if (isNetWorth) {
-      const pts = Selectors.monthlyNetWorth(App._state, trendMonths);
+      const pts = Selectors.monthlyNetWorth(App._state, trendMonths.length || 12);
       series = pts.length
         ? [{ id: '__networth__', name: t('trends.toggle.networth'), points: pts, today: pts[pts.length - 1].balance }]
         : [];
     } else {
       series = sources.map(src => {
-        const points = Selectors.monthlyBalance(App._state, src.id, trendMonths);
+        const points = Selectors.monthlyBalance(App._state, src.id, trendMonths.length || 12);
         const flat = points.length > 1
           && points.every(p => p.balance === points[0].balance);
         return { id: src.id, name: src.name, points, today: Number(src.balance) || 0, flat };
@@ -169,7 +152,6 @@ const Trends = (() => {
         networthName: t('trends.toggle.networth'),
         todayLabel: t('trends.balance.today'),
       },
-      rangeButtons: renderRangeButtons(),
     });
   }
 
@@ -206,13 +188,9 @@ const Trends = (() => {
 
   // -- Top-level render ---------------------------------------------
   function render() {
-    const inScopeTxns = Selectors.transactionsInScope(App._state);
-    const monthTxns = inScopeTxns.filter(x => Fmt.inMonth(x.date, Router.monthKey));
-    const totalExpense = ViewHelpers.sum(monthTxns.filter(x => x.type === 'expense'), 'amount');
-
     const wrap = el('div', { class: 'view-trends' });
+    wrap.appendChild(PeriodSelector.render('trends'));
     wrap.appendChild(renderBalanceFlow());
-    wrap.appendChild(Dashboard.renderTopCategoriesCard(monthTxns, totalExpense));
     return wrap;
   }
 

@@ -4,6 +4,10 @@
 // Owns the route (current view, month, filters, trends settings) and
 // rebuilds `#view` on every change. Shell updates are in-place.
 // Each view is a `window.<Name>` module that exposes `render()`.
+//
+// ISSUE-016: the legacy `trendRange` / `setTrendRange` / `monthsForRange`
+// API was removed — the Trends view now consumes the shared period state
+// (`period` + `periodRange()`) like the dashboard.
 // =====================================================================
 
 const Router = (() => {
@@ -12,8 +16,6 @@ const Router = (() => {
   let txnFilters = { month: 'all', type: 'all', categoryId: 'all', userId: 'all', sourceId: 'all', scope: 'all', payee: 'all', groupId: 'all' };
   /** @type {'sources'|'networth'} */
   let balanceViewMode = 'sources';
-  /** @type {'1y'|'2y'|'3y'|'all'} */
-  let trendRange = '1y';
 
   // -- Period state (ISSUE-013 / PRD-004) ----------------------------
   // Shared "what time range am I looking at" state for the dashboard
@@ -83,29 +85,6 @@ const Router = (() => {
     if (mode !== 'sources' && mode !== 'networth') return;
     balanceViewMode = mode;
     renderView();
-  }
-
-  function setTrendRange(range) {
-    if (!['1y', '2y', '3y', 'all'].includes(range)) return;
-    if (range === trendRange) return;
-    trendRange = range;
-    renderView();
-  }
-
-  // Resolve the active range ('1y' | '2y' | '3y' | 'all') into a
-  // month count. For 'all' we use the oldest in-scope transaction so
-  // the chart naturally grows with the user's history. Capped at 240
-  // months (20 years) so the SVG can't blow up.
-  //
-  // ISSUE-013: thin wrapper around `Selectors.monthsInPeriod` over the
-  // shared period range. Kept until ISSUE-016 finishes removing all
-  // legacy `trendRange` callers.
-  function monthsForRange(range) {
-    if (range === 'all') {
-      const months = Selectors.monthsInPeriod(Router.periodRange());
-      return months.length || 12;
-    }
-    return { '1y': 12, '2y': 24, '3y': 36 }[range] || 12;
   }
 
   // -- Period state (ISSUE-013 / PRD-004) ----------------------------
@@ -226,7 +205,6 @@ const Router = (() => {
     get monthKey() { return monthKey; },
     get txnFilters() { return txnFilters; },
     get balanceViewMode() { return balanceViewMode; },
-    get trendRange() { return trendRange; },
     get period() { return period; },
     // Period helpers (ISSUE-013)
     periodRange,
@@ -239,8 +217,6 @@ const Router = (() => {
     setTxnFilter,
     resetTxnFilters,
     setBalanceViewMode,
-    setTrendRange,
-    monthsForRange,
   };
 })();
 window.Router = Router;

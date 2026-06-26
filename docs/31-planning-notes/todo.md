@@ -205,3 +205,13 @@ Now that you have knowledge about our project, I want to brainstorm a bit about 
 - Sometimes we go to a restaurant, but then I want to be able to see how much we spent at a restaurant and set small buckets. For example, if I notice we spent €2,000 on restaurants, we should have a small bucket where we can put in, let's say, $1,000, and that bucket is used for restaurant expenses.
 I'm looking for a system to create buckets for different spendings so we have more control over what we spend.
 
+
+
+1. One primitive (Buckets, with mode) or two (Goals + Envelopes)?                   
+ 2. How does money get into a savings bucket?                                        
+     - (a) Manual "add €X" button (you decide when to fund it)                       
+     - (b) Linked to a Source: every inflow on that source flows in                  
+     - (c) Auto-sweep at month end: leftover income (income − expenses) flows in     
+ 3. For envelopes, is the cap per month or per year (or both)?  
+
+ 

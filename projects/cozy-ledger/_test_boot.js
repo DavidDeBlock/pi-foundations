@@ -1090,6 +1090,139 @@ test('ISSUE-016: donut legend percentages are numbers, never NaN', () => {
   }
 });
 
+// =====================================================================
+// ISSUE-016: Trends period wiring + cleanup
+// =====================================================================
+console.log('\n— ISSUE-016: Trends period wiring + cleanup —');
+
+// Helper used by the ISSUE-016 tests below.
+function trendsRoot() {
+  const appRoot = ctx.window.document.querySelector('#app');
+  return walk(appRoot, n => (n.classList?._set || new Set()).has('view-trends'));
+}
+
+test('ISSUE-016: Trends mounts the PeriodSelector at the top', () => {
+  ctx.window.Router.resetPeriod('trends');
+  ctx.window.App._goTo('trends');
+  const root = trendsRoot();
+  if (!root) throw new Error('Trends view did not mount');
+  const selector = walk(root, n => (n.classList?._set || new Set()).has('period-selector'));
+  if (!selector) throw new Error('period-selector not found on Trends');
+  // Must be the FIRST direct child of the wrap (above the balance card).
+  const firstChild = root.children[0];
+  if (!(firstChild.classList?._set || new Set()).has('period-selector')) {
+    throw new Error(`expected period-selector as first child of view-trends, got ${firstChild.className || firstChild.tagName}`);
+  }
+  // view attr must point to trends so reset uses 1y default.
+  if (selector.getAttribute('data-view') !== 'trends') {
+    throw new Error(`expected data-view="trends", got ${selector.getAttribute('data-view')}`);
+  }
+});
+
+test('ISSUE-016: default period on Trends is 1y', () => {
+  ctx.window.Router.resetPeriod('trends');
+  const p = ctx.window.Router.period;
+  if (p.preset !== '1y') throw new Error(`expected preset 1y, got ${p.preset}`);
+  const monthKeys = ctx.window.Selectors.monthsInPeriod(ctx.window.Router.periodRange());
+  if (monthKeys.length !== 12) {
+    throw new Error(`expected 12 months in 1y period, got ${monthKeys.length}`);
+  }
+});
+
+test('ISSUE-016: Trends view no longer renders the old range-buttons element', () => {
+  ctx.window.App._goTo('trends');
+  const root = trendsRoot();
+  const oldButtons = findAll(root, n => (n.classList?._set || new Set()).has('range-buttons'));
+  if (oldButtons.length !== 0) {
+    throw new Error(`expected 0 .range-buttons elements, got ${oldButtons.length}`);
+  }
+});
+
+test('ISSUE-016: Trends view no longer renders the top-categories card', () => {
+  ctx.window.App._goTo('trends');
+  const root = trendsRoot();
+  // The dashboard's top-categories card has class .top-cats (or
+  // similar). Easiest check: there should be exactly one card on
+  // Trends (the balance card), not two.
+  const cards = findAll(root, n => (n.classList?._set || new Set()).has('card'));
+  if (cards.length !== 1) {
+    throw new Error(`expected exactly 1 .card on Trends, got ${cards.length}`);
+  }
+  const balanceCard = findAll(root, n => n.getAttribute('id') === 'balance-card');
+  if (balanceCard.length !== 1) {
+    throw new Error(`expected balance-card on Trends, got ${balanceCard.length}`);
+  }
+});
+
+test('ISSUE-016: Router.trendRange, setTrendRange, monthsForRange are gone', () => {
+  const R = ctx.window.Router;
+  if ('trendRange' in R) throw new Error('Router.trendRange still exists');
+  if (typeof R.setTrendRange === 'function') {
+    throw new Error('Router.setTrendRange still exists');
+  }
+  if (typeof R.monthsForRange === 'function') {
+    throw new Error('Router.monthsForRange still exists');
+  }
+});
+
+test('ISSUE-016: t(trends.range.1y) returns the key (i18n entry deleted)', () => {
+  const t = ctx.window.t;
+  // The fall-through behaviour for unknown keys is to return the key
+  // itself, so if the entry is gone, we get back 'trends.range.1y'.
+  if (t('trends.range.1y') !== 'trends.range.1y') {
+    throw new Error('trends.range.1y still resolves — expected key fallback');
+  }
+  if (t('trends.range.2y') !== 'trends.range.2y') {
+    throw new Error('trends.range.2y still resolves — expected key fallback');
+  }
+  if (t('trends.range.3y') !== 'trends.range.3y') {
+    throw new Error('trends.range.3y still resolves — expected key fallback');
+  }
+  if (t('trends.range.all') !== 'trends.range.all') {
+    throw new Error('trends.range.all still resolves — expected key fallback');
+  }
+});
+
+test('ISSUE-016: switching the period on Trends re-renders the charts', () => {
+  ctx.window.App._goTo('trends');
+  // Start at 1y and capture the chart-section count.
+  ctx.window.Router.setPeriodPreset('1y');
+  ctx.window.App._goTo('trends');
+  let card = walk(ctx.window.document.querySelector('#app'), n => n.getAttribute('id') === 'balance-card');
+  let sections = findAll(card, n => (n.classList?._set || new Set()).has('chart-section'));
+  if (sections.length < 2) throw new Error(`expected >= 2 chart-sections in balance card, got ${sections.length}`);
+  // Switch to 2y.
+  const btn2y = findAll(ctx.window.document.querySelector('#app'),
+    n => (n.classList?._set || new Set()).has('period-pill') && n.getAttribute('data-preset') === '2y'
+  )[0];
+  if (!btn2y) throw new Error('2y pill not found on Trends selector');
+  btn2y.dispatchEvent({ type: 'click' });
+  // Router state must have moved.
+  if (ctx.window.Router.period.preset !== '2y') {
+    throw new Error(`expected period.preset=2y after click, got ${ctx.window.Router.period.preset}`);
+  }
+  // The view must have re-rendered (balance-card re-mounted with fresh
+  // chart sections built from the new period range).
+  card = walk(ctx.window.document.querySelector('#app'), n => n.getAttribute('id') === 'balance-card');
+  if (!card) throw new Error('balance-card missing after preset switch');
+  sections = findAll(card, n => (n.classList?._set || new Set()).has('chart-section'));
+  if (sections.length < 2) throw new Error(`expected >= 2 chart-sections after switch, got ${sections.length}`);
+});
+
+test('ISSUE-016: Trends render does not reference Router.trendRange', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const file = path.join(__dirname, 'views', 'trends.js');
+  const src = fs.readFileSync(file, 'utf8');
+  // Strip line + block comments to avoid matching explanatory text.
+  const code = src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  if (/Router\.trendRange|setTrendRange|monthsForRange|Router\.monthKey/.test(code)) {
+    throw new Error('views/trends.js still references the legacy Router API');
+  }
+});
+
 console.log('\n— App boots —');
 
 test('App.init() runs without throwing', () => {
@@ -1175,35 +1308,33 @@ test('monthly flow bars are POS_COLOR for net ≥ 0 and NEG_COLOR for net < 0 (n
   }
 });
 
-test('range buttons widen the chart when clicked', () => {
+test('period pills widen the chart when clicked (ISSUE-016)', () => {
   navigateToView('trends');
-  let card = walk(ctx.window.document.querySelector('#app'), n => n.getAttribute('id') === 'balance-card');
-  // Default '1y' should give exactly 12 monthly-flow bars.
-  const initialBars = findAll(card, n => (n.classList?._set || new Set()).has('mf-bar'));
+  const appRoot = ctx.window.document.querySelector('#app');
+  const viewRoot = walk(appRoot, n => (n.classList?._set || new Set()).has('view-trends'));
+  // ISSUE-016: ensure the old per-chart range buttons are gone.
+  const oldRangeButtons = findAll(viewRoot, n => (n.classList?._set || new Set()).has('range-buttons'));
+  if (oldRangeButtons.length !== 0) {
+    throw new Error(`expected no .range-buttons on Trends, got ${oldRangeButtons.length}`);
+  }
+  // The shared PeriodSelector sits at the top of the view.
+  const selector = walk(viewRoot, n => (n.classList?._set || new Set()).has('period-selector'));
+  if (!selector) throw new Error('period-selector not mounted on Trends');
+  // Snap back to 1y so we know what we're starting from.
+  ctx.window.Router.setPeriodPreset('1y');
+  navigateToView('trends');
+  const card1 = walk(ctx.window.document.querySelector('#app'), n => n.getAttribute('id') === 'balance-card');
+  const initialBars = findAll(card1, n => (n.classList?._set || new Set()).has('mf-bar'));
   if (initialBars.length !== 12) throw new Error(`expected 12 bars in 1y, got ${initialBars.length}`);
-  // Click '3 years' — should give 36 bars.
-  const btn3y = findAll(card, n =>
-    (n.classList?._set || new Set()).has('range-btn') && n.getAttribute('data-range') === '3y'
+  // Click '2y' on the shared PeriodSelector.
+  const btn2y = findAll(ctx.window.document.querySelector('#app'),
+    n => (n.classList?._set || new Set()).has('period-pill') && n.getAttribute('data-preset') === '2y'
   )[0];
-  if (!btn3y) throw new Error('3y button not found');
-  btn3y.dispatchEvent({ type: 'click' });
-  card = walk(ctx.window.document.querySelector('#app'), n => n.getAttribute('id') === 'balance-card');
-  const afterBars = findAll(card, n => (n.classList?._set || new Set()).has('mf-bar'));
-  if (afterBars.length !== 36) throw new Error(`expected 36 bars in 3y, got ${afterBars.length}`);
-  // Active pill must reflect the choice. (Each chart section renders
-  // its own button row, so we expect >= 1 with data-range='3y'.)
-  const active = findAll(card, n =>
-    (n.classList?._set || new Set()).has('range-btn')
-    && (n.classList?._set || new Set()).has('active')
-    && n.getAttribute('data-range') === '3y'
-  );
-  if (active.length < 1) throw new Error('expected 3y button to be active after click');
-  const stillOne = findAll(card, n =>
-    (n.classList?._set || new Set()).has('range-btn')
-    && (n.classList?._set || new Set()).has('active')
-    && n.getAttribute('data-range') !== '3y'
-  );
-  if (stillOne.length > 0) throw new Error('expected no other range button to be active');
+  if (!btn2y) throw new Error('2y period pill not found');
+  btn2y.dispatchEvent({ type: 'click' });
+  const card2 = walk(ctx.window.document.querySelector('#app'), n => n.getAttribute('id') === 'balance-card');
+  const afterBars = findAll(card2, n => (n.classList?._set || new Set()).has('mf-bar'));
+  if (afterBars.length !== 24) throw new Error(`expected 24 bars in 2y, got ${afterBars.length}`);
 });
 
 test('Trends nav item is in the sidebar (ISSUE-004)', () => {

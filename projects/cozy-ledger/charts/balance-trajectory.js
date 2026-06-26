@@ -20,10 +20,12 @@ const BalanceTrajectory = (() => {
   //     emptySources, emptyTxns12,
   //     networthName, todayLabel,
   //   },
-  //   rangeButtons,           // DOM element for the right side of the head
   // }
+  // ISSUE-016: the range-toggle UI used to live here; the unified
+  // PeriodSelector (mounted by the parent view, ISSUE-014) is now
+  // the single source of truth for time range.
   function render(opts) {
-    const { series: rawSeries, isNetWorth, i18n, rangeButtons } = opts;
+    const { series: rawSeries, isNetWorth, i18n } = opts;
     const innerW = CHART_W - CHART_M_TR.left - CHART_M_TR.right;
     const innerH = TR_H - CHART_M_TR.top - CHART_M_TR.bottom;
 
@@ -34,7 +36,6 @@ const BalanceTrajectory = (() => {
           el('span', { class: 'chart-section-sub' },
             isNetWorth ? i18n.subNw : i18n.subSrc),
         ),
-        rangeButtons,
       ),
     );
 

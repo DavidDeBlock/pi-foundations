@@ -22,10 +22,12 @@ const MonthlyFlow = (() => {
   //     title, sub, empty,
   //     tooltipSaved, tooltipSpent, tooltipIn, tooltipOut,
   //   },
-  //   rangeButtons,           // DOM element for the right side of the head
   // }
+  // ISSUE-016: the range-toggle UI used to live here; the unified
+  // PeriodSelector (mounted by the parent view, ISSUE-014) is now
+  // the single source of truth for time range.
   function render(opts) {
-    const { months, sources, isNetWorth, i18n, rangeButtons } = opts;
+    const { months, sources, isNetWorth, i18n } = opts;
     const innerW = CHART_W - CHART_M_HB.left - CHART_M_HB.right;
     const innerH = HB_H - CHART_M_HB.top - CHART_M_HB.bottom;
 
@@ -35,7 +37,6 @@ const MonthlyFlow = (() => {
           i18n.title,
           el('span', { class: 'chart-section-sub' }, i18n.sub),
         ),
-        rangeButtons,
       ),
     );
 
