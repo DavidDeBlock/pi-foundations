@@ -46,11 +46,15 @@ function eq(a, b, msg) {
   if (sa !== sb) throw new Error(`${msg || 'eq'}: expected ${sb}, got ${sa}`);
 }
 
-// Load only data.js + selectors.js + utils.js. No DOM, no app.js.
+// Load only data.js + selectors.js + utils.js + i18n.js. No DOM, no app.js.
 // utils.js is loaded into the same sandbox so Fmt.* is testable
 // without a real document (Fmt only references document inside
 // function bodies that we never invoke from these tests).
-for (const s of ['data.js', 'selectors.js', 'utils.js']) {
+// i18n.js is loaded so the ISSUE-020 comparison selector (which calls
+// `t()` for period labels) has a populated translation table. Without
+// it the labels would fall through to the key string, which is fine
+// for negative tests but annoying when asserting on shape.
+for (const s of ['data.js', 'selectors.js', 'utils.js', 'i18n.js']) {
   const code = fs.readFileSync(path.join(__dirname, s), 'utf8');
   vm.runInContext(code, ctx, { filename: s });
 }
@@ -1117,6 +1121,252 @@ test('envelopeProgress: spent > cap returns overspent > 0 and clamped remaining'
   if (p.percent !== 175) throw new Error(`percent, got ${p.percent}`);
   if (p.remaining !== 0) throw new Error(`remaining should clamp to 0, got ${p.remaining}`);
   if (p.overspent !== 150) throw new Error(`overspent, got ${p.overspent}`);
+});
+
+// ---- ISSUE-020: envelopeComparison (pure selector) ------------------
+console.log('\n— ISSUE-020: envelopeComparison —');
+
+// Helper to make a "real-ish" state that includes scope plumbing so
+// `Selectors.transactionsInScope(state)` returns the expected subset.
+// Each test sets the scope/ownerId it wants; by default we wire the
+// source to the current user so everything is private-scoped.
+function makeScopedState({ scope = 'private', currentUserId = 'u_david', txns = [], sourceOwnerId = 'u_david' } = {}) {
+  return {
+    users: [
+      { id: 'u_david',    name: 'David' },
+      { id: 'u_isabelle', name: 'Isabelle' },
+    ],
+    sources: [
+      { id: 's_in',  name: 'In-scope',  ownerId: sourceOwnerId, active: true, balance: 0 },
+      { id: 's_out', name: 'Out-of-scope', ownerId: sourceOwnerId === 'u_david' ? 'u_isabelle' : 'u_david', active: true, balance: 0 },
+    ],
+    transactions: txns,
+    settings: { currentUserId, scope },
+  };
+}
+
+// Helper to make an envelope with createdAt (so the notYetExisted path
+// is reachable in tests). All envelopes below link to a single
+// category so the matching logic stays trivial.
+function makeCompEnv({ period = 'monthly', categoryIds = ['c_eat'], createdAt = '2026-06-27T00:00:00.000Z' } = {}) {
+  return {
+    id: 'env1', name: 'Test', cap: 1000, period,
+    categoryIds, payeeIds: [], notes: '',
+    createdAt, updatedAt: '2026-06-27T00:00:00.000Z',
+  };
+}
+
+test('ISSUE-020: monthly envelope returns 7 entries (current + 6 previous months)', () => {
+  const today = new Date(2026, 5, 27); // 27 Jun 2026
+  const env = makeCompEnv({ period: 'monthly' });
+  const state = makeScopedState({ txns: [
+    { id: 't_now', sourceId: 's_in', type: 'expense', amount: 100, date: '2026-06-15', categoryId: 'c_eat', description: 'X' },
+  ]});
+  const out = Selectors.envelopeComparison(env, state, today);
+  if (!out) throw new Error('null result');
+  if (!out.current) throw new Error('no current entry');
+  if (!Array.isArray(out.history)) throw new Error('history not array');
+  if (out.history.length !== 6) throw new Error(`history len = ${out.history.length}, want 6`);
+  // Total entries = 1 current + 6 history = 7.
+  const total = 1 + out.history.length;
+  if (total !== 7) throw new Error(`total entries = ${total}, want 7`);
+  if (out.current.spent !== 100) throw new Error(`current.spent = ${out.current.spent}, want 100`);
+});
+
+test('ISSUE-020: yearly envelope returns 4 entries (current + 3 previous years)', () => {
+  const today = new Date(2026, 5, 27); // 27 Jun 2026
+  const env = makeCompEnv({ period: 'yearly' });
+  const state = makeScopedState({ txns: [
+    { id: 't_now', sourceId: 's_in', type: 'expense', amount: 200, date: '2026-03-15', categoryId: 'c_eat', description: 'X' },
+  ]});
+  const out = Selectors.envelopeComparison(env, state, today);
+  if (!out) throw new Error('null result');
+  if (!out.current) throw new Error('no current entry');
+  if (out.history.length !== 3) throw new Error(`history len = ${out.history.length}, want 3`);
+  // Total = 1 + 3 = 4.
+  if (out.current.spent !== 200) throw new Error(`current.spent = ${out.current.spent}, want 200`);
+});
+
+test('ISSUE-020: past period with no matching transactions has spent=0, deltaPct=100, direction=up', () => {
+  const today = new Date(2026, 5, 27); // 27 Jun 2026
+  // Envelope created before the past period we're checking (so it existed),
+  // and we deliberately have NO transactions in May.
+  const env = makeCompEnv({ period: 'monthly', createdAt: '2024-01-01T00:00:00.000Z' });
+  const state = makeScopedState({ txns: [
+    // Only a June (current) transaction.
+    { id: 't_now', sourceId: 's_in', type: 'expense', amount: 50, date: '2026-06-10', categoryId: 'c_eat', description: 'X' },
+  ]});
+  const out = Selectors.envelopeComparison(env, state, today);
+  if (!out) throw new Error('null result');
+  if (out.current.spent !== 50) throw new Error(`current.spent = ${out.current.spent}`);
+  // The first history entry is the previous month (May 2026) — no txns.
+  const may = out.history[0];
+  if (may.spent !== 0) throw new Error(`may.spent = ${may.spent}, want 0`);
+  if (may.delta !== 50) throw new Error(`may.delta = ${may.delta}, want 50`);
+  if (may.deltaPct !== 100) throw new Error(`may.deltaPct = ${may.deltaPct}, want 100`);
+  if (may.direction !== 'up') throw new Error(`may.direction = ${may.direction}, want up`);
+});
+
+test('ISSUE-020: past period before envelope creation still returns the computed spend and flags notYetExisted', () => {
+  // Even though the envelope didn't exist yet, the user's links
+  // (category/payee) define a bucket that already had spending
+  // history. The selector must surface that spend and flag the row
+  // so the view can append a "schatting" badge. This is the change
+  // requested after the first implementation, so new users see real
+  // numbers from the start.
+  const today = new Date(2026, 5, 27); // 27 Jun 2026
+  // Envelope created TODAY — every past period predates its creation.
+  const env = makeCompEnv({ period: 'monthly', createdAt: '2026-06-27T00:00:00.000Z' });
+  // Seed one transaction in the previous month so we can assert
+  // the selector computes the retroactive spend correctly.
+  const state = makeScopedState({ txns: [
+    { id: 't_now',  sourceId: 's_in', type: 'expense', amount: 30, date: '2026-06-15', categoryId: 'c_eat', description: 'X' },
+    { id: 't_prev', sourceId: 's_in', type: 'expense', amount: 50, date: '2026-05-10', categoryId: 'c_eat', description: 'X' },
+  ]});
+  const out = Selectors.envelopeComparison(env, state, today);
+  if (!out) throw new Error('null result');
+  for (let i = 0; i < out.history.length; i++) {
+    const e = out.history[i];
+    // spent is now always a number, never null.
+    if (e.spent === null) throw new Error(`history[${i}].spent should be a number, not null`);
+    if (typeof e.spent !== 'number') throw new Error(`history[${i}].spent type = ${typeof e.spent}, want number`);
+    // delta / deltaPct / direction are also always present so the
+    // view can render the row normally.
+    if (typeof e.delta !== 'number') throw new Error(`history[${i}].delta type = ${typeof e.delta}`);
+    if (typeof e.deltaPct !== 'number') throw new Error(`history[${i}].deltaPct type = ${typeof e.deltaPct}`);
+    if (!['up', 'down', 'same'].includes(e.direction)) throw new Error(`history[${i}].direction = ${e.direction}`);
+    if (e.notYetExisted !== true) throw new Error(`history[${i}].notYetExisted should be true`);
+  }
+  // The May 2026 row specifically: spent should equal the seeded 50.
+  if (out.history[0].spent !== 50) throw new Error(`history[0].spent = ${out.history[0].spent}, want 50`);
+  if (out.history[0].delta !== -20) throw new Error(`history[0].delta = ${out.history[0].delta}, want -20 (30-50)`);
+  if (out.history[0].direction !== 'down') throw new Error(`history[0].direction = ${out.history[0].direction}, want down`);
+});
+
+test('ISSUE-020: current vs previous computes correct delta/deltaPct/direction (up/down/same)', () => {
+  const today = new Date(2026, 5, 27); // 27 Jun 2026
+  // Envelope created long ago so the past periods all count.
+  const env = makeCompEnv({ period: 'monthly', createdAt: '2024-01-01T00:00:00.000Z' });
+  // Current (June 2026) spent = 100. Previous (May 2026) spent = 40.
+  // delta = 100 - 40 = 60. deltaPct = 60 / 40 * 100 = 150. direction = up.
+  const stateUp = makeScopedState({ txns: [
+    { id: 't_now', sourceId: 's_in', type: 'expense', amount: 100, date: '2026-06-10', categoryId: 'c_eat', description: 'X' },
+    { id: 't_prev', sourceId: 's_in', type: 'expense', amount: 40, date: '2026-05-10', categoryId: 'c_eat', description: 'X' },
+  ]});
+  const outUp = Selectors.envelopeComparison(env, stateUp, today);
+  const prevUp = outUp.history[0];
+  if (prevUp.spent !== 40) throw new Error(`up prev.spent = ${prevUp.spent}, want 40`);
+  if (prevUp.delta !== 60) throw new Error(`up prev.delta = ${prevUp.delta}, want 60`);
+  if (prevUp.deltaPct !== 150) throw new Error(`up prev.deltaPct = ${prevUp.deltaPct}, want 150`);
+  if (prevUp.direction !== 'up') throw new Error(`up prev.direction = ${prevUp.direction}, want up`);
+
+  // Current 40, previous 100 → delta = -60, deltaPct = -60, direction = down.
+  const stateDown = makeScopedState({ txns: [
+    { id: 't_now', sourceId: 's_in', type: 'expense', amount: 40, date: '2026-06-10', categoryId: 'c_eat', description: 'X' },
+    { id: 't_prev', sourceId: 's_in', type: 'expense', amount: 100, date: '2026-05-10', categoryId: 'c_eat', description: 'X' },
+  ]});
+  const outDown = Selectors.envelopeComparison(env, stateDown, today);
+  const prevDown = outDown.history[0];
+  if (prevDown.delta !== -60) throw new Error(`down prev.delta = ${prevDown.delta}, want -60`);
+  if (prevDown.deltaPct !== -60) throw new Error(`down prev.deltaPct = ${prevDown.deltaPct}, want -60`);
+  if (prevDown.direction !== 'down') throw new Error(`down prev.direction = ${prevDown.direction}, want down`);
+
+  // Current 80, previous 80 → delta = 0, deltaPct = 0, direction = same.
+  const stateSame = makeScopedState({ txns: [
+    { id: 't_now', sourceId: 's_in', type: 'expense', amount: 80, date: '2026-06-10', categoryId: 'c_eat', description: 'X' },
+    { id: 't_prev', sourceId: 's_in', type: 'expense', amount: 80, date: '2026-05-10', categoryId: 'c_eat', description: 'X' },
+  ]});
+  const outSame = Selectors.envelopeComparison(env, stateSame, today);
+  const prevSame = outSame.history[0];
+  if (prevSame.delta !== 0) throw new Error(`same prev.delta = ${prevSame.delta}, want 0`);
+  if (prevSame.direction !== 'same') throw new Error(`same prev.direction = ${prevSame.direction}, want same`);
+});
+
+test('ISSUE-020: in-scope vs out-of-scope transactions counted correctly', () => {
+  const today = new Date(2026, 5, 27);
+  const env = makeCompEnv({ period: 'monthly', createdAt: '2024-01-01T00:00:00.000Z' });
+  // Private scope, currentUserId=u_david → only u_david's source is in scope.
+  // s_in is owned by u_david (in scope); s_out is owned by u_isabelle (out).
+  const state = makeScopedState({
+    scope: 'private',
+    currentUserId: 'u_david',
+    sourceOwnerId: 'u_david',
+    txns: [
+      { id: 't_in', sourceId: 's_in', type: 'expense', amount: 50, date: '2026-05-10', categoryId: 'c_eat', description: 'X' },
+      { id: 't_out', sourceId: 's_out', type: 'expense', amount: 999, date: '2026-05-10', categoryId: 'c_eat', description: 'X' },
+    ],
+  });
+  const out = Selectors.envelopeComparison(env, state, today);
+  if (!out) throw new Error('null result');
+  // Previous month (May) should be 50 (only the in-scope txn counts).
+  const may = out.history[0];
+  if (may.spent !== 50) throw new Error(`may.spent = ${may.spent}, want 50 (out-of-scope should be excluded)`);
+});
+
+test('ISSUE-020: yearly envelope history entries span Jan 1 → Dec 31 of each year', () => {
+  const today = new Date(2026, 5, 27); // mid-2026
+  const env = makeCompEnv({ period: 'yearly', createdAt: '2020-01-01T00:00:00.000Z' });
+  const state = makeScopedState({ txns: [] });
+  const out = Selectors.envelopeComparison(env, state, today);
+  if (!out) throw new Error('null result');
+  if (out.history.length !== 3) throw new Error(`history len = ${out.history.length}, want 3`);
+  // History is most-recent first: 1 year ago = 2025, 2 ago = 2024, 3 ago = 2023.
+  const expected = [
+    { from: '2025-01-01', to: '2025-12-31' },
+    { from: '2024-01-01', to: '2024-12-31' },
+    { from: '2023-01-01', to: '2023-12-31' },
+  ];
+  for (let i = 0; i < expected.length; i++) {
+    if (out.history[i].from !== expected[i].from) throw new Error(`history[${i}].from = ${out.history[i].from}, want ${expected[i].from}`);
+    if (out.history[i].to !== expected[i].to) throw new Error(`history[${i}].to = ${out.history[i].to}, want ${expected[i].to}`);
+  }
+});
+
+test('ISSUE-020: monthly envelope history entries span full calendar months', () => {
+  const today = new Date(2026, 5, 27); // 27 Jun 2026
+  const env = makeCompEnv({ period: 'monthly', createdAt: '2020-01-01T00:00:00.000Z' });
+  const state = makeScopedState({ txns: [] });
+  const out = Selectors.envelopeComparison(env, state, today);
+  if (!out) throw new Error('null result');
+  const expected = [
+    { from: '2026-05-01', to: '2026-05-31' }, // May
+    { from: '2026-04-01', to: '2026-04-30' }, // April
+    { from: '2026-03-01', to: '2026-03-31' }, // March
+    { from: '2026-02-01', to: '2026-02-28' }, // February (non-leap)
+    { from: '2026-01-01', to: '2026-01-31' }, // January
+    { from: '2025-12-01', to: '2025-12-31' }, // December previous year
+  ];
+  for (let i = 0; i < expected.length; i++) {
+    if (out.history[i].from !== expected[i].from) throw new Error(`history[${i}].from = ${out.history[i].from}, want ${expected[i].from}`);
+    if (out.history[i].to !== expected[i].to) throw new Error(`history[${i}].to = ${out.history[i].to}, want ${expected[i].to}`);
+  }
+});
+
+test('ISSUE-020: null envelope returns null (defensive)', () => {
+  const out = Selectors.envelopeComparison(null, makeScopedState({ txns: [] }), new Date(2026, 5, 27));
+  if (out !== null) throw new Error(`expected null, got ${JSON.stringify(out)}`);
+});
+
+test('ISSUE-020: empty envelope (no links) still returns 7 entries with spent=0', () => {
+  const today = new Date(2026, 5, 27);
+  // The envelope exists but has no links. We give it an old createdAt
+  // so the past periods are NOT marked notYetExisted — the "no
+  // matching txns → spent = 0" rule should produce spent=0 across the
+  // board.
+  const env = makeCompEnv({ period: 'monthly', categoryIds: [], payeeIds: [], createdAt: '2024-01-01T00:00:00.000Z' });
+  const state = makeScopedState({ txns: [
+    { id: 't', sourceId: 's_in', type: 'expense', amount: 99, date: '2026-06-15', categoryId: 'c_eat', description: 'X' },
+  ]});
+  const out = Selectors.envelopeComparison(env, state, today);
+  if (!out) throw new Error('null result');
+  if (out.history.length !== 6) throw new Error(`history len = ${out.history.length}`);
+  // No links → no spend across the board.
+  if (out.current.spent !== 0) throw new Error(`current.spent = ${out.current.spent}, want 0`);
+  for (let i = 0; i < out.history.length; i++) {
+    if (out.history[i].spent !== 0) throw new Error(`history[${i}].spent = ${out.history[i].spent}, want 0`);
+    if (out.history[i].delta !== 0) throw new Error(`history[${i}].delta = ${out.history[i].delta}, want 0`);
+    if (out.history[i].direction !== 'same') throw new Error(`history[${i}].direction = ${out.history[i].direction}, want same`);
+  }
 });
 
 console.log('\n— Summary —');

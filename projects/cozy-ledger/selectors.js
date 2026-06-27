@@ -640,6 +640,249 @@ const Selectors = {
     const overspent = spent > cap ? round2(spent - cap) : 0;
     return { spent, cap, percent, remaining, overspent };
   },
+
+  // ---- Envelope comparison (ISSUE-020) ------------------------------
+  // Multi-period history for an envelope. The current period is
+  // `Selectors.currentPeriodFor(envelope, today)`; previous periods
+  // are computed by walking back the same shape (full months for
+  // monthly, full calendar years for yearly). The selector deliberately
+  // uses `Selectors.transactionsInScope(state)` (per the spec) so the
+  // current period matches what the dashboard summary cards show
+  // under the active scope — NOT necessarily `Selectors.envelopeSpend`,
+  // which predates this selector and is used by `envelopeProgress` on
+  // the envelopes page (where scope is global).
+  //
+  // Result shape:
+  //   { current: { periodLabel, from, to, spent },
+  //     history: [ { periodLabel, from, to, spent,
+  //                  delta, deltaPct, direction,
+  //                  notYetExisted }, ... ] }
+  //
+  // `spent` is always a number. For past periods before `createdAt`
+  // we still compute the spend (the envelope's links define a bucket
+  // that already had spending history) and tag the row with
+  // `notYetExisted: true` so the view can append a small "schatting"
+  // badge. This way new users see real-looking numbers from the
+  // start; mature users only see the badge on the oldest periods.
+  //
+  // Monthly envelopes return 7 entries (current + 6 previous);
+  // yearly envelopes return 4 (current + 3 previous).
+
+  /**
+   * Dutch month-name lookup, defaulting to a hard-coded list so the
+   * selector is testable in isolation (i18n.js may not be loaded by
+   * the pure-function test harness).
+   * @returns {string[]}
+   */
+  _monthNames() {
+    if (typeof window !== 'undefined' && window.i18n && Array.isArray(window.i18n.monthNames)) {
+      return window.i18n.monthNames;
+    }
+    return ['januari', 'februari', 'maart', 'april', 'mei', 'juni',
+            'juli', 'augustus', 'september', 'oktober', 'november', 'december'];
+  },
+  /** @returns {string[]} */
+  _monthShortNames() {
+    if (typeof window !== 'undefined' && window.i18n && Array.isArray(window.i18n.monthShortNames)) {
+      return window.i18n.monthShortNames;
+    }
+    return ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun',
+            'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+  },
+
+  /**
+   * Spend for an envelope across an arbitrary date range. Mirrors
+   * `envelopeSpend`'s matching (category OR payee) but doesn't depend
+   * on `Selectors.currentPeriodFor` and scopes its transaction input
+   * to `Selectors.transactionsInScope(state)` per the ISSUE-020 spec.
+   * Returns 0 when the envelope has no links, the range is invalid,
+   * or no transactions match.
+   * @param {Partial<Envelope> | null | undefined} envelope
+   * @param {State} state
+   * @param {{ from: string, to: string }} range
+   * @returns {number}
+   */
+  envelopeSpendInRange(envelope, state, range) {
+    if (!envelope || !range || !range.from || !range.to) return 0;
+    const catIds = Array.isArray(envelope.categoryIds) ? envelope.categoryIds : [];
+    const payeeIds = Array.isArray(envelope.payeeIds) ? envelope.payeeIds : [];
+    if (catIds.length === 0 && payeeIds.length === 0) return 0;
+
+    const extractPayee = (typeof CSVImport !== 'undefined' && CSVImport.extractPayee)
+      || (typeof window !== 'undefined' && window.CSVImport && window.CSVImport.extractPayee)
+      || (d => String(d || ''));
+    const payeeSet = new Set(payeeIds);
+    const catSet = new Set(catIds);
+
+    const txns = Selectors.transactionsInScope(state || {});
+    let spent = 0;
+    const seen = new Set();
+    for (const t of txns) {
+      if (!t || !t.date) continue;
+      if (t.date < range.from || t.date > range.to) continue;
+      const catMatch = t.categoryId && catSet.has(t.categoryId);
+      const payeeMatch = (() => {
+        if (payeeSet.size === 0) return false;
+        const p = extractPayee(t.description);
+        return p != null && payeeSet.has(p);
+      })();
+      if (!catMatch && !payeeMatch) continue;
+      if (seen.has(t.id)) continue;
+      seen.add(t.id);
+      const amt = Math.abs(Number(t.amount) || 0);
+      if (t.type === 'income') spent -= amt;
+      else                     spent += amt;
+    }
+    return round2(spent);
+  },
+
+  /**
+   * Date range for the period `offset` steps before today, using the
+   * same shape as `currentPeriodFor` (full month / full year for
+   * `offset >= 1`, partial for `offset === 0`). Internal helper.
+   * @param {'monthly'|'yearly'} periodType
+   * @param {Date} today
+   * @param {number} offset  0 = current, 1 = previous, ...
+   * @returns {{ from: string, to: string }}
+   */
+  _comparisonOffsetRange(periodType, today, offset) {
+    if (offset <= 0) {
+      // The "current" range is the canonical one — caller can also
+      // just call currentPeriodFor. Kept here for symmetry.
+      return Selectors.currentPeriodFor({ period: periodType }, today);
+    }
+    if (periodType === 'yearly') {
+      const year = today.getFullYear() - offset;
+      return { from: `${year}-01-01`, to: `${year}-12-31` };
+    }
+    // monthly: full calendar month `offset` months before today.
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth() - offset, 1);
+    const endOfMonth = new Date(today.getFullYear(), today.getMonth() - offset + 1, 0);
+    return {
+      from: startOfMonth.toISOString().slice(0, 10),
+      to: endOfMonth.toISOString().slice(0, 10),
+    };
+  },
+
+  /**
+   * Dutch period label for a comparison row. Monthly uses
+   * `<full month> <year>` for current/previous and `<short month> <year>`
+   * for the older "N maanden geleden" entries; yearly always uses
+   * `<year>`.
+   * @param {'monthly'|'yearly'} periodType
+   * @param {number} offset  0 = current, 1 = previous, 2+ = N ago
+   * @param {{ from: string, to: string }} range
+   * @returns {string}
+   */
+  _comparisonPeriodLabel(periodType, offset, range) {
+    const monthNames = Selectors._monthNames();
+    const monthShort = Selectors._monthShortNames();
+    const [, mStr, ] = range.from.split('-');
+    const year = Number(range.from.split('-')[0]);
+    const monthIdx = Math.max(0, Math.min(11, Number(mStr) - 1));
+    const fullName = monthNames[monthIdx] || '';
+    const shortName = monthShort[monthIdx] || '';
+    const monthYearFull = `${fullName} ${year}`;
+    const monthYearShort = `${shortName} ${year}`;
+
+    // Period unit word ("maand" / "jaar") for the Deze/Vorige templates.
+    const unitWordKey = periodType === 'yearly' ? 'envelopes.compare.year' : 'envelopes.compare.month';
+
+    if (periodType === 'yearly') {
+      if (offset === 0) return t('envelopes.compare.current.yearly', { year });
+      if (offset === 1) return t('envelopes.compare.previous.yearly', { year });
+      return t('envelopes.compare.nYearsAgo.yearly', { n: offset, year });
+    }
+    // monthly
+    if (offset === 0) {
+      return t('envelopes.compare.current', {
+        period: t(unitWordKey),
+        monthYear: monthYearFull,
+      });
+    }
+    if (offset === 1) {
+      return t('envelopes.compare.previous', {
+        period: t(unitWordKey),
+        monthYear: monthYearFull,
+      });
+    }
+    return t('envelopes.compare.nMonthsAgo', { n: offset, monthYear: monthYearShort });
+  },
+
+  /**
+   * Multi-period comparison for an envelope. See module comment above
+   * for the result shape and the period-count policy.
+   * @param {Partial<Envelope> | null | undefined} envelope
+   * @param {State} state
+   * @param {Date} [today=new Date()]
+   * @returns {null | {
+   *   current: { periodLabel: string, from: string, to: string, spent: number },
+   *   history: Array<{
+   *     periodLabel: string, from: string, to: string,
+   *     spent: number | null,
+   *     delta?: number, deltaPct?: number, direction?: 'up'|'down'|'same',
+   *     notYetExisted?: boolean
+   *   }>
+   * }}
+   */
+  envelopeComparison(envelope, state, today = new Date()) {
+    if (!envelope) return null;
+    const periodType = envelope.period === 'yearly' ? 'yearly' : 'monthly';
+    const historyCount = periodType === 'yearly' ? 3 : 6;
+
+    const currentRange = Selectors.currentPeriodFor(envelope, today);
+    const currentSpent = Selectors.envelopeSpendInRange(envelope, state, currentRange);
+    const current = {
+      periodLabel: Selectors._comparisonPeriodLabel(periodType, 0, currentRange),
+      from: currentRange.from,
+      to: currentRange.to,
+      spent: currentSpent,
+    };
+
+    // Empty envelope (no categoryIds, no payeeIds) — still return the
+    // current row, but every history entry is spent=0 so the panel is
+    // informative (shows the user that nothing was tracked historically).
+    const history = [];
+    for (let i = 1; i <= historyCount; i++) {
+      const pastRange = Selectors._comparisonOffsetRange(periodType, today, i);
+      const label = Selectors._comparisonPeriodLabel(periodType, i, pastRange);
+
+      const pastSpent = Selectors.envelopeSpendInRange(envelope, state, pastRange);
+      const delta = round2(currentSpent - pastSpent);
+      // `deltaPct` is undefined when pastSpent === 0 and currentSpent === 0
+      // (the "100%" convention only fires when current is non-zero).
+      let deltaPct;
+      if (pastSpent > 0) deltaPct = round2((delta / pastSpent) * 100);
+      else if (currentSpent > 0) deltaPct = 100;
+      else deltaPct = 0;
+      let direction;
+      if (delta > 0.005) direction = 'up';
+      else if (delta < -0.005) direction = 'down';
+      else direction = 'same';
+
+      // Envelope didn't exist yet for this past period. We still
+      // compute the spend (the envelope's links define a bucket that
+      // already had spending history before the user named it) and
+      // include delta/deltaPct/direction so the row is comparable. The
+      // `notYetExisted` flag tells the view to append a small
+      // "schatting" badge so the user knows the value is retroactive.
+      // createdAt is an ISO timestamp; pastRange.to is an ISO date.
+      // Lexicographic order on the prefix matches chronological order.
+      const notYetExisted = !!(envelope.createdAt && envelope.createdAt > pastRange.to);
+      history.push({
+        periodLabel: label,
+        from: pastRange.from,
+        to: pastRange.to,
+        spent: pastSpent,
+        delta,
+        deltaPct,
+        direction,
+        notYetExisted,
+      });
+    }
+
+    return { current, history };
+  },
 };
 
 function round2(n) { return Math.round(n * 100) / 100; }

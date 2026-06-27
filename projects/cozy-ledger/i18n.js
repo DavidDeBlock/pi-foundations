@@ -445,8 +445,50 @@ const Strings = {
     'envelopes.added':                'Envelop toegevoegd.',
     'envelopes.updated':              'Envelop bijgewerkt.',
     'envelopes.deleted':              'Envelop verwijderd.',
+
+    // ---- Envelope comparison (ISSUE-020) --------------------------
+    // Per-period history table that lives under each envelope row on
+    // views/envelopes.js. The chevron toggle label is just `title`;
+    // everything else lives under `compare.*`. The "yearly" variants
+    // exist because a yearly envelope's panel never uses the
+    // "Vorige maand (mrt 2026)" wording — the unit is years, not
+    // months.
+    'envelopes.compare.title':           'Vergelijking',
+    'envelopes.compare.current':         'Deze {period} ({monthYear})',
+    'envelopes.compare.previous':        'Vorige {period} ({monthYear})',
+    'envelopes.compare.nMonthsAgo':      '{n} maanden geleden ({monthYear})',
+    'envelopes.compare.nYearsAgo':       '{n} jaar geleden ({year})',
+    'envelopes.compare.month':           'maand',
+    'envelopes.compare.year':            'jaar',
+    'envelopes.compare.up':              'hoger',
+    'envelopes.compare.down':            'lager',
+    'envelopes.compare.equal':           'gelijk',
+    'envelopes.compare.empty':           'Geen eerdere periodes',
+    // ISSUE-020: badge for past periods before envelope creation. We
+    // still show the data (retroactively attributed via category/
+    // payee links) but tag the row so the user knows it's an estimate.
+    'envelopes.compare.estimated':       'schatting',
+    'envelopes.compare.current.yearly':  'Dit jaar ({year})',
+    'envelopes.compare.previous.yearly': 'Vorig jaar ({year})',
+    'envelopes.compare.nYearsAgo.yearly':'{n} jaar geleden ({year})',
   },
 };
+
+// ---- Dutch month names (ISSUE-020) -----------------------------------
+// Exposed separately from `Strings.nl` (which is a flat key→string map)
+// so the comparison selector can look them up by index without going
+// through the `t()` machinery. Indices are 0-based January=0.
+// Full and short forms are split so the panel can use `juni 2026` in
+// the "Vorige maand" header and `apr 2026` in the compact
+// "N maanden geleden" suffix.
+const DUTCH_MONTH_NAMES = [
+  'januari', 'februari', 'maart', 'april', 'mei', 'juni',
+  'juli', 'augustus', 'september', 'oktober', 'november', 'december',
+];
+const DUTCH_MONTH_SHORT = [
+  'jan', 'feb', 'mrt', 'apr', 'mei', 'jun',
+  'jul', 'aug', 'sep', 'okt', 'nov', 'dec',
+];
 
 // Resolve a single key. Falls through to the key string when missing so
 // untranslated surfaces are visible during development. No English
@@ -479,4 +521,4 @@ function t(key, params) {
 // Expose on window so the test harness can introspect the table.
 window.Strings = Strings;
 window.t = t;
-window.i18n = { t, Strings };
+window.i18n = { t, Strings, monthNames: DUTCH_MONTH_NAMES, monthShortNames: DUTCH_MONTH_SHORT };

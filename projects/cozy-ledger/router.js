@@ -16,6 +16,13 @@ const Router = (() => {
   let txnFilters = { month: 'all', type: 'all', categoryId: 'all', userId: 'all', sourceId: 'all', scope: 'all', payee: 'all', groupId: 'all' };
   /** @type {'sources'|'networth'} */
   let balanceViewMode = 'sources';
+  // ISSUE-020: which envelopes have their "Vergelijking" panel
+  // expanded. Transient — never persisted to localStorage — because
+  // the expanded/collapsed state is per-session UI, not a user
+  // preference. The view reads this on every render so a `store:changed`
+  // re-render keeps the user's open panels open.
+  /** @type {Set<string>} */
+  const envelopeCompareExpanded = new Set();
 
   // -- Period state (ISSUE-013 / PRD-004) ----------------------------
   // Shared "what time range am I looking at" state for the dashboard
@@ -221,6 +228,11 @@ const Router = (() => {
     setTxnFilter,
     resetTxnFilters,
     setBalanceViewMode,
+    // ISSUE-020: per-envelope expanded/collapsed state for the
+    // "Vergelijking" panel. Exposed as a Set so callers can do
+    // `has(id)` / `add(id)` / `delete(id)` without going through a
+    // dedicated mutator. Not persisted (transient UI state).
+    get envelopeCompareExpanded() { return envelopeCompareExpanded; },
   };
 })();
 window.Router = Router;

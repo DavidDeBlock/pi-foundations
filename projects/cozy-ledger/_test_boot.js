@@ -3151,6 +3151,331 @@ test('ISSUE-007: empty groups (no expense categories) do not render a header in 
   if (expenseGroupHeads.includes('Inkomen')) throw new Error('Inkomen group leaked into expense section');
 });
 
+// =====================================================================
+// ISSUE-020: Envelope multi-period comparison (UI)
+// =====================================================================
+console.log('\n— ISSUE-020: Envelope comparison (UI) —');
+
+// Helper: navigate to envelopes view and return the env-row for `id`.
+function envelopesRow(id) {
+  navigateToView('envelopes');
+  const appRoot = ctx.window.document.querySelector('#app');
+  return findAll(appRoot, n =>
+    (n.classList?._set || new Set()).has('env-row') &&
+    n.getAttribute('data-envelope-id') === id
+  )[0];
+}
+
+test('ISSUE-020: envelope row renders the comparison toggle below the caption', () => {
+  const s = ctx.window.App._state;
+  const snap = { envelopes: s.envelopes.slice(), transactions: s.transactions.slice() };
+  try {
+    const env = ctx.window.Store.addEnvelope(s, {
+      name: 'Eten uit', cap: 200, period: 'monthly',
+      categoryIds: ['c_eat'], payeeIds: [],
+    });
+    const row = envelopesRow(env.id);
+    if (!row) throw new Error('row not found');
+    const toggle = row.querySelector('.envelope-compare-toggle');
+    if (!toggle) throw new Error('no .envelope-compare-toggle in row');
+    // Default state: collapsed, chevron points right (▶), panel hidden.
+    if (row.classList._set.has('expanded')) throw new Error('row should start collapsed');
+    if (toggle.getAttribute('aria-expanded') !== 'false') throw new Error('aria-expanded should start false');
+    if (!toggle.textContent.includes(ctx.window.t('envelopes.compare.title'))) {
+      throw new Error('toggle label missing "Vergelijking"');
+    }
+    // Panel is mounted but height is collapsed (CSS-controlled, so the
+    // stub can't measure it directly). We just verify it exists.
+    if (!row.querySelector('.envelope-compare-panel')) throw new Error('no panel in row');
+  } finally {
+    s.envelopes = snap.envelopes;
+    s.transactions = snap.transactions;
+  }
+});
+
+test('ISSUE-020: clicking the chevron expands the panel; clicking again collapses it', () => {
+  const s = ctx.window.App._state;
+  const snap = { envelopes: s.envelopes.slice(), transactions: s.transactions.slice() };
+  try {
+    const env = ctx.window.Store.addEnvelope(s, {
+      name: 'Boodschappen', cap: 300, period: 'monthly',
+      categoryIds: ['c_groceries'], payeeIds: [],
+    });
+    const row = envelopesRow(env.id);
+    if (!row) throw new Error('row not found');
+    const toggle = row.querySelector('.envelope-compare-toggle');
+    // Click 1: expand.
+    toggle.click();
+    if (!row.classList._set.has('expanded')) throw new Error('row not expanded after first click');
+    if (toggle.getAttribute('aria-expanded') !== 'true') throw new Error('aria-expanded not flipped on');
+    if (!ctx.window.Router.envelopeCompareExpanded.has(env.id)) {
+      throw new Error('envelope id should be in Router.envelopeCompareExpanded');
+    }
+    // Click 2: collapse.
+    toggle.click();
+    if (row.classList._set.has('expanded')) throw new Error('row not collapsed after second click');
+    if (toggle.getAttribute('aria-expanded') !== 'false') throw new Error('aria-expanded not flipped off');
+    if (ctx.window.Router.envelopeCompareExpanded.has(env.id)) {
+      throw new Error('envelope id should be removed from Router.envelopeCompareExpanded');
+    }
+  } finally {
+    s.envelopes = snap.envelopes;
+    s.transactions = snap.transactions;
+    ctx.window.Router.envelopeCompareExpanded.clear();
+  }
+});
+
+test('ISSUE-020: expanded state persists across re-renders (store:changed)', () => {
+  const s = ctx.window.App._state;
+  const snap = { envelopes: s.envelopes.slice(), transactions: s.transactions.slice() };
+  try {
+    const env = ctx.window.Store.addEnvelope(s, {
+      name: 'Streaming', cap: 50, period: 'monthly',
+      categoryIds: ['c_streaming'], payeeIds: [],
+    });
+    const row = envelopesRow(env.id);
+    const toggle = row.querySelector('.envelope-compare-toggle');
+    toggle.click(); // expand
+    if (!row.classList._set.has('expanded')) throw new Error('setup: not expanded');
+    // Mutate state and dispatch store:changed — Router.renderView
+    // rebuilds #view and the envelopes view re-renders from scratch.
+    s.transactions.push({
+      id: 'tx_cmp', type: 'expense', amount: 9.99, date: '2026-06-15',
+      categoryId: 'c_streaming', description: 'Netflix',
+      paidByUserId: '', sourceId: '', scope: 'private', notes: '',
+    });
+    ctx.window.dispatchEvent(new Event('store:changed'));
+    // Re-find the row (it's a fresh DOM node after re-render).
+    const newRow = envelopesRow(env.id);
+    if (!newRow) throw new Error('row missing after re-render');
+    if (!newRow.classList._set.has('expanded')) {
+      throw new Error('expanded state lost across re-render');
+    }
+    if (!ctx.window.Router.envelopeCompareExpanded.has(env.id)) {
+      throw new Error('Router Set should still contain envelope id after re-render');
+    }
+  } finally {
+    s.envelopes = snap.envelopes;
+    s.transactions = snap.transactions;
+    ctx.window.Router.envelopeCompareExpanded.clear();
+  }
+});
+
+test('ISSUE-020: comparison panel renders 1 current row + 6 past rows for monthly', () => {
+  const s = ctx.window.App._state;
+  const snap = { envelopes: s.envelopes.slice(), transactions: s.transactions.slice() };
+  try {
+    ctx.window.Store.addEnvelope(s, {
+      name: 'Pasta', cap: 100, period: 'monthly',
+      categoryIds: ['c_eat'], payeeIds: [],
+    });
+    const row = envelopesRow(s.envelopes[s.envelopes.length - 1].id);
+    row.querySelector('.envelope-compare-toggle').click();
+    const panel = row.querySelector('.envelope-compare-panel');
+    if (!panel) throw new Error('no panel after click');
+    // Header + current + 6 past = 8 rows total (header is rendered as <th>).
+    const headCells = panel.querySelectorAll('th');
+    if (headCells.length === 0) throw new Error('no header cells');
+    const pastRows = panel.querySelectorAll('.ec-past');
+    if (pastRows.length !== 6) throw new Error(`expected 6 past rows, got ${pastRows.length}`);
+    const currentRow = panel.querySelector('.ec-current');
+    if (!currentRow) throw new Error('no .ec-current row');
+  } finally {
+    s.envelopes = snap.envelopes;
+    s.transactions = snap.transactions;
+    ctx.window.Router.envelopeCompareExpanded.clear();
+  }
+});
+
+test('ISSUE-020: comparison panel renders 1 current row + 3 past rows for yearly', () => {
+  const s = ctx.window.App._state;
+  const snap = { envelopes: s.envelopes.slice(), transactions: s.transactions.slice() };
+  try {
+    ctx.window.Store.addEnvelope(s, {
+      name: 'Vakantie', cap: 5000, period: 'yearly',
+      categoryIds: ['c_leisure'], payeeIds: [],
+    });
+    const row = envelopesRow(s.envelopes[s.envelopes.length - 1].id);
+    row.querySelector('.envelope-compare-toggle').click();
+    const panel = row.querySelector('.envelope-compare-panel');
+    const pastRows = panel.querySelectorAll('.ec-past');
+    if (pastRows.length !== 3) throw new Error(`expected 3 past rows, got ${pastRows.length}`);
+    const currentRow = panel.querySelector('.ec-current');
+    if (!currentRow) throw new Error('no .ec-current row');
+  } finally {
+    s.envelopes = snap.envelopes;
+    s.transactions = snap.transactions;
+    ctx.window.Router.envelopeCompareExpanded.clear();
+  }
+});
+
+test('ISSUE-020: past rows apply the right delta class (up/down/same)', () => {
+  const s = ctx.window.App._state;
+  const snap = { envelopes: s.envelopes.slice(), transactions: s.transactions.slice(), sources: s.sources.slice(), settings: { ...s.settings } };
+  try {
+    // Force private scope so the test is self-contained — earlier
+    // tests in this file may have flipped scope to 'shared' or 'all',
+    // and 'shared' scope would exclude `s_david` (ownerId=u_david)
+    // from the in-scope set, breaking this test.
+    s.settings.scope = 'private';
+    // Seed: current month spent = 120, previous month spent = 50.
+    // First history entry = previous month → delta-up (60).
+    // We seed a second month's-ago entry of 200 so the 2-months-ago
+    // entry → delta-down (-80). The remaining rows are spent=0 →
+    // delta-up by the "100%" convention but still delta-up class.
+    const today = new Date();
+    const todayIso = today.toISOString().slice(0, 10);
+    const prev = new Date(today.getFullYear(), today.getMonth() - 1, 15);
+    const prevIso = prev.toISOString().slice(0, 10);
+    const ago2 = new Date(today.getFullYear(), today.getMonth() - 2, 15);
+    const ago2Iso = ago2.toISOString().slice(0, 10);
+    // `Selectors.transactionsInScope` filters by sourceId, so we need
+    // a real source that the seeded txns reference. Use s_david since
+    // the boot state already wires it AND private scope + currentUser
+    // u_david keeps it in scope.
+    const srcId = 's_david';
+    s.transactions.push(
+      { id: 'tx_now', type: 'expense', amount: 120, date: todayIso, categoryId: 'c_eat', description: 'X', paidByUserId: 'u_david', sourceId: srcId, scope: 'private', notes: '' },
+      { id: 'tx_prev', type: 'expense', amount: 50, date: prevIso, categoryId: 'c_eat', description: 'X', paidByUserId: 'u_david', sourceId: srcId, scope: 'private', notes: '' },
+      { id: 'tx_ago2', type: 'expense', amount: 200, date: ago2Iso, categoryId: 'c_eat', description: 'X', paidByUserId: 'u_david', sourceId: srcId, scope: 'private', notes: '' },
+    );
+    // Bypass Store.addEnvelope so we can pin createdAt in the past —
+    // Store.addEnvelope always stamps createdAt = now(), which would
+    // mark every past period as notYetExisted.
+    const env = {
+      id: 'env_mixed', name: 'Mixed', cap: 200, period: 'monthly',
+      categoryIds: ['c_eat'], payeeIds: [],
+      notes: '',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      updatedAt: '2020-01-01T00:00:00.000Z',
+    };
+    s.envelopes.push(env);
+    const row = envelopesRow(env.id);
+    row.querySelector('.envelope-compare-toggle').click();
+    const panel = row.querySelector('.envelope-compare-panel');
+    const pastRows = panel.querySelectorAll('.ec-past');
+    if (pastRows.length !== 6) throw new Error(`expected 6 past rows, got ${pastRows.length}`);
+    // Row 0 (previous month, 50): delta = 120-50 = 70, direction=up.
+    if (!pastRows[0].textContent.includes('+€70')) throw new Error(`row 0 should show +€70, got "${pastRows[0].textContent}"`);
+    if (!pastRows[0].classList._set.has('ec-past')) throw new Error('row 0 missing ec-past class');
+    // The delta-up class appears on the delta cell specifically.
+    const deltaCell0 = pastRows[0].querySelector('.col-delta');
+    if (!deltaCell0.classList._set.has('delta-up')) throw new Error('row 0 delta cell should be delta-up');
+    // Row 1 (2 months ago, 200): delta = 120-200 = -80, direction=down.
+    const deltaCell1 = pastRows[1].querySelector('.col-delta');
+    if (!deltaCell1.classList._set.has('delta-down')) throw new Error('row 1 delta cell should be delta-down');
+  } finally {
+    s.envelopes = snap.envelopes;
+    s.transactions = snap.transactions;
+    s.sources = snap.sources;
+    s.settings = snap.settings;
+    ctx.window.Router.envelopeCompareExpanded.clear();
+  }
+});
+
+test('ISSUE-020: notYetExisted rows show the real amount with a "(schatting)" badge in the label', () => {
+  // After the design tweak: even when the envelope was just created,
+  // we still surface the retroactively-attributed spend (the
+  // envelope's links define a bucket that already had history) and
+  // mark the row with an inline "schatting" badge so the user knows
+  // it's an estimate. This makes the feature useful from day one.
+  const s = ctx.window.App._state;
+  const snap = { envelopes: s.envelopes.slice(), transactions: s.transactions.slice(), settings: { ...s.settings } };
+  try {
+    s.settings.scope = 'private';
+    // Seed a transaction in the previous month so the panel has
+    // something to render (otherwise the row would be €0,00 and we
+    // couldn't tell "no data" from "real zero").
+    const today = new Date();
+    const prev = new Date(today.getFullYear(), today.getMonth() - 1, 15);
+    const prevIso = prev.toISOString().slice(0, 10);
+    s.transactions.push({
+      id: 'tx_est', type: 'expense', amount: 75, date: prevIso,
+      categoryId: 'c_eat', description: 'X',
+      paidByUserId: 'u_david', sourceId: 's_david', scope: 'private', notes: '',
+    });
+    // Envelope created today → every past row is notYetExisted.
+    const env = ctx.window.Store.addEnvelope(s, {
+      name: 'Brand new', cap: 100, period: 'monthly',
+      categoryIds: ['c_eat'], payeeIds: [],
+    });
+    const row = envelopesRow(env.id);
+    row.querySelector('.envelope-compare-toggle').click();
+    const panel = row.querySelector('.envelope-compare-panel');
+    const estimateRows = panel.querySelectorAll('.ec-estimate');
+    if (estimateRows.length !== 6) throw new Error(`expected 6 ec-estimate rows, got ${estimateRows.length}`);
+    const badgeText = ctx.window.t('envelopes.compare.estimated');
+    // The label cell of each estimated row carries an inline badge
+    // with the "(schatting)" text.
+    const badge = estimateRows[0].querySelector('.ec-estimate-badge');
+    if (!badge) throw new Error('no .ec-estimate-badge in row 0');
+    if (!badge.textContent.includes(badgeText)) {
+      throw new Error(`badge text "${badge.textContent}" missing "${badgeText}"`);
+    }
+    // The amount cell of the previous-month row should show €75.00,
+    // NOT a dash — that's the whole point of the design change.
+    const amountCell = estimateRows[0].querySelector('.col-amount');
+    if (!amountCell || !amountCell.textContent.includes('75')) {
+      throw new Error(`expected amount €75 in row 0, got "${amountCell ? amountCell.textContent : 'null'}"`);
+    }
+  } finally {
+    s.envelopes = snap.envelopes;
+    s.transactions = snap.transactions;
+    s.settings = snap.settings;
+    ctx.window.Router.envelopeCompareExpanded.clear();
+  }
+});
+
+test('ISSUE-020: dashboard savings strip does NOT render the comparison toggle', () => {
+  // Regression: ISSUE-020 adds the comparison toggle only to
+  // views/envelopes.js, never to the dashboard summary cards. The
+  // dashboard strip keeps its current card-only shape.
+  const s = ctx.window.App._state;
+  const snap = { envelopes: s.envelopes.slice(), transactions: s.transactions.slice() };
+  try {
+    ctx.window.Store.addEnvelope(s, {
+      name: 'Strip test', cap: 100, period: 'monthly',
+      categoryIds: ['c_eat'], payeeIds: [],
+    });
+    ctx.window.App._goTo('dashboard');
+    const appRoot = ctx.window.document.querySelector('#app');
+    const stripToggles = findAll(appRoot, n => (n.classList?._set || new Set()).has('envelope-compare-toggle'));
+    if (stripToggles.length !== 0) {
+      throw new Error(`dashboard strip should not render comparison toggle, found ${stripToggles.length}`);
+    }
+  } finally {
+    s.envelopes = snap.envelopes;
+    s.transactions = snap.transactions;
+    ctx.window.Router.envelopeCompareExpanded.clear();
+  }
+});
+
+test('ISSUE-020: all 14 comparison i18n keys resolve to non-empty Dutch strings', () => {
+  // `notExist` was renamed to `estimated` after the first pass — the
+  // envelope's links retroactively define a bucket, so we always
+  // surface the spend and only tag the row with a small "schatting"
+  // badge. We also assert the old key is no longer registered.
+  const keys = [
+    'envelopes.compare.title',
+    'envelopes.compare.current', 'envelopes.compare.previous',
+    'envelopes.compare.nMonthsAgo', 'envelopes.compare.nYearsAgo',
+    'envelopes.compare.month', 'envelopes.compare.year',
+    'envelopes.compare.up', 'envelopes.compare.down', 'envelopes.compare.equal',
+    'envelopes.compare.empty', 'envelopes.compare.estimated',
+    'envelopes.compare.current.yearly', 'envelopes.compare.previous.yearly',
+    'envelopes.compare.nYearsAgo.yearly',
+  ];
+  const t = ctx.window.t;
+  for (const k of keys) {
+    const v = t(k);
+    if (v === k) throw new Error(`key not resolved: ${k}`);
+    if (!v || typeof v !== 'string' || v.length === 0) throw new Error(`empty value for ${k}`);
+  }
+  if (t('envelopes.compare.notExist') !== 'envelopes.compare.notExist') {
+    throw new Error('old `notExist` key should be removed');
+  }
+});
+
 console.log('\n— Summary —');
 console.log(`  ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

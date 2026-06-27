@@ -900,11 +900,18 @@ body::before {
   border-radius: var(--r-md);
   padding: 14px 16px;
   display: grid;
+  /* ISSUE-020: the comparison panel spans both grid columns. The row
+     declares `panel` as a dedicated grid area that gets full-width
+     content underneath the main/actions row. */
+  grid-template-areas:
+    "main actions"
+    "panel panel";
   grid-template-columns: 1fr auto;
   gap: 14px;
   align-items: center;
 }
-.env-row-main { min-width: 0; }
+.env-row-main { grid-area: main; min-width: 0; }
+.env-row-actions { grid-area: actions; }
 .env-row-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
 .env-name { font-weight: 600; font-size: 1rem; color: var(--ink); }
 .env-period {
@@ -942,6 +949,111 @@ body::before {
 @media (max-width: 720px) {
   .env-row { grid-template-columns: 1fr; }
   .env-row-actions { justify-content: flex-end; }
+}
+
+/* --- Envelope comparison toggle + panel (ISSUE-020) --- */
+/* The toggle sits inside the main column, full width, no border. The
+   chevron rotates 90° when the row is expanded to give the panel a
+   smooth visual "open" cue. */
+.envelope-compare-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 4px 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-mute);
+  font-size: .82rem;
+  font-weight: 500;
+  text-align: left;
+  border-radius: 6px;
+  transition: color .15s;
+}
+.envelope-compare-toggle:hover { color: var(--ink); }
+.envelope-compare-toggle:focus-visible {
+  outline: 2px solid var(--sage-light);
+  outline-offset: 2px;
+}
+.envelope-compare-toggle .chevron {
+  display: inline-block;
+  font-size: .68rem;
+  transition: transform .2s ease-out;
+  width: 12px;
+  text-align: center;
+}
+.envelope-compare-toggle .ec-label { letter-spacing: .01em; }
+.env-row.expanded .envelope-compare-toggle .chevron {
+  transform: rotate(90deg);
+}
+.env-row.expanded .envelope-compare-toggle { color: var(--ink); }
+
+/* The panel collapses to zero height when not expanded and animates
+   open via max-height. max-height needs to be at least the natural
+   height of the table; 600px fits the 7-row max comfortably without
+   noticeable delay. */
+.envelope-compare-panel {
+  grid-area: panel;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height .3s ease-out;
+}
+.env-row.expanded .envelope-compare-panel {
+  max-height: 600px;
+}
+.envelope-compare-panel .ec-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-variant-numeric: tabular-nums;
+  font-size: .85rem;
+}
+.envelope-compare-panel .ec-table th,
+.envelope-compare-panel .ec-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.envelope-compare-panel .ec-table tr:last-child th,
+.envelope-compare-panel .ec-table tr:last-child td { border-bottom: none; }
+.envelope-compare-panel .ec-table th {
+  font-weight: 600;
+  color: var(--ink-mute);
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.envelope-compare-panel .col-label   { text-align: left; color: var(--ink-soft); }
+.envelope-compare-panel .col-amount  { text-align: right; color: var(--ink); white-space: nowrap; }
+.envelope-compare-panel .col-delta   { text-align: right; white-space: nowrap; padding-right: 14px; }
+.envelope-compare-panel .col-pct     { text-align: right; white-space: nowrap; }
+.envelope-compare-panel .col-arrow   { text-align: center; width: 28px; padding-right: 4px; }
+.envelope-compare-panel .ec-current .col-label,
+.envelope-compare-panel .ec-current .col-amount { color: var(--ink); font-weight: 600; }
+
+/* Direction-coded cells: red for "spent more" (delta-up), green for
+   "spent less" (delta-down), muted for parity. The same class is
+   applied to delta / pct / arrow so they all carry the same colour. */
+.envelope-compare-panel .delta-up    { color: var(--neg); }
+.envelope-compare-panel .delta-down  { color: var(--pos); }
+.envelope-compare-panel .delta-same  { color: var(--ink-mute); }
+
+/* Past periods before `createdAt` carry an inline "schatting"
+   badge so the user knows the spend was retroactively attributed
+   via the envelope's category/payee links. Numbers are still shown
+   in full so the row is comparable. The badge itself is muted, the
+   rest of the row reads normally. */
+.envelope-compare-panel .ec-estimate-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--cream-deep);
+  color: var(--ink-mute);
+  font-size: 0.78em;
+  font-style: italic;
+  vertical-align: baseline;
 }
 
 /* --- Savings strip (ISSUE-019 dashboard cards) --- */

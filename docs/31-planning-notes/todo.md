@@ -236,3 +236,20 @@ I've got some small requests:
 - the dashboard
 - transactions
 All three are almost exactly the same but a little bit different. Take a look at those three and give me a suggestion where we can put it or how we can handle things.
+
+
+1.Confirmed 
+2.The envelope showing on the dashboard doesn't need to have a comparison. Let's show it only on the envelope page for now, but the suggestion you did was for only the previous period, for example, the previous month.
+
+The thing is, I want to see it for several months. We also have yearly comparison, so that would be nice as well, to go back in the past to see the difference there. I need that information because I just started inspecting my financials. In the future, only one month or the previous year will be enough, but for now I want some extra information. 
+Both showing are okay: percentage and amount 
+3.Let's go for C
+
+
+1.B rich 
+2.Expand on click 
+3.Ok slices are confirmed 
+
+You can save the issues in the following folder: /home/david/projects/pi-foundations/projects/cozy-ledger/docs/ISSUES
+
+I've checked the implementation, and it's working well. Just one thing: when I open up the comparison, I still have no data because, of course, the envelopes didn't exist in the previous years. We need to find a way to implement it so I have the data. The thing is, the data exists, but the envelope is only created for the current year. I was thinking, since we can calculate it for the current year, we can easily calculate it for the previous years as well, but then we have to think of a better way to solve it for the future. This implementation is correct, but for now I need to see the data to compare, since I'm just starting out. I can't add envelopes in the past, so you see what my issue is. Most of the things I want to see now are just for now and not in the future, because in the future I will already have my system. Since I'm now building my system, I don't have the things. I just build them, if you know what I mean. 
