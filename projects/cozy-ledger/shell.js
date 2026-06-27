@@ -62,6 +62,8 @@ const Shell = (() => {
         navItem('sources',      t('nav.sources'),      Icons.wallet, App._state.sources.length),
         navItem('users',        t('nav.users'),        Icons.users, App._state.users.length),
         navItem('payees',       t('nav.payees'),       Icons.store, payeesBadge),
+        navItem('goals',        t('goals.nav'),        Icons.target),
+        navItem('envelopes',    t('envelopes.nav'),    Icons.envelope),
         el('div', { class: 'nav-label' }, t('sidebar.label.backup')),
         navItem('settings',     t('nav.settings'),     Icons.settings),
       ),
@@ -166,6 +168,8 @@ const Shell = (() => {
       sources: App._state.sources.length,
       users: App._state.users.length,
       payees: ViewHelpers.distinctPayees().filter(p => p.noCategory > 0).length || null,
+      goals: App._state.goals ? App._state.goals.length : 0,
+      envelopes: App._state.envelopes ? App._state.envelopes.length : 0,
     };
     for (const [key, count] of Object.entries(counts)) {
       const badge = sidebar.querySelector(`[data-badge-for="${key}"]`);

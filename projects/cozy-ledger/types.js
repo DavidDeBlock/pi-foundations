@@ -97,6 +97,8 @@
  * @property {Transaction[]} transactions
  * @property {Object<string,string>} payeeCategories  payee name → categoryId
  * @property {Settings} settings
+ * @property {Goal[]} [goals]  ISSUE-017: savings goals (envelopes are the next slice). Optional — backfilled by Store.migrate().
+ * @property {Envelope[]} [envelopes]  ISSUE-018: spending caps. Optional — backfilled by Store.migrate().
  */
 
 /**
@@ -130,4 +132,41 @@
  * @property {PeriodPreset} preset
  * @property {string} from  ISO YYYY-MM-DD, inclusive
  * @property {string} to    ISO YYYY-MM-DD, inclusive (clamped to today)
+ */
+
+/**
+ * @typedef {Object} GoalFunding
+ * @property {string} date    ISO YYYY-MM-DD of the deposit.
+ * @property {number} amount  Always positive; deposit amount in EUR.
+ */
+
+/**
+ * @typedef {Object} Goal
+ * @property {string} id
+ * @property {string} name
+ * @property {number} target              Target amount in EUR (always > 0).
+ * @property {number} funded              Cumulative funded amount in EUR.
+ * @property {string|null} targetDate     Optional ISO YYYY-MM-DD target completion date.
+ * @property {string} notes               Free-form notes (may be empty).
+ * @property {GoalFunding[]} fundingHistory  Append-only deposit log.
+ * @property {string} createdAt           ISO 8601 with timezone.
+ * @property {string} updatedAt           ISO 8601 with timezone.
+ */
+
+/**
+ * @typedef {'monthly'|'yearly'} EnvelopePeriod
+ *   Resets the spend window: monthly = first of this month, yearly = Jan 1.
+ */
+
+/**
+ * @typedef {Object} Envelope
+ * @property {string} id
+ * @property {string} name
+ * @property {number} cap                 Limit amount in EUR (always > 0).
+ * @property {EnvelopePeriod} period      Spend window.
+ * @property {string[]} categoryIds       Category ids whose txns count toward this envelope.
+ * @property {string[]} payeeIds          Payee-name strings (the strings produced by `CSVImport.extractPayee(description)`). A transaction matches when its extracted payee is in this list.
+ * @property {string} notes               Free-form notes (may be empty).
+ * @property {string} createdAt           ISO 8601 with timezone.
+ * @property {string} updatedAt           ISO 8601 with timezone.
  */

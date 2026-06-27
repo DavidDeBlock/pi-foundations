@@ -85,6 +85,10 @@ const Store = (() => {
   // ---- Helpers -------------------------------------------------------
   function uid() { return 'id_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
   function now() { return new Date().toISOString(); }
+  // Local rounding helper (the one in selectors.js isn't visible from
+  // inside this IIFE, and goal.funded is the only place that needs it
+  // for now — fundingHistory entries preserve full cents via Math.abs).
+  function round2(n) { return Math.round(n * 100) / 100; }
 
   // ---- ISSUE-007: seed groups + category→group migration table -------
   // Each seed category carries a `groupId` referencing one of these. The
@@ -181,6 +185,36 @@ const Store = (() => {
         if (c.groupId == null && CATEGORY_GROUP_MAP[c.id]) {
           c.groupId = CATEGORY_GROUP_MAP[c.id];
         }
+      }
+    }
+    // ISSUE-017: savings goals. Optional in State — backfill with an
+    // empty list so renderers never see `state.goals === undefined`.
+    if (!Array.isArray(state.goals)) {
+      state.goals = [];
+    } else {
+      // Normalise any pre-existing entries: clamp funded to a number,
+      // ensure fundingHistory is an array, etc. Safe to run on every
+      // load — new fields on existing goals fall back to their defaults.
+      for (const g of state.goals) {
+        if (typeof g.funded !== 'number' || !isFinite(g.funded)) g.funded = 0;
+        if (typeof g.target !== 'number' || !isFinite(g.target)) g.target = 0;
+        if (!Array.isArray(g.fundingHistory)) g.fundingHistory = [];
+        if (typeof g.notes !== 'string') g.notes = '';
+        if (g.targetDate == null) g.targetDate = null;
+      }
+    }
+    // ISSUE-018: spending caps. Optional in State — backfill with an
+    // empty list. Normalisation is per-entry; legacy saves are unlikely
+    // but the migration is idempotent and cheap.
+    if (!Array.isArray(state.envelopes)) {
+      state.envelopes = [];
+    } else {
+      for (const e of state.envelopes) {
+        if (!Array.isArray(e.categoryIds)) e.categoryIds = [];
+        if (!Array.isArray(e.payeeIds)) e.payeeIds = [];
+        if (typeof e.notes !== 'string') e.notes = '';
+        if (e.period !== 'monthly' && e.period !== 'yearly') e.period = 'monthly';
+        if (typeof e.cap !== 'number' || !isFinite(e.cap)) e.cap = 0;
       }
     }
     return state;
@@ -526,6 +560,202 @@ const Store = (() => {
       state.groups = (state.groups || []).filter(g => g.id !== id);
       // Categories keep their (now-stale) groupId; the UI ignores
       // groupIds that no longer resolve to a group.
+      save(state);
+    },
+
+    // Goals (ISSUE-017). A goal is pure accumulation toward a target —
+    // no transaction plumbing yet (envelopes come next). `funded` and
+    // `fundingHistory` are only mutated through `fundGoal` so the
+    // history is always consistent with the running total.
+    /**
+     * Append a new goal. Validates `name` (non-empty after trim) and
+     * `target` (> 0); throws on invalid input. Stamps id + timestamps.
+     * @param {State} state
+     * @param {Partial<Goal>} g
+     * @returns {Goal}
+     */
+    addGoal(state, g) {
+      const name = (g && g.name && String(g.name).trim()) || '';
+      const target = Number(g && g.target);
+      if (!name) throw new Error('Store.addGoal: name is required');
+      if (!isFinite(target) || target <= 0) throw new Error('Store.addGoal: target must be > 0');
+      if (!Array.isArray(state.goals)) state.goals = [];
+      const goal = /** @type {Goal} */ ({
+        id: uid(),
+        name,
+        target,
+        funded: 0,
+        targetDate: (g && g.targetDate) || null,
+        notes: (g && g.notes) || '',
+        fundingHistory: [],
+        createdAt: now(),
+        updatedAt: now(),
+      });
+      state.goals.push(goal);
+      save(state);
+      return goal;
+    },
+
+    /**
+     * Patch a goal's editable fields. Refuses to change `id`, `funded`,
+     * `fundingHistory` (those go through `fundGoal`). Returns null if
+     * no match.
+     * @param {State} state
+     * @param {string} id
+     * @param {Partial<Goal>} patch
+     * @returns {Goal|null}
+     */
+    updateGoal(state, id, patch) {
+      const goals = Array.isArray(state.goals) ? state.goals : [];
+      const idx = goals.findIndex(g => g.id === id);
+      if (idx === -1) return null;
+      const safe = { ...patch };
+      delete safe.id;
+      delete safe.funded;
+      delete safe.fundingHistory;
+      delete safe.createdAt;
+      // Validate target if supplied.
+      if (safe.target !== undefined) {
+        const n = Number(safe.target);
+        if (!isFinite(n) || n <= 0) return null;
+        safe.target = n;
+      }
+      if (safe.name !== undefined) {
+        const trimmed = String(safe.name).trim();
+        if (!trimmed) return null;
+        safe.name = trimmed;
+      }
+      goals[idx] = { ...goals[idx], ...safe, updatedAt: now() };
+      save(state);
+      return goals[idx];
+    },
+
+    /**
+     * Remove a goal by id. Persists. No-op if not found.
+     * @param {State} state
+     * @param {string} id
+     * @returns {void}
+     */
+    deleteGoal(state, id) {
+      if (!Array.isArray(state.goals)) return;
+      state.goals = state.goals.filter(g => g.id !== id);
+      save(state);
+    },
+
+    /**
+     * Append a deposit to a goal's funding history and bump its
+     * running total. Validates `amount > 0`; defaults `date` to today.
+     * Returns the patched goal, or null if no match.
+     * @param {State} state
+     * @param {string} id
+     * @param {{ date?: string, amount: number }} deposit
+     * @returns {Goal|null}
+     */
+    fundGoal(state, id, deposit) {
+      const goals = Array.isArray(state.goals) ? state.goals : [];
+      const idx = goals.findIndex(g => g.id === id);
+      if (idx === -1) return null;
+      const amt = Number(deposit && deposit.amount);
+      if (!isFinite(amt) || amt <= 0) return null;
+      const date = (deposit && deposit.date) || new Date().toISOString().slice(0, 10);
+      const goal = goals[idx];
+      if (!Array.isArray(goal.fundingHistory)) goal.fundingHistory = [];
+      goal.fundingHistory.push({ date, amount: Math.abs(amt) });
+      goal.funded = round2((Number(goal.funded) || 0) + Math.abs(amt));
+      goal.updatedAt = now();
+      save(state);
+      return goal;
+    },
+
+    // Envelopes (ISSUE-018). A cap on spend for a set of categories
+    // and/or payees over a rolling window (monthly / yearly). Pure
+    // CRUD — the per-envelope spend computation lives in Selectors
+    // so it can be tested without booting the app.
+    /**
+     * Append a new envelope. Validates name (non-empty after trim),
+     * cap (> 0), period ('monthly'|'yearly'). Throws on invalid input.
+     * @param {State} state
+     * @param {Partial<Envelope>} e
+     * @returns {Envelope}
+     */
+    addEnvelope(state, e) {
+      const name = (e && e.name && String(e.name).trim()) || '';
+      const cap = Number(e && e.cap);
+      const period = e && e.period;
+      if (!name) throw new Error('Store.addEnvelope: name is required');
+      if (!isFinite(cap) || cap <= 0) throw new Error('Store.addEnvelope: cap must be > 0');
+      if (period !== 'monthly' && period !== 'yearly') {
+        throw new Error("Store.addEnvelope: period must be 'monthly' or 'yearly'");
+      }
+      if (!Array.isArray(state.envelopes)) state.envelopes = [];
+      const env = /** @type {Envelope} */ ({
+        id: uid(),
+        name,
+        cap,
+        period,
+        categoryIds: Array.isArray(e.categoryIds) ? e.categoryIds.slice() : [],
+        payeeIds: Array.isArray(e.payeeIds) ? e.payeeIds.slice() : [],
+        notes: (e && e.notes) || '',
+        createdAt: now(),
+        updatedAt: now(),
+      });
+      state.envelopes.push(env);
+      save(state);
+      return env;
+    },
+
+    /**
+     * Patch an envelope's editable fields. Refuses to change `id`,
+     * `createdAt`. Validates `cap` (> 0) and `period` ('monthly'|
+     * 'yearly') when supplied. Returns null if no match or invalid.
+     * @param {State} state
+     * @param {string} id
+     * @param {Partial<Envelope>} patch
+     * @returns {Envelope|null}
+     */
+    updateEnvelope(state, id, patch) {
+      const envelopes = Array.isArray(state.envelopes) ? state.envelopes : [];
+      const idx = envelopes.findIndex(e => e.id === id);
+      if (idx === -1) return null;
+      const safe = { ...patch };
+      delete safe.id;
+      delete safe.createdAt;
+      if (safe.cap !== undefined) {
+        const n = Number(safe.cap);
+        if (!isFinite(n) || n <= 0) return null;
+        safe.cap = n;
+      }
+      if (safe.name !== undefined) {
+        const trimmed = String(safe.name).trim();
+        if (!trimmed) return null;
+        safe.name = trimmed;
+      }
+      if (safe.period !== undefined && safe.period !== 'monthly' && safe.period !== 'yearly') {
+        return null;
+      }
+      if (safe.categoryIds !== undefined && !Array.isArray(safe.categoryIds)) {
+        return null;
+      }
+      if (safe.payeeIds !== undefined && !Array.isArray(safe.payeeIds)) {
+        return null;
+      }
+      // Clone the link arrays so external mutations don't leak in.
+      if (Array.isArray(safe.categoryIds)) safe.categoryIds = safe.categoryIds.slice();
+      if (Array.isArray(safe.payeeIds)) safe.payeeIds = safe.payeeIds.slice();
+      envelopes[idx] = { ...envelopes[idx], ...safe, updatedAt: now() };
+      save(state);
+      return envelopes[idx];
+    },
+
+    /**
+     * Remove an envelope by id. Persists. No-op if not found.
+     * @param {State} state
+     * @param {string} id
+     * @returns {void}
+     */
+    deleteEnvelope(state, id) {
+      if (!Array.isArray(state.envelopes)) return;
+      state.envelopes = state.envelopes.filter(e => e.id !== id);
       save(state);
     },
   };

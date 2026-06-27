@@ -154,6 +154,157 @@ const Dashboard = (() => {
     );
   }
 
+  // -- Savings strip (ISSUE-019) ------------------------------------
+  // Top-of-dashboard summary cards for Goals and Envelopes. They are
+  // intentionally NOT period-aware: goals have no period concept, and
+  // envelopes always evaluate against the *current* calendar month /
+  // year (via Selectors.currentPeriodFor). Switching the period
+  // selector above leaves these cards untouched. If you find yourself
+  // wanting to gate them on Router.periodRange(), stop — the spec
+  // says these always reflect "current state".
+  const SAVINGS_CARD_LIMIT = 3;
+
+  // Goal progress bar colour buckets (mirrors views/goals.js).
+  function goalBarClass(percent) {
+    if (percent > 100) return 'savings-row-bar-fill savings-row-bar-fill--over';
+    if (percent >= 100) return 'savings-row-bar-fill savings-row-bar-fill--full';
+    return 'savings-row-bar-fill';
+  }
+  function goalFoot(progress) {
+    if (progress.percent > 100) {
+      const over = Math.round((progress.funded - progress.target) * 100) / 100;
+      return el('div', { class: 'savings-row-foot savings-row-foot--over' },
+        t('goals.card.over', { over: Fmt.money(over) }));
+    }
+    if (progress.percent >= 100) {
+      return el('div', { class: 'savings-row-foot' }, t('goals.card.reached'));
+    }
+    return el('div', { class: 'savings-row-foot' },
+      t('goals.card.remaining', { remaining: Fmt.money(progress.remaining) }));
+  }
+
+  function renderGoalsSummaryCard() {
+    const goals = App._state.goals || [];
+    const wrap = el('div', { class: 'savings-card' });
+
+    const headChildren = [
+      el('div', { class: 'savings-card-title' }, t('dashboard.goals.title')),
+    ];
+    if (goals.length > SAVINGS_CARD_LIMIT) {
+      headChildren.push(el('button', {
+        class: 'savings-card-link',
+        onclick: () => Router.goTo('goals'),
+      }, t('dashboard.goals.viewAll') + ' (' + goals.length + ') \u2192'));
+    }
+    wrap.appendChild(el('div', { class: 'savings-card-head' }, headChildren));
+
+    if (!goals.length) {
+      wrap.appendChild(el('div', { class: 'savings-card-empty' }, t('dashboard.goals.empty')));
+      wrap.appendChild(el('button', {
+        class: 'savings-card-cta',
+        onclick: () => Router.goTo('goals'),
+      }, '+ ' + t('dashboard.addNew')));
+      return wrap;
+    }
+
+    // Top N by % funded desc; ties broken by recency (createdAt).
+    const sorted = [...goals].sort((a, b) => {
+      const pa = Selectors.goalProgress(a).percent;
+      const pb = Selectors.goalProgress(b).percent;
+      if (pb !== pa) return pb - pa;
+      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    }).slice(0, SAVINGS_CARD_LIMIT);
+
+    sorted.forEach(g => {
+      const progress = Selectors.goalProgress(g);
+      const fill = el('div', {
+        class: goalBarClass(progress.percent),
+        style: { width: Math.min(100, progress.percent) + '%' },
+      });
+      const row = el('div', { class: 'savings-row', 'data-row-kind': 'goal', 'data-row-id': g.id },
+        el('div', { class: 'savings-row-name' }, g.name),
+        el('div', { class: 'savings-row-meta' },
+          t('goals.card.funded', { funded: Fmt.money(progress.funded), target: Fmt.money(progress.target) })),
+        el('div', { class: 'savings-row-bar' }, fill),
+        goalFoot(progress),
+      );
+      wrap.appendChild(row);
+    });
+
+    return wrap;
+  }
+
+  // Envelope progress bar colour buckets (mirrors views/envelopes.js
+  // but using the savings-strip variants). Warn at >= 80%, over at
+  // > 100%; never use the "full" bucket — envelopes can't exceed
+  // their cap without flipping to over.
+  function envBarClass(percent) {
+    if (percent > 100) return 'savings-row-bar-fill savings-row-bar-fill--over';
+    if (percent >= 80) return 'savings-row-bar-fill savings-row-bar-fill--warn';
+    return 'savings-row-bar-fill';
+  }
+  function envFoot(progress, envelope) {
+    if (progress.overspent > 0) {
+      return el('div', { class: 'savings-row-foot savings-row-foot--over' },
+        t('dashboard.envelopes.overspent', { over: Fmt.money(progress.overspent) }));
+    }
+    const periodKey = envelope.period === 'yearly' ? 'envelopes.card.period.yearly' : 'envelopes.card.period.monthly';
+    return el('div', { class: 'savings-row-foot' },
+      t(periodKey) + ' \u2014 ' + t('envelopes.card.remaining', { remaining: Fmt.money(progress.remaining) }));
+  }
+
+  function renderEnvelopesSummaryCard() {
+    const envelopes = App._state.envelopes || [];
+    const wrap = el('div', { class: 'savings-card' });
+
+    const headChildren = [
+      el('div', { class: 'savings-card-title' }, t('dashboard.envelopes.title')),
+    ];
+    if (envelopes.length > SAVINGS_CARD_LIMIT) {
+      headChildren.push(el('button', {
+        class: 'savings-card-link',
+        onclick: () => Router.goTo('envelopes'),
+      }, t('dashboard.envelopes.viewAll') + ' (' + envelopes.length + ') \u2192'));
+    }
+    wrap.appendChild(el('div', { class: 'savings-card-head' }, headChildren));
+
+    if (!envelopes.length) {
+      wrap.appendChild(el('div', { class: 'savings-card-empty' }, t('dashboard.envelopes.empty')));
+      wrap.appendChild(el('button', {
+        class: 'savings-card-cta',
+        onclick: () => Router.goTo('envelopes'),
+      }, '+ ' + t('dashboard.addNew')));
+      return wrap;
+    }
+
+    // Top N by % spent desc. Tie-break by most-recently createdAt so
+    // newer envelopes surface before older ones with the same status.
+    const sorted = [...envelopes].sort((a, b) => {
+      const pa = Selectors.envelopeProgress(a, App._state).percent;
+      const pb = Selectors.envelopeProgress(b, App._state).percent;
+      if (pb !== pa) return pb - pa;
+      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    }).slice(0, SAVINGS_CARD_LIMIT);
+
+    sorted.forEach(e => {
+      const progress = Selectors.envelopeProgress(e, App._state);
+      const fill = el('div', {
+        class: envBarClass(progress.percent),
+        style: { width: Math.min(100, progress.percent) + '%' },
+      });
+      const row = el('div', { class: 'savings-row', 'data-row-kind': 'envelope', 'data-row-id': e.id },
+        el('div', { class: 'savings-row-name' }, e.name),
+        el('div', { class: 'savings-row-meta' },
+          t('envelopes.card.spent', { spent: Fmt.money(progress.spent), cap: Fmt.money(progress.cap) })),
+        el('div', { class: 'savings-row-bar' }, fill),
+        envFoot(progress, e),
+      );
+      wrap.appendChild(row);
+    });
+
+    return wrap;
+  }
+
   // -- Top-level render ---------------------------------------------
   function render() {
     const state = App._state;
@@ -169,9 +320,10 @@ const Dashboard = (() => {
 
     // "Recent transactions" now means "all transactions in the period,
     // newest first" (ISSUE-015). The compact table renders fine even
-    // when the period yields >20 rows.
+    // when the period yields >20 rows. createdAt is treated as a tie-
+    // breaker for same-day txns; legacy data may lack it.
     const recent = [...txns]
-      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+      .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''));
 
     const wrap = el('div', { class: 'view-dashboard' });
 
@@ -179,6 +331,16 @@ const Dashboard = (() => {
     // full width. ISSUE-015 only mounts it here; the view itself
     // drives the re-mount on every render.
     wrap.appendChild(PeriodSelector.render('dashboard'));
+
+    // Savings strip (ISSUE-019) — top-of-dashboard summary cards for
+    // Goals and Envelopes. These always reflect current state and are
+    // NOT period-aware; the period selector above has no effect on
+    // them. See renderGoalsSummaryCard / renderEnvelopesSummaryCard
+    // for the rationale.
+    wrap.appendChild(el('div', { class: 'savings-strip' },
+      renderGoalsSummaryCard(),
+      renderEnvelopesSummaryCard(),
+    ));
 
     const sCard = (cls, label, value, foot, icon, valClass = '') =>
       el('div', { class: 'summary ' + cls },

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=20" />
+  <link rel="stylesheet" href="styles.css?v=22" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%235a7248'%3E%3Cpath d='M3 10.5 12 3l9 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-4v-6h-7v6h-4A1.5 1.5 0 0 1 3 19.5v-9Z'/%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%23faf7f1'/%3E%3C/svg%3E" />
 </head>
 <body>
@@ -49,6 +49,8 @@
       views/sources.js
       views/users.js
       views/payees.js
+      views/goals.js
+      views/envelopes.js
       views/settings.js
       charts/_helpers.js — chart palette + colorForSource
       charts/monthly-flow.js
@@ -60,43 +62,49 @@
       modals/group.js
       modals/source.js
       modals/user.js
+      modals/goal.js
+      modals/envelope.js
       modals/import.js
       modals/import-confirm.js
       app.js        — bootstrap: init() + bindGlobal()
   -->
-  <script src="types.js?v=20"></script>
-  <script src="data.js?v=20"></script>
-  <script src="utils.js?v=20"></script>
-  <script src="icons.js?v=20"></script>
-  <script src="csv.js?v=20"></script>
-  <script src="selectors.js?v=20"></script>
-  <script src="i18n.js?v=20"></script>
-  <script src="backup.js?v=20"></script>
-  <script src="router.js?v=20"></script>
-  <script src="shell.js?v=20"></script>
-  <script src="views/_helpers.js?v=20"></script>
-  <script src="views/dashboard.js?v=20"></script>
-  <script src="views/trends.js?v=20"></script>
-  <script src="views/_period-selector.js?v=20"></script>
-  <script src="views/transactions.js?v=20"></script>
-  <script src="views/categories.js?v=20"></script>
-  <script src="views/sources.js?v=20"></script>
-  <script src="views/users.js?v=20"></script>
-  <script src="views/payees.js?v=20"></script>
-  <script src="views/settings.js?v=20"></script>
-  <script src="charts/_helpers.js?v=20"></script>
-  <script src="charts/monthly-flow.js?v=20"></script>
-  <script src="charts/balance-trajectory.js?v=20"></script>
-  <script src="modals/_helper.js?v=20"></script>
-  <script src="modals/import-preview.js?v=20"></script>
-  <script src="modals/transaction.js?v=20"></script>
-  <script src="modals/category.js?v=20"></script>
-  <script src="modals/group.js?v=20"></script>
-  <script src="modals/source.js?v=20"></script>
-  <script src="modals/user.js?v=20"></script>
-  <script src="modals/import.js?v=20"></script>
-  <script src="modals/import-confirm.js?v=20"></script>
-  <script src="app.js?v=20"></script>
+  <script src="types.js?v=22"></script>
+  <script src="data.js?v=22"></script>
+  <script src="utils.js?v=22"></script>
+  <script src="icons.js?v=22"></script>
+  <script src="csv.js?v=22"></script>
+  <script src="selectors.js?v=22"></script>
+  <script src="i18n.js?v=22"></script>
+  <script src="backup.js?v=22"></script>
+  <script src="router.js?v=22"></script>
+  <script src="shell.js?v=22"></script>
+  <script src="views/_helpers.js?v=22"></script>
+  <script src="views/dashboard.js?v=22"></script>
+  <script src="views/trends.js?v=22"></script>
+  <script src="views/_period-selector.js?v=22"></script>
+  <script src="views/transactions.js?v=22"></script>
+  <script src="views/categories.js?v=22"></script>
+  <script src="views/sources.js?v=22"></script>
+  <script src="views/users.js?v=22"></script>
+  <script src="views/payees.js?v=22"></script>
+  <script src="views/goals.js?v=22"></script>
+  <script src="views/envelopes.js?v=22"></script>
+  <script src="views/settings.js?v=22"></script>
+  <script src="charts/_helpers.js?v=22"></script>
+  <script src="charts/monthly-flow.js?v=22"></script>
+  <script src="charts/balance-trajectory.js?v=22"></script>
+  <script src="modals/_helper.js?v=22"></script>
+  <script src="modals/import-preview.js?v=22"></script>
+  <script src="modals/transaction.js?v=22"></script>
+  <script src="modals/category.js?v=22"></script>
+  <script src="modals/group.js?v=22"></script>
+  <script src="modals/source.js?v=22"></script>
+  <script src="modals/user.js?v=22"></script>
+  <script src="modals/goal.js?v=22"></script>
+  <script src="modals/envelope.js?v=22"></script>
+  <script src="modals/import.js?v=22"></script>
+  <script src="modals/import-confirm.js?v=22"></script>
+  <script src="app.js?v=22"></script>
   <script>
     // Inject decorative SVGs (kept here so icons.js isn't tangled with HTML)
     (function injectDeco() {

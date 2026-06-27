@@ -87,6 +87,39 @@ interface State {
   transactions: Transaction[];
   payeeCategories: Record<string, string>;
   settings: Settings;
+  // ISSUE-017: optional in State — backfilled by Store.migrate().
+  goals?: Goal[];
+  // ISSUE-018: optional in State — backfilled by Store.migrate().
+  envelopes?: Envelope[];
+}
+
+interface GoalFunding {
+  date: string;
+  amount: number;
+}
+
+interface Goal {
+  id: string;
+  name: string;
+  target: number;
+  funded: number;
+  targetDate: string | null;
+  notes: string;
+  fundingHistory: GoalFunding[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface Envelope {
+  id: string;
+  name: string;
+  cap: number;
+  period: 'monthly' | 'yearly';
+  categoryIds: string[];
+  payeeIds: string[];
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface BalancePoint {
@@ -171,6 +204,21 @@ declare global {
       addGroup: (state: State, g: Partial<Group>) => Group;
       updateGroup: (state: State, id: string, patch: Partial<Group>) => Group | null;
       deleteGroup: (state: State, id: string) => void;
+
+      // ISSUE-017: savings goals CRUD. Throws on invalid addGoal input;
+      // returns null for unknown id on update/fund; no-op on missing
+      // id on delete.
+      addGoal: (state: State, g: Partial<Goal>) => Goal;
+      updateGoal: (state: State, id: string, patch: Partial<Goal>) => Goal | null;
+      deleteGoal: (state: State, id: string) => void;
+      fundGoal: (state: State, id: string, deposit: { date?: string; amount: number }) => Goal | null;
+
+      // ISSUE-018: spending caps CRUD. Throws on invalid addEnvelope
+      // input (name / cap / period); returns null for unknown id on
+      // update or invalid patch; no-op on missing id on delete.
+      addEnvelope: (state: State, e: Partial<Envelope>) => Envelope;
+      updateEnvelope: (state: State, id: string, patch: Partial<Envelope>) => Envelope | null;
+      deleteEnvelope: (state: State, id: string) => void;
     };
 
     /* ---- Pure selectors (selectors.js) ---- */
@@ -196,6 +244,25 @@ declare global {
       periodRangeForAll: (state: State, today?: Date) => { from: string; to: string };
       txnsInPeriod: (state: State, range: { from: string; to: string }) => Transaction[];
       monthsInPeriod: (range: { from: string; to: string }) => string[];
+      // ISSUE-017: pure progress helper for goals.
+      goalProgress: (goal: Partial<Goal> | null | undefined) => {
+        funded: number;
+        target: number;
+        percent: number;
+        remaining: number;
+      };
+
+      // ISSUE-018: envelope spend / progress helpers. All pure; safe
+      // to call from anywhere with a valid `state` + envelope pair.
+      currentPeriodFor: (envelope: Partial<Envelope> | null | undefined, today?: Date) => { from: string; to: string };
+      envelopeSpend: (envelope: Partial<Envelope> | null | undefined, state: State, today?: Date) => number;
+      envelopeProgress: (envelope: Partial<Envelope> | null | undefined, state: State, today?: Date) => {
+        spent: number;
+        cap: number;
+        percent: number;
+        remaining: number;
+        overspent: number;
+      };
     };
     SelectorScopes: readonly Scope[];
 
@@ -294,6 +361,8 @@ declare global {
     Sources: { render: () => HTMLElement };
     Users: { render: () => HTMLElement };
     Payees: { render: () => HTMLElement };
+    Goals: { render: () => HTMLElement };
+    Envelopes: { render: () => HTMLElement };
     Settings: { render: () => HTMLElement };
     PeriodSelector: {
       render: (viewKey: string) => HTMLElement;
@@ -362,6 +431,12 @@ declare global {
       groupDelete: (id: string) => void;
       sourceDelete: (id: string) => void;
       userDelete: (id: string) => void;
+      // ISSUE-017: goals modal openers.
+      goal: (id?: string) => void;
+      goalDelete: (id: string) => void;
+      // ISSUE-018: envelopes modal openers.
+      envelope: (id?: string) => void;
+      envelopeDelete: (id: string) => void;
     };
     ImportPreview: {
       render: (rows: unknown[], into: HTMLElement) => void;

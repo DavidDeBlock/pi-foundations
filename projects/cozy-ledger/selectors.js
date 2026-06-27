@@ -510,6 +510,136 @@ const Selectors = {
     }
     return out;
   },
+
+  // ---- Goals (ISSUE-017) -----------------------------------------
+  // Compute progress for a single goal. Pure function: caller passes
+  // the goal object directly so this works for both in-memory state
+  // and exported backups. `percent` can exceed 100 when funded > target;
+  // renderers use `>= 100` / `> 100` to pick bar colour. `remaining` is
+  // clamped to 0 so a funded goal reads "Nog €0 te gaan".
+  /**
+   * Progress summary for a goal. `percent` may exceed 100; `remaining` is clamped to 0.
+   * @param {Partial<Goal> | null | undefined} goal
+   * @returns {{ funded: number, target: number, percent: number, remaining: number }}
+   */
+  goalProgress(goal) {
+    const funded = Math.max(0, Number(goal && goal.funded) || 0);
+    const target = Math.max(0, Number(goal && goal.target) || 0);
+    const percent = target > 0 ? round2((funded / target) * 100) : 0;
+    const remaining = target > funded ? round2(target - funded) : 0;
+    return { funded, target, percent, remaining };
+  },
+
+  // ---- Envelopes (ISSUE-018) ------------------------------------
+  // Spend-cap evaluation. Pure: callers pass the envelope directly
+  // so the helpers work for both in-memory state and exported backups.
+  //
+  // `currentPeriodFor` rolls forward each call — the current month for
+  // monthly envelopes, the current calendar year for yearly. The
+  // window's `to` is today, so partial periods are reflected in the
+  // spend number (a monthly envelope on the 5th shows 5 days of spend).
+  //
+  // `envelopeSpend` sums in-scope expense txns whose category OR
+  // payee matches the envelope, dated in [from, to]. A txn matching
+  // both criteria is counted once (Set dedup).
+  //
+  // `envelopeProgress` packages spent/cap/percent/remaining/overspent
+  // for the view. Both `remaining` and `overspent` are clamped to 0 so
+  // a UI can always show one of: "Nog €X over" / "Doel bereikt" /
+  // "€X over limiet".
+
+  /**
+   * Current window for an envelope. `monthly` = first of this month
+   * through today; `yearly` = Jan 1 of this year through today.
+   * Unknown periods fall back to monthly.
+   * @param {Partial<Envelope> | null | undefined} envelope
+   * @param {Date} [today=new Date()]
+   * @returns {{ from: string, to: string }}
+   */
+  currentPeriodFor(envelope, today = new Date()) {
+    const period = envelope && envelope.period;
+    const toIso = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+      .toISOString().slice(0, 10);
+    if (period === 'yearly') {
+      return { from: `${today.getFullYear()}-01-01`, to: toIso };
+    }
+    // 'monthly' or unknown — default to monthly.
+    const fromIso = new Date(today.getFullYear(), today.getMonth(), 1)
+      .toISOString().slice(0, 10);
+    return { from: fromIso, to: toIso };
+  },
+
+  /**
+   * Sum of expense-txns in [from, to] whose categoryId ∈
+   * `envelope.categoryIds` OR whose extracted payee ∈
+   * `envelope.payeeIds`. A txn matching both is counted once.
+   * Returns 0 when the envelope has no links or no matches.
+   * @param {Partial<Envelope> | null | undefined} envelope
+   * @param {State} state
+   * @param {Date} [today=new Date()]
+   * @returns {number}
+   */
+  envelopeSpend(envelope, state, today = new Date()) {
+    if (!envelope) return 0;
+    const catIds = Array.isArray(envelope.categoryIds) ? envelope.categoryIds : [];
+    const payeeIds = Array.isArray(envelope.payeeIds) ? envelope.payeeIds : [];
+    // Short-circuit when no links at all — nothing can match.
+    if (catIds.length === 0 && payeeIds.length === 0) return 0;
+    const range = Selectors.currentPeriodFor(envelope, today);
+    if (!range.from || !range.to) return 0;
+
+    // Use the extractPayee helper so envelope payee matching agrees
+    // with how the rest of the app identifies a payee (stripped of the
+    // ING-specific boilerplate). It lives on CSVImport / ViewHelpers.
+    const extractPayee = (typeof CSVImport !== 'undefined' && CSVImport.extractPayee)
+      || (typeof window !== 'undefined' && window.CSVImport && window.CSVImport.extractPayee)
+      || (d => String(d || ''));
+    const payeeSet = new Set(payeeIds);
+    const catSet = new Set(catIds);
+
+    // Dedup by txn id (a row that matches both criteria is counted once).
+    let spent = 0;
+    const seen = new Set();
+    const txns = Array.isArray(state && state.transactions) ? state.transactions : [];
+    for (const t of txns) {
+      if (!t || !t.date) continue;
+      if (t.date < range.from || t.date > range.to) continue;
+      // Income counts as negative spend (refund / inflow) within the
+      // cap. We only subtract for `type === 'income'` rows that still
+      // match the envelope's links; out-of-scope inflows are ignored.
+      const catMatch = t.categoryId && catSet.has(t.categoryId);
+      const payeeMatch = (() => {
+        if (payeeSet.size === 0) return false;
+        const p = extractPayee(t.description);
+        return p != null && payeeSet.has(p);
+      })();
+      if (!catMatch && !payeeMatch) continue;
+      if (seen.has(t.id)) continue;
+      seen.add(t.id);
+      const amt = Math.abs(Number(t.amount) || 0);
+      if (t.type === 'income') spent -= amt;
+      else                     spent += amt;
+    }
+    return round2(spent);
+  },
+
+  /**
+   * Progress summary for an envelope. `percent` may exceed 100;
+   * `remaining` and `overspent` are clamped to 0 so exactly one of
+   * them is non-zero (both can't be positive).
+   * @param {Partial<Envelope> | null | undefined} envelope
+   * @param {State} state
+   * @param {Date} [today=new Date()]
+   * @returns {{ spent: number, cap: number, percent: number, remaining: number, overspent: number }}
+   */
+  envelopeProgress(envelope, state, today = new Date()) {
+    const cap = Math.max(0, Number(envelope && envelope.cap) || 0);
+    const spent = Selectors.envelopeSpend(envelope, state, today);
+    const percent = cap > 0 ? round2((spent / cap) * 100) : 0;
+    const remaining = spent < cap ? round2(cap - spent) : 0;
+    const overspent = spent > cap ? round2(spent - cap) : 0;
+    return { spent, cap, percent, remaining, overspent };
+  },
 };
 
 function round2(n) { return Math.round(n * 100) / 100; }

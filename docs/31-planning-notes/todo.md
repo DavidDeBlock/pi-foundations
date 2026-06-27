@@ -214,4 +214,25 @@ I'm looking for a system to create buckets for different spendings so we have mo
      - (c) Auto-sweep at month end: leftover income (income − expenses) flows in     
  3. For envelopes, is the cap per month or per year (or both)?  
 
- 
+1. Now that I think about it, I think it's better to have two separate entities:
+1. Goals
+2. Envelopes
+They are kind of the same, but also not, and I'm going to tell you why. With the goals, we don't have transactions to link to, because it's all imaginary. The envelopes are another thing. The envelopes can be linked, for example, to categories or to payees, so we can track what we already spent versus what we can spend over a certain period. Make them flexible as well. We can cap per month or we can cap per year, and then we need a CRUD to edit them all. Does that make more sense to you?
+2. 
+
+
+1.B
+2.A (for now)
+3.yes start from 1st of jan.
+
+I've got some small requests:
+
+1. Dashboard: The top categories are on the bottom of the page. They should go more on top, above the transactions instead of below. 
+
+2. The envelope section should be extended a little bit. When I set an envelope for a certain year or period, I want to compare it with the previous year or years. 
+
+3. I'm looking for a place where I can see the totals of a certain payee or a certain category. We have:
+- the trends page
+- the dashboard
+- transactions
+All three are almost exactly the same but a little bit different. Take a look at those three and give me a suggestion where we can put it or how we can handle things.

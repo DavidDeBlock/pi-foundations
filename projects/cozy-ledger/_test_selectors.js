@@ -901,6 +901,224 @@ test('Fmt.pct: returns 0 when total is 0 or falsy', () => {
   if (Fmt.pct(5, undefined) !== 0) throw new Error('total=undefined');
 });
 
+// ---- ISSUE-017: goalProgress (pure selector) ------------------------
+console.log('\n— ISSUE-017: Selectors.goalProgress —');
+
+function gp(goal) {
+  return Selectors.goalProgress(goal);
+}
+
+test('goalProgress: partially-funded goal returns funded/percent/remaining', () => {
+  const p = gp({ target: 1000, funded: 250, name: 'Zonnepanelen' });
+  if (p.funded !== 250)  throw new Error(`funded, got ${p.funded}`);
+  if (p.target !== 1000) throw new Error(`target, got ${p.target}`);
+  if (p.percent !== 25)  throw new Error(`percent, got ${p.percent}`);
+  if (p.remaining !== 750) throw new Error(`remaining, got ${p.remaining}`);
+});
+
+test('goalProgress: exactly-reached goal returns percent=100, remaining=0', () => {
+  const p = gp({ target: 500, funded: 500 });
+  if (p.percent !== 100)   throw new Error(`percent, got ${p.percent}`);
+  if (p.remaining !== 0)   throw new Error(`remaining, got ${p.remaining}`);
+});
+
+test('goalProgress: over-funded goal returns percent>100, remaining=0', () => {
+  const p = gp({ target: 200, funded: 350 });
+  if (p.percent !== 175)   throw new Error(`percent, got ${p.percent}`);
+  if (p.remaining !== 0)   throw new Error(`remaining should clamp to 0, got ${p.remaining}`);
+});
+
+test('goalProgress: target=0 returns percent=0 (avoids division by zero)', () => {
+  const p = gp({ target: 0, funded: 100 });
+  if (p.percent !== 0) throw new Error(`percent, got ${p.percent}`);
+  if (p.remaining !== 0) throw new Error(`remaining, got ${p.remaining}`);
+});
+
+test('goalProgress: null/undefined goal returns zeroed progress', () => {
+  const a = gp(null);
+  if (a.funded !== 0 || a.target !== 0 || a.percent !== 0 || a.remaining !== 0) {
+    throw new Error('null goal not zeroed');
+  }
+  const b = gp(undefined);
+  if (b.funded !== 0 || b.target !== 0 || b.percent !== 0 || b.remaining !== 0) {
+    throw new Error('undefined goal not zeroed');
+  }
+});
+
+test('goalProgress: rounds percent to 2 decimals', () => {
+  // 333.33 / 1000 = 33.333... → 33.33
+  const p = gp({ target: 1000, funded: 333.33 });
+  if (p.percent !== 33.33) throw new Error(`percent, got ${p.percent}`);
+});
+
+// ---- ISSUE-018: Envelope helpers (pure) -----------------------------
+console.log('\n— ISSUE-018: Envelope helpers —');
+
+// currentPeriodFor: monthly / yearly boundaries across the year.
+test('currentPeriodFor: monthly returns first-of-month through today', () => {
+  const today = new Date(2026, 5, 17); // 17 Jun 2026
+  const p = Selectors.currentPeriodFor({ period: 'monthly' }, today);
+  if (p.from !== '2026-06-01') throw new Error(`from, got ${p.from}`);
+  if (p.to !== '2026-06-17')   throw new Error(`to, got ${p.to}`);
+});
+
+test('currentPeriodFor: monthly at year boundary', () => {
+  const today = new Date(2026, 0, 1); // 1 Jan 2026
+  const p = Selectors.currentPeriodFor({ period: 'monthly' }, today);
+  if (p.from !== '2026-01-01') throw new Error(`from, got ${p.from}`);
+  if (p.to !== '2026-01-01')   throw new Error(`to, got ${p.to}`);
+});
+
+test('currentPeriodFor: yearly returns Jan 1 through today', () => {
+  const today = new Date(2026, 5, 17); // 17 Jun 2026
+  const p = Selectors.currentPeriodFor({ period: 'yearly' }, today);
+  if (p.from !== '2026-01-01') throw new Error(`from, got ${p.from}`);
+  if (p.to !== '2026-06-17')   throw new Error(`to, got ${p.to}`);
+});
+
+test('currentPeriodFor: yearly at year boundary', () => {
+  const today = new Date(2026, 11, 31); // 31 Dec 2026
+  const p = Selectors.currentPeriodFor({ period: 'yearly' }, today);
+  if (p.from !== '2026-01-01') throw new Error(`from, got ${p.from}`);
+  if (p.to !== '2026-12-31')   throw new Error(`to, got ${p.to}`);
+});
+
+test('currentPeriodFor: unknown period defaults to monthly', () => {
+  const today = new Date(2026, 2, 10); // 10 Mar 2026
+  const p = Selectors.currentPeriodFor({ period: 'something' }, today);
+  if (p.from !== '2026-03-01') throw new Error(`from, got ${p.from}`);
+  if (p.to !== '2026-03-10')   throw new Error(`to, got ${p.to}`);
+});
+
+// envelopeSpend: link matching and date window.
+function makeEnv({ cap = 1000, period = 'monthly', categoryIds = [], payeeIds = [] } = {}) {
+  return { id: 'env1', name: 'Test', cap, period, categoryIds, payeeIds, notes: '', createdAt: '', updatedAt: '' };
+}
+// csv.js helpers (CSVImport.extractPayee) live in a different module
+// — for selector tests we expose the matching function directly on
+// CSVImport via the test harness setup at the top of the file.
+test('envelopeSpend: empty envelope (no links) returns 0', () => {
+  const today = new Date(2026, 5, 15);
+  const env = makeEnv({ categoryIds: [], payeeIds: [] });
+  const state = {
+    transactions: [
+      { id: 't1', type: 'expense', amount: 50, date: '2026-06-10', categoryId: 'c_eat', description: 'Jumbo' },
+    ],
+  };
+  const v = Selectors.envelopeSpend(env, state, today);
+  if (v !== 0) throw new Error(`expected 0, got ${v}`);
+});
+
+test('envelopeSpend: one-category envelope matches only that category in period', () => {
+  const today = new Date(2026, 5, 15);
+  const env = makeEnv({ categoryIds: ['c_eat'] });
+  const state = {
+    transactions: [
+      { id: 't1', type: 'expense', amount: 30, date: '2026-06-05', categoryId: 'c_eat',    description: 'AH' },
+      { id: 't2', type: 'expense', amount: 20, date: '2026-06-06', categoryId: 'c_other',  description: 'X' },
+      { id: 't3', type: 'expense', amount: 40, date: '2026-05-30', categoryId: 'c_eat',    description: 'AH' }, // out of period
+    ],
+  };
+  const v = Selectors.envelopeSpend(env, state, today);
+  if (v !== 30) throw new Error(`expected 30, got ${v}`);
+});
+
+test('envelopeSpend: one-payee envelope matches only that payee in period', () => {
+  const today = new Date(2026, 5, 15);
+  const env = makeEnv({ payeeIds: ['AH'] });
+  const state = {
+    transactions: [
+      { id: 't1', type: 'expense', amount: 30, date: '2026-06-05', categoryId: 'c_eat',  description: 'AH' },
+      { id: 't2', type: 'expense', amount: 20, date: '2026-06-06', categoryId: 'c_eat',  description: 'Jumbo' },
+      { id: 't3', type: 'expense', amount: 40, date: '2026-06-07', categoryId: 'c_eat',  description: 'AH BON' },
+    ],
+  };
+  const v = Selectors.envelopeSpend(env, state, today);
+  if (v !== 30) throw new Error(`expected 30, got ${v}`);
+});
+
+test('envelopeSpend: txn matching both category and payee is counted once', () => {
+  const today = new Date(2026, 5, 15);
+  const env = makeEnv({ categoryIds: ['c_eat'], payeeIds: ['AH'] });
+  const state = {
+    transactions: [
+      { id: 't1', type: 'expense', amount: 30, date: '2026-06-05', categoryId: 'c_eat',    description: 'AH' },     // both
+      { id: 't2', type: 'expense', amount: 25, date: '2026-06-06', categoryId: 'c_eat',    description: 'Jumbo' }, // cat only
+      { id: 't3', type: 'expense', amount: 15, date: '2026-06-07', categoryId: 'c_other',  description: 'AH' },     // payee only
+    ],
+  };
+  const v = Selectors.envelopeSpend(env, state, today);
+  if (v !== 70) throw new Error(`expected 70, got ${v}`);
+});
+
+test('envelopeSpend: out-of-period and out-of-scope txns are excluded', () => {
+  const today = new Date(2026, 5, 15);
+  const env = makeEnv({ categoryIds: ['c_eat'] });
+  const state = {
+    transactions: [
+      { id: 't1', type: 'expense', amount: 30, date: '2026-06-05', categoryId: 'c_eat',    description: 'AH' },     // in
+      { id: 't2', type: 'expense', amount: 99, date: '2026-05-30', categoryId: 'c_eat',    description: 'AH' },     // out-of-period
+      { id: 't3', type: 'expense', amount: 99, date: '2026-06-06', categoryId: 'c_other',  description: 'AH' },     // out-of-scope
+      { id: 't4', type: 'income',  amount: 99, date: '2026-06-07', categoryId: 'c_eat',    description: 'AH' },     // income — subtract
+    ],
+  };
+  const v = Selectors.envelopeSpend(env, state, today);
+  if (v !== 30 - 99) throw new Error(`expected -69, got ${v}`);
+});
+
+test('envelopeSpend: yearly envelope sums across the whole year', () => {
+  const today = new Date(2026, 5, 15);
+  const env = makeEnv({ period: 'yearly', categoryIds: ['c_eat'] });
+  const state = {
+    transactions: [
+      { id: 't1', type: 'expense', amount: 30, date: '2026-02-05', categoryId: 'c_eat', description: 'X' },
+      { id: 't2', type: 'expense', amount: 20, date: '2026-06-05', categoryId: 'c_eat', description: 'X' },
+      { id: 't3', type: 'expense', amount: 10, date: '2025-12-30', categoryId: 'c_eat', description: 'X' }, // prev year
+    ],
+  };
+  const v = Selectors.envelopeSpend(env, state, today);
+  if (v !== 50) throw new Error(`expected 50, got ${v}`);
+});
+
+// envelopeProgress: progress math.
+test('envelopeProgress: spent < cap returns remaining, no overspent', () => {
+  const today = new Date(2026, 5, 15);
+  const env = makeEnv({ cap: 1000, categoryIds: ['c_eat'] });
+  const state = { transactions: [
+    { id: 't1', type: 'expense', amount: 200, date: '2026-06-05', categoryId: 'c_eat', description: 'X' },
+  ]};
+  const p = Selectors.envelopeProgress(env, state, today);
+  if (p.spent !== 200) throw new Error(`spent, got ${p.spent}`);
+  if (p.cap !== 1000) throw new Error(`cap, got ${p.cap}`);
+  if (p.percent !== 20) throw new Error(`percent, got ${p.percent}`);
+  if (p.remaining !== 800) throw new Error(`remaining, got ${p.remaining}`);
+  if (p.overspent !== 0) throw new Error(`overspent should be 0, got ${p.overspent}`);
+});
+
+test('envelopeProgress: spent === cap returns percent=100, remaining=0, overspent=0', () => {
+  const today = new Date(2026, 5, 15);
+  const env = makeEnv({ cap: 1000, categoryIds: ['c_eat'] });
+  const state = { transactions: [
+    { id: 't1', type: 'expense', amount: 1000, date: '2026-06-05', categoryId: 'c_eat', description: 'X' },
+  ]};
+  const p = Selectors.envelopeProgress(env, state, today);
+  if (p.percent !== 100) throw new Error(`percent, got ${p.percent}`);
+  if (p.remaining !== 0) throw new Error(`remaining, got ${p.remaining}`);
+  if (p.overspent !== 0) throw new Error(`overspent, got ${p.overspent}`);
+});
+
+test('envelopeProgress: spent > cap returns overspent > 0 and clamped remaining', () => {
+  const today = new Date(2026, 5, 15);
+  const env = makeEnv({ cap: 200, categoryIds: ['c_eat'] });
+  const state = { transactions: [
+    { id: 't1', type: 'expense', amount: 350, date: '2026-06-05', categoryId: 'c_eat', description: 'X' },
+  ]};
+  const p = Selectors.envelopeProgress(env, state, today);
+  if (p.percent !== 175) throw new Error(`percent, got ${p.percent}`);
+  if (p.remaining !== 0) throw new Error(`remaining should clamp to 0, got ${p.remaining}`);
+  if (p.overspent !== 150) throw new Error(`overspent, got ${p.overspent}`);
+});
+
 console.log('\n— Summary —');
 console.log(`  ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

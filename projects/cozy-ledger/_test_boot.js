@@ -343,7 +343,7 @@ function test(name, fn) {
 }
 
 // ---- Load all scripts in order --------------------------------------
-const scripts = ['types.js', 'data.js', 'utils.js', 'icons.js', 'csv.js', 'selectors.js', 'i18n.js', 'backup.js', 'router.js', 'shell.js', 'views/_helpers.js', 'views/dashboard.js', 'views/trends.js', 'views/_period-selector.js', 'views/transactions.js', 'views/categories.js', 'views/sources.js', 'views/users.js', 'views/payees.js', 'views/settings.js', 'charts/_helpers.js', 'charts/monthly-flow.js', 'charts/balance-trajectory.js', 'modals/_helper.js', 'modals/import-preview.js', 'modals/transaction.js', 'modals/category.js', 'modals/group.js', 'modals/source.js', 'modals/user.js', 'modals/import.js', 'modals/import-confirm.js', 'app.js'];
+const scripts = ['types.js', 'data.js', 'utils.js', 'icons.js', 'csv.js', 'selectors.js', 'i18n.js', 'backup.js', 'router.js', 'shell.js', 'views/_helpers.js', 'views/dashboard.js', 'views/trends.js', 'views/_period-selector.js', 'views/transactions.js', 'views/categories.js', 'views/sources.js', 'views/users.js', 'views/payees.js', 'views/goals.js', 'views/envelopes.js', 'views/settings.js', 'charts/_helpers.js', 'charts/monthly-flow.js', 'charts/balance-trajectory.js', 'modals/_helper.js', 'modals/import-preview.js', 'modals/transaction.js', 'modals/category.js', 'modals/group.js', 'modals/source.js', 'modals/user.js', 'modals/goal.js', 'modals/envelope.js', 'modals/import.js', 'modals/import-confirm.js', 'app.js'];
 for (const s of scripts) {
   const code = fs.readFileSync(path.join(__dirname, s), 'utf8');
   vm.runInContext(code, ctx, { filename: s });
@@ -1220,6 +1220,786 @@ test('ISSUE-016: Trends render does not reference Router.trendRange', () => {
     .replace(/^\s*\/\/.*$/gm, '');
   if (/Router\.trendRange|setTrendRange|monthsForRange|Router\.monthKey/.test(code)) {
     throw new Error('views/trends.js still references the legacy Router API');
+  }
+});
+
+// =====================================================================
+// ISSUE-017: Goals end-to-end
+// =====================================================================
+console.log('\n— ISSUE-017: Goals end-to-end —');
+
+// Goal state is added on demand to keep these tests isolated. The
+// tests run after `freshInit010()` (called by the last reset test)
+// which leaves App._state clean except for the seeded users /
+// sources / categories / groups. Each mutating test snapshots
+// `s.goals` in try/finally so later tests see the original empty
+// list (or whatever the previous test left).
+
+test('ISSUE-017: state.goals is an empty array after migration', () => {
+  const s = ctx.window.App._state;
+  if (!Array.isArray(s.goals)) throw new Error('state.goals not an array');
+  if (s.goals.length !== 0) throw new Error(`expected empty, got ${s.goals.length}`);
+});
+
+test('ISSUE-017: Store.addGoal appends and stamps id/timestamps', () => {
+  const s = ctx.window.App._state;
+  const snap = s.goals.slice();
+  try {
+    const goal = ctx.window.Store.addGoal(s, { name: 'Zonnepanelen', target: 5000, targetDate: '2027-04-01', notes: 'Dak zuidkant' });
+    if (!goal.id) throw new Error('no id stamped');
+    if (!goal.createdAt) throw new Error('no createdAt');
+    if (!goal.updatedAt) throw new Error('no updatedAt');
+    if (goal.funded !== 0) throw new Error(`funded default, got ${goal.funded}`);
+    if (!Array.isArray(goal.fundingHistory) || goal.fundingHistory.length !== 0) {
+      throw new Error('fundingHistory default');
+    }
+    if (goal.notes !== 'Dak zuidkant') throw new Error(`notes, got ${goal.notes}`);
+    if (s.goals[s.goals.length - 1].id !== goal.id) throw new Error('not appended');
+  } finally {
+    s.goals = snap;
+  }
+});
+
+test('ISSUE-017: Store.addGoal throws on missing name', () => {
+  const s = ctx.window.App._state;
+  const snap = s.goals.slice();
+  try {
+    let threw = false;
+    try { ctx.window.Store.addGoal(s, { name: '  ', target: 100 }); }
+    catch (_) { threw = true; }
+    if (!threw) throw new Error('addGoal accepted blank name');
+  } finally {
+    s.goals = snap;
+  }
+});
+
+test('ISSUE-017: Store.addGoal throws on target<=0', () => {
+  const s = ctx.window.App._state;
+  const snap = s.goals.slice();
+  try {
+    let threw = false;
+    try { ctx.window.Store.addGoal(s, { name: 'X', target: 0 }); }
+    catch (_) { threw = true; }
+    if (!threw) throw new Error('addGoal accepted target=0');
+    let threw2 = false;
+    try { ctx.window.Store.addGoal(s, { name: 'X', target: -10 }); }
+    catch (_) { threw2 = true; }
+    if (!threw2) throw new Error('addGoal accepted negative target');
+  } finally {
+    s.goals = snap;
+  }
+});
+
+test('ISSUE-017: Store.updateGoal patches fields and stamps updatedAt', () => {
+  const s = ctx.window.App._state;
+  const snap = s.goals.slice();
+  try {
+    const g = ctx.window.Store.addGoal(s, { name: 'Trip', target: 1000 });
+    const before = g.updatedAt;
+    // Sleep 5ms so updatedAt can move forward.
+    const wait = Date.now() + 5;
+    while (Date.now() < wait) {}
+    const updated = ctx.window.Store.updateGoal(s, g.id, { name: 'Reis 2026', target: 1500, notes: 'Italië' });
+    if (!updated) throw new Error('updateGoal returned null');
+    if (updated.name !== 'Reis 2026') throw new Error(`name, got ${updated.name}`);
+    if (updated.target !== 1500) throw new Error(`target, got ${updated.target}`);
+    if (updated.notes !== 'Italië') throw new Error(`notes, got ${updated.notes}`);
+    if (updated.updatedAt <= before) throw new Error('updatedAt not bumped');
+    // funded and fundingHistory are off-limits to updateGoal.
+    if (updated.funded !== 0) throw new Error('funded changed via updateGoal');
+    if (!Array.isArray(updated.fundingHistory)) throw new Error('fundingHistory mutated');
+  } finally {
+    s.goals = snap;
+  }
+});
+
+test('ISSUE-017: Store.fundGoal appends a deposit and bumps funded', () => {
+  const s = ctx.window.App._state;
+  const snap = s.goals.slice();
+  try {
+    const g = ctx.window.Store.addGoal(s, { name: 'Trip', target: 1000 });
+    const after1 = ctx.window.Store.fundGoal(s, g.id, { amount: 250, date: '2026-06-15' });
+    if (after1.funded !== 250) throw new Error(`funded after first deposit, got ${after1.funded}`);
+    if (after1.fundingHistory.length !== 1) throw new Error('history not appended');
+    if (after1.fundingHistory[0].date !== '2026-06-15') throw new Error('date not stored');
+    if (after1.fundingHistory[0].amount !== 250) throw new Error('amount not stored');
+    const after2 = ctx.window.Store.fundGoal(s, g.id, { amount: 75.5 });
+    if (after2.funded !== 325.5) throw new Error(`funded after second, got ${after2.funded}`);
+    if (after2.fundingHistory.length !== 2) throw new Error('history len');
+  } finally {
+    s.goals = snap;
+  }
+});
+
+test('ISSUE-017: Store.deleteGoal removes the goal', () => {
+  const s = ctx.window.App._state;
+  const snap = s.goals.slice();
+  try {
+    const a = ctx.window.Store.addGoal(s, { name: 'A', target: 100 });
+    const b = ctx.window.Store.addGoal(s, { name: 'B', target: 100 });
+    ctx.window.Store.deleteGoal(s, a.id);
+    if (s.goals.find(g => g.id === a.id)) throw new Error('A still present');
+    if (!s.goals.find(g => g.id === b.id)) throw new Error('B missing');
+  } finally {
+    s.goals = snap;
+  }
+});
+
+test('ISSUE-017: Sidebar shows a Doelen nav item', () => {
+  // Boot state is already loaded by earlier freshInit010() calls.
+  // The sidebar is mounted by Shell.render() once at boot.
+  const appRoot = ctx.window.document.querySelector('#app');
+  const goalsNav = findAll(appRoot, n =>
+    (n.classList?._set || new Set()).has('nav-item') &&
+    n.getAttribute('data-view') === 'goals'
+  )[0];
+  if (!goalsNav) throw new Error('goals nav item not in sidebar');
+  if (!goalsNav.textContent.includes(ctx.window.t('goals.nav'))) {
+    throw new Error(`goals nav label missing: got "${goalsNav.textContent}"`);
+  }
+});
+
+test('ISSUE-017: navigating to Goals renders the empty state', () => {
+  const s = ctx.window.App._state;
+  const snap = s.goals.slice();
+  try {
+    s.goals = [];
+    navigateToView('goals');
+    const appRoot = ctx.window.document.querySelector('#app');
+    const view = findAll(appRoot, n => (n.classList?._set || new Set()).has('view-goals'));
+    if (view.length !== 1) throw new Error(`expected 1 .view-goals, got ${view.length}`);
+    const emptyTitle = findAll(appRoot, n => /Nog geen doelen/.test(n.textContent));
+    if (emptyTitle.length === 0) throw new Error('empty-state title not found');
+    const card = findAll(appRoot, n => (n.classList?._set || new Set()).has('card'));
+    if (card.length !== 1) throw new Error('goals card not mounted');
+  } finally {
+    s.goals = snap;
+  }
+});
+
+test('ISSUE-017: a seeded goal renders a row with the correct percent', () => {
+  const s = ctx.window.App._state;
+  const snap = s.goals.slice();
+  try {
+    const goal = ctx.window.Store.addGoal(s, { name: 'Zonnepanelen', target: 1000 });
+    ctx.window.Store.fundGoal(s, goal.id, { amount: 250, date: '2026-04-01' });
+    navigateToView('goals');
+    const appRoot = ctx.window.document.querySelector('#app');
+    const rows = findAll(appRoot, n => (n.classList?._set || new Set()).has('goal-row'));
+    if (rows.length !== 1) throw new Error(`expected 1 goal-row, got ${rows.length}`);
+    const row = rows[0];
+    const fill = findAll(row, n => (n.classList?._set || new Set()).has('goal-bar-fill'));
+    if (fill.length !== 1) throw new Error('progress bar not rendered');
+    // 250 / 1000 = 25%, but we cap width at 100%.
+    if (fill[0].style.width !== '25%') throw new Error(`width, got ${fill[0].style.width}`);
+    if (!row.textContent.includes('Zonnepanelen')) throw new Error('name missing');
+    // Caption: still partially funded → "Nog €X te gaan"
+    if (!/Nog .* te gaan/.test(row.textContent)) {
+      throw new Error('caption missing; got: ' + row.textContent.slice(0, 200));
+    }
+  } finally {
+    s.goals = snap;
+  }
+});
+
+test('ISSUE-017: progress bar class flips to --full at 100% and --over above 100%', () => {
+  const s = ctx.window.App._state;
+  const snap = s.goals.slice();
+  try {
+    // 100% case
+    const exact = ctx.window.Store.addGoal(s, { name: 'Exact', target: 100 });
+    ctx.window.Store.fundGoal(s, exact.id, { amount: 100 });
+    // > 100% case
+    const over = ctx.window.Store.addGoal(s, { name: 'Over', target: 100 });
+    ctx.window.Store.fundGoal(s, over.id, { amount: 175 });
+    navigateToView('goals');
+    const appRoot = ctx.window.document.querySelector('#app');
+    const fills = findAll(appRoot, n => (n.classList?._set || new Set()).has('goal-bar-fill'));
+    if (fills.length !== 2) throw new Error(`expected 2 fills, got ${fills.length}`);
+    const cls = fills.map(f => [...(f.classList?._set || [])].sort().join(' '));
+    if (!cls.some(c => /goal-bar-fill--full/.test(c))) throw new Error('no --full fill: ' + JSON.stringify(cls));
+    if (!cls.some(c => /goal-bar-fill--over/.test(c))) throw new Error('no --over fill: ' + JSON.stringify(cls));
+  } finally {
+    s.goals = snap;
+  }
+});
+
+test('ISSUE-017: clicking Storten opens the inline fund form', () => {
+  const s = ctx.window.App._state;
+  const snap = s.goals.slice();
+  try {
+    const g = ctx.window.Store.addGoal(s, { name: 'X', target: 100 });
+    navigateToView('goals');
+    const appRoot = ctx.window.document.querySelector('#app');
+    const row = findAll(appRoot, n => (n.classList?._set || new Set()).has('goal-row')
+      && n.getAttribute('data-goal-id') === g.id)[0];
+    if (!row) throw new Error('row not found');
+    const fundBtn = findAll(row, n => (n.classList?._set || new Set()).has('btn-sage'))[0];
+    if (!fundBtn) throw new Error('fund button not found');
+    fundBtn.dispatchEvent({ type: 'click' });
+    // After click, the form becomes visible and contains amount/date inputs.
+    const form = ctx.window.document.getElementById(`g-fund-form-${g.id}`);
+    if (!form) throw new Error('fund form not opened');
+    if (form.style.display === 'none') throw new Error('fund form not displayed');
+    const amt = ctx.window.document.getElementById(`g-fund-amt-${g.id}`);
+    const date = ctx.window.document.getElementById(`g-fund-date-${g.id}`);
+    if (!amt) throw new Error('amount input missing');
+    if (!date) throw new Error('date input missing');
+  } finally {
+    s.goals = snap;
+  }
+});
+
+test('ISSUE-017: submitting the fund form updates funded and history', () => {
+  const s = ctx.window.App._state;
+  const snap = { goals: s.goals.slice(), transactions: s.transactions.slice() };
+  try {
+    const g = ctx.window.Store.addGoal(s, { name: 'X', target: 1000 });
+    navigateToView('goals');
+    const row = (() => {
+      const appRoot = ctx.window.document.querySelector('#app');
+      return findAll(appRoot, n => (n.classList?._set || new Set()).has('goal-row')
+        && n.getAttribute('data-goal-id') === g.id)[0];
+    })();
+    const fundBtn = findAll(row, n => (n.classList?._set || new Set()).has('btn-sage'))[0];
+    fundBtn.dispatchEvent({ type: 'click' });
+    const amt = ctx.window.document.getElementById(`g-fund-amt-${g.id}`);
+    const date = ctx.window.document.getElementById(`g-fund-date-${g.id}`);
+    amt.value = '125.50';
+    date.value = '2026-05-20';
+    const okBtn = ctx.window.document.getElementById(`g-fund-ok-${g.id}`);
+    okBtn.dispatchEvent({ type: 'click' });
+    // store:changed re-renders, so re-find the goal.
+    const fresh = (s.goals || []).find(x => x.id === g.id);
+    if (!fresh) throw new Error('goal disappeared');
+    if (fresh.funded !== 125.5) throw new Error(`funded, got ${fresh.funded}`);
+    if (fresh.fundingHistory.length !== 1) throw new Error('history len');
+    if (fresh.fundingHistory[0].date !== '2026-05-20') throw new Error('date not stored');
+    if (fresh.fundingHistory[0].amount !== 125.5) throw new Error('amount not stored');
+  } finally {
+    s.goals = snap.goals;
+    s.transactions = snap.transactions;
+  }
+});
+
+test('ISSUE-017: Modals.goal opens the add modal with the expected fields', () => {
+  documentStub.body.children.length = 0;
+  ctx.window.App.init();
+  ctx.window.Modals.goal();
+  const back = documentStub.body.querySelector('.modal-backdrop') || ctx.window.document.querySelector('.modal-backdrop');
+  if (!back) throw new Error('no backdrop after Modals.goal()');
+  for (const fid of ['f-name', 'f-target', 'f-targetDate', 'f-notes']) {
+    if (!back.querySelector(`#${fid}`)) throw new Error(`field ${fid} missing`);
+  }
+  // Cleanup
+  const cancel = back.querySelector('#m-cancel');
+  cancel.dispatchEvent({ type: 'click' });
+});
+
+test('ISSUE-017: Modals.goalDelete removes the goal (confirm returns true in stub)', () => {
+  const s = ctx.window.App._state;
+  const snap = s.goals.slice();
+  try {
+    const g = ctx.window.Store.addGoal(s, { name: 'Doomed', target: 100 });
+    if (!s.goals.find(x => x.id === g.id)) throw new Error('seed failed');
+    ctx.window.Modals.goalDelete(g.id);
+    if (s.goals.find(x => x.id === g.id)) throw new Error('goal still present after delete');
+  } finally {
+    s.goals = snap;
+  }
+});
+
+test('ISSUE-017: all 22 i18n keys resolve to non-empty Dutch strings', () => {
+  const keys = [
+    'goals.nav', 'goals.title', 'goals.sub', 'goals.add', 'goals.edit',
+    'goals.delete', 'goals.fund',
+    'goals.empty.title', 'goals.empty.msg',
+    'goals.form.name', 'goals.form.target', 'goals.form.targetDate', 'goals.form.notes',
+    'goals.fund.amount', 'goals.fund.date', 'goals.fund.confirm', 'goals.fund.cancel',
+    'goals.card.funded', 'goals.card.remaining', 'goals.card.reached', 'goals.card.over',
+    'goals.delete.confirm',
+  ];
+  const t = ctx.window.t;
+  for (const k of keys) {
+    const v = t(k);
+    if (v === k) throw new Error(`key not resolved: ${k}`);
+    if (!v || typeof v !== 'string' || v.length === 0) throw new Error(`empty value for ${k}`);
+  }
+});
+
+// =====================================================================
+// ISSUE-018: Envelopes end-to-end
+// =====================================================================
+console.log('\n— ISSUE-018: Envelopes end-to-end —');
+
+test('ISSUE-018: state.envelopes is an empty array after migration', () => {
+  const s = ctx.window.App._state;
+  if (!Array.isArray(s.envelopes)) throw new Error('state.envelopes not an array');
+  if (s.envelopes.length !== 0) throw new Error(`expected empty, got ${s.envelopes.length}`);
+});
+
+test('ISSUE-018: Store.addEnvelope appends and stamps id/timestamps', () => {
+  const s = ctx.window.App._state;
+  const snap = s.envelopes.slice();
+  try {
+    const env = ctx.window.Store.addEnvelope(s, {
+      name: 'Restaurants', cap: 200, period: 'monthly',
+      categoryIds: ['c_eat'], payeeIds: ['AH'],
+    });
+    if (!env.id) throw new Error('no id stamped');
+    if (!env.createdAt) throw new Error('no createdAt');
+    if (!env.updatedAt) throw new Error('no updatedAt');
+    if (!Array.isArray(env.categoryIds) || env.categoryIds.length !== 1) throw new Error('categoryIds not stored');
+    if (!Array.isArray(env.payeeIds) || env.payeeIds.length !== 1) throw new Error('payeeIds not stored');
+    if (s.envelopes[s.envelopes.length - 1].id !== env.id) throw new Error('not appended');
+  } finally {
+    s.envelopes = snap;
+  }
+});
+
+test('ISSUE-018: Store.addEnvelope throws on missing name / cap / period', () => {
+  const s = ctx.window.App._state;
+  const snap = s.envelopes.slice();
+  try {
+    let threw = false;
+    try { ctx.window.Store.addEnvelope(s, { name: '  ', cap: 100, period: 'monthly' }); }
+    catch (_) { threw = true; }
+    if (!threw) throw new Error('addEnvelope accepted blank name');
+    threw = false;
+    try { ctx.window.Store.addEnvelope(s, { name: 'X', cap: 0, period: 'monthly' }); }
+    catch (_) { threw = true; }
+    if (!threw) throw new Error('addEnvelope accepted cap=0');
+    threw = false;
+    try { ctx.window.Store.addEnvelope(s, { name: 'X', cap: 100, period: 'weekly' }); }
+    catch (_) { threw = true; }
+    if (!threw) throw new Error('addEnvelope accepted invalid period');
+  } finally {
+    s.envelopes = snap;
+  }
+});
+
+test('ISSUE-018: Store.updateEnvelope patches fields, stamps updatedAt, refuses to change id', () => {
+  const s = ctx.window.App._state;
+  const snap = s.envelopes.slice();
+  try {
+    const env = ctx.window.Store.addEnvelope(s, { name: 'X', cap: 100, period: 'monthly' });
+    const before = env.updatedAt;
+    const wait = Date.now() + 5;
+    while (Date.now() < wait) {}
+    const updated = ctx.window.Store.updateEnvelope(s, env.id, { name: 'Restaurants', cap: 250, period: 'yearly' });
+    if (!updated) throw new Error('updateEnvelope returned null');
+    if (updated.id !== env.id) throw new Error('id changed');
+    if (updated.name !== 'Restaurants') throw new Error(`name, got ${updated.name}`);
+    if (updated.cap !== 250) throw new Error(`cap, got ${updated.cap}`);
+    if (updated.period !== 'yearly') throw new Error(`period, got ${updated.period}`);
+    if (updated.updatedAt <= before) throw new Error('updatedAt not bumped');
+    if (updated.createdAt !== env.createdAt) throw new Error('createdAt changed');
+    // Reject bad patch
+    const bad = ctx.window.Store.updateEnvelope(s, env.id, { cap: 0 });
+    if (bad !== null) throw new Error('updateEnvelope accepted cap=0');
+  } finally {
+    s.envelopes = snap;
+  }
+});
+
+test('ISSUE-018: Store.deleteEnvelope removes the envelope', () => {
+  const s = ctx.window.App._state;
+  const snap = s.envelopes.slice();
+  try {
+    const a = ctx.window.Store.addEnvelope(s, { name: 'A', cap: 100, period: 'monthly' });
+    const b = ctx.window.Store.addEnvelope(s, { name: 'B', cap: 100, period: 'monthly' });
+    ctx.window.Store.deleteEnvelope(s, a.id);
+    if (s.envelopes.find(e => e.id === a.id)) throw new Error('A still present');
+    if (!s.envelopes.find(e => e.id === b.id)) throw new Error('B missing');
+  } finally {
+    s.envelopes = snap;
+  }
+});
+
+test('ISSUE-018: Sidebar shows an Enveloppen nav item', () => {
+  const appRoot = ctx.window.document.querySelector('#app');
+  const navItem = findAll(appRoot, n =>
+    (n.classList?._set || new Set()).has('nav-item') &&
+    n.getAttribute('data-view') === 'envelopes'
+  )[0];
+  if (!navItem) throw new Error('envelopes nav item not in sidebar');
+  if (!navItem.textContent.includes(ctx.window.t('envelopes.nav'))) {
+    throw new Error(`envelopes nav label missing: got "${navItem.textContent}"`);
+  }
+});
+
+test('ISSUE-018: navigating to Envelopes renders the empty state', () => {
+  const s = ctx.window.App._state;
+  const snap = s.envelopes.slice();
+  try {
+    s.envelopes = [];
+    navigateToView('envelopes');
+    const appRoot = ctx.window.document.querySelector('#app');
+    const view = findAll(appRoot, n => (n.classList?._set || new Set()).has('view-envelopes'));
+    if (view.length !== 1) throw new Error(`expected 1 .view-envelopes, got ${view.length}`);
+    const emptyTitle = findAll(appRoot, n => /Nog geen enveloppen/.test(n.textContent));
+    if (emptyTitle.length === 0) throw new Error('empty-state title not found');
+  } finally {
+    s.envelopes = snap;
+  }
+});
+
+test('ISSUE-018: a seeded envelope renders a row with the correct percent', () => {
+  const s = ctx.window.App._state;
+  const snap = { envelopes: s.envelopes.slice(), transactions: s.transactions.slice() };
+  try {
+    ctx.window.Store.addEnvelope(s, { name: 'Eten uit', cap: 200, period: 'monthly', categoryIds: ['c_eat'] });
+    // Seed a current-month txn that matches.
+    const today = new Date();
+    const todayIso = today.toISOString().slice(0, 10);
+    s.transactions.push({
+      id: 'tx1', type: 'expense', amount: 50, date: todayIso,
+      categoryId: 'c_eat', description: 'Jumbo', paidByUserId: '', sourceId: '',
+      scope: 'private', notes: '',
+    });
+    navigateToView('envelopes');
+    const appRoot = ctx.window.document.querySelector('#app');
+    const rows = findAll(appRoot, n => (n.classList?._set || new Set()).has('env-row'));
+    if (rows.length !== 1) throw new Error(`expected 1 env-row, got ${rows.length}`);
+    const row = rows[0];
+    if (!row.textContent.includes('Eten uit')) throw new Error('name missing');
+    const fill = findAll(row, n => (n.classList?._set || new Set()).has('env-bar-fill'));
+    if (fill.length !== 1) throw new Error('progress bar not rendered');
+    // 50 / 200 = 25%, no modifier at < 80%
+    if (fill[0].style.width !== '25%') throw new Error(`width, got ${fill[0].style.width}`);
+    if (/env-bar-fill--warn|env-bar-fill--over/.test(fill[0].className)) {
+      throw new Error(`unexpected modifier at 25%: ${fill[0].className}`);
+    }
+  } finally {
+    s.envelopes = snap.envelopes;
+    s.transactions = snap.transactions;
+  }
+});
+
+test('ISSUE-018: progress bar class flips to --warn at >= 80% and --over above 100%', () => {
+  const s = ctx.window.App._state;
+  const snap = { envelopes: s.envelopes.slice(), transactions: s.transactions.slice() };
+  try {
+    const today = new Date();
+    const todayIso = today.toISOString().slice(0, 10);
+    // 85% envelope (c_eat only)
+    ctx.window.Store.addEnvelope(s, { name: 'Warn', cap: 100, period: 'monthly', categoryIds: ['c_eat'] });
+    s.transactions.push({ id: 'tx-w', type: 'expense', amount: 85, date: todayIso, categoryId: 'c_eat', description: 'X', paidByUserId: '', sourceId: '', scope: 'private', notes: '' });
+    // 175% envelope (c_other_exp only — distinct category so it sees only its own txn)
+    ctx.window.Store.addEnvelope(s, { name: 'Over', cap: 100, period: 'monthly', categoryIds: ['c_other_exp'] });
+    s.transactions.push({ id: 'tx-o', type: 'expense', amount: 175, date: todayIso, categoryId: 'c_other_exp', description: 'X', paidByUserId: '', sourceId: '', scope: 'private', notes: '' });
+    navigateToView('envelopes');
+    const appRoot = ctx.window.document.querySelector('#app');
+    const fills = findAll(appRoot, n => (n.classList?._set || new Set()).has('env-bar-fill'));
+    if (fills.length !== 2) throw new Error(`expected 2 fills, got ${fills.length}`);
+    const cls = fills.map(f => [...(f.classList?._set || [])].sort().join(' '));
+    if (!cls.some(c => /env-bar-fill--warn/.test(c))) throw new Error('no --warn fill: ' + JSON.stringify(cls));
+    if (!cls.some(c => /env-bar-fill--over/.test(c))) throw new Error('no --over fill: ' + JSON.stringify(cls));
+  } finally {
+    s.envelopes = snap.envelopes;
+    s.transactions = snap.transactions;
+  }
+});
+
+test('ISSUE-018: Modals.envelope opens the add modal with the expected fields', () => {
+  documentStub.body.children.length = 0;
+  ctx.window.App.init();
+  ctx.window.Modals.envelope();
+  const back = documentStub.body.querySelector('.modal-backdrop') || ctx.window.document.querySelector('.modal-backdrop');
+  if (!back) throw new Error('no backdrop after Modals.envelope()');
+  for (const fid of ['f-name', 'f-cap', 'f-period', 'f-categoryIds', 'f-payeeIds', 'f-notes']) {
+    if (!back.querySelector(`#${fid}`)) throw new Error(`field ${fid} missing`);
+  }
+  const cancel = back.querySelector('#m-cancel');
+  cancel.dispatchEvent({ type: 'click' });
+});
+
+test('ISSUE-018: Modals.envelopeDelete removes the envelope (confirm returns true in stub)', () => {
+  const s = ctx.window.App._state;
+  const snap = s.envelopes.slice();
+  try {
+    const e = ctx.window.Store.addEnvelope(s, { name: 'Doomed', cap: 100, period: 'monthly', categoryIds: ['c_eat'] });
+    if (!s.envelopes.find(x => x.id === e.id)) throw new Error('seed failed');
+    ctx.window.Modals.envelopeDelete(e.id);
+    if (s.envelopes.find(x => x.id === e.id)) throw new Error('envelope still present after delete');
+  } finally {
+    s.envelopes = snap;
+  }
+});
+
+test('ISSUE-018: Modals.envelope refuses to save without category or payee link', () => {
+  const s = ctx.window.App._state;
+  const snap = s.envelopes.slice();
+  try {
+    documentStub.body.children.length = 0;
+    ctx.window.App.init();
+    ctx.window.Modals.envelope();
+    const back = documentStub.body.querySelector('.modal-backdrop') || ctx.window.document.querySelector('.modal-backdrop');
+    if (!back) throw new Error('no backdrop');
+    back.querySelector('#f-name').value = 'Leeg';
+    back.querySelector('#f-cap').value = '100';
+    back.querySelector('#f-period').value = 'monthly';
+    back.querySelector('#m-save').dispatchEvent({ type: 'click' });
+    // save should NOT have created the envelope.
+    if (s.envelopes.find(e => e.name === 'Leeg')) {
+      throw new Error('envelope was created with no links');
+    }
+    const cancel = back.querySelector('#m-cancel');
+    cancel.dispatchEvent({ type: 'click' });
+  } finally {
+    s.envelopes = snap;
+  }
+});
+
+test('ISSUE-018: all envelope i18n keys resolve to non-empty Dutch strings', () => {
+  const keys = [
+    'envelopes.nav', 'envelopes.title', 'envelopes.add', 'envelopes.edit', 'envelopes.delete',
+    'envelopes.empty.title', 'envelopes.empty.msg',
+    'envelopes.form.name', 'envelopes.form.cap', 'envelopes.form.period',
+    'envelopes.form.period.monthly', 'envelopes.form.period.yearly',
+    'envelopes.form.categories', 'envelopes.form.payees', 'envelopes.form.notes',
+    'envelopes.form.links.required',
+    'envelopes.card.spent', 'envelopes.card.remaining', 'envelopes.card.overspent',
+    'envelopes.card.period.monthly', 'envelopes.card.period.yearly',
+    'envelopes.delete.confirm',
+  ];
+  const t = ctx.window.t;
+  for (const k of keys) {
+    const v = t(k);
+    if (v === k) throw new Error(`key not resolved: ${k}`);
+    if (!v || typeof v !== 'string' || v.length === 0) throw new Error(`empty value for ${k}`);
+  }
+});
+
+// =====================================================================
+// ISSUE-019: Dashboard savings summary cards
+// =====================================================================
+console.log('\n— ISSUE-019: Dashboard savings summary cards —');
+
+test('ISSUE-019: all dashboard savings-strip i18n keys resolve to non-empty Dutch strings', () => {
+  const keys = [
+    'dashboard.goals.title', 'dashboard.goals.empty', 'dashboard.goals.viewAll',
+    'dashboard.envelopes.title', 'dashboard.envelopes.empty', 'dashboard.envelopes.viewAll',
+    'dashboard.envelopes.overspent', 'dashboard.addNew',
+  ];
+  const t = ctx.window.t;
+  for (const k of keys) {
+    const v = t(k);
+    if (v === k) throw new Error(`key not resolved: ${k}`);
+    if (!v || typeof v !== 'string' || v.length === 0) throw new Error(`empty value for ${k}`);
+  }
+});
+
+test('ISSUE-019: dashboard renders a savings-strip with both cards', () => {
+  // Default boot has no goals and no envelopes; the strip should
+  // still mount and each card should render its empty-state copy.
+  navigateToView('dashboard');
+  const appRoot = ctx.window.document.querySelector('#app');
+  const strips = findAll(appRoot, n => (n.classList?._set || new Set()).has('savings-strip'));
+  if (strips.length !== 1) throw new Error(`expected 1 .savings-strip, got ${strips.length}`);
+  const cards = findAll(strips[0], n => (n.classList?._set || new Set()).has('savings-card'));
+  if (cards.length !== 2) throw new Error(`expected 2 .savings-card, got ${cards.length}`);
+  // Strip must sit ABOVE the summary-grid — the spec is explicit.
+  const summary = findAll(appRoot, n => (n.classList?._set || new Set()).has('summary-grid'))[0];
+  if (!summary) throw new Error('summary-grid missing');
+  const idxStrip = [...appRoot.children].indexOf(strips[0]);
+  const idxSummary = [...appRoot.children].indexOf(summary);
+  if (idxStrip > idxSummary) throw new Error('savings-strip must sit above summary-grid');
+});
+
+test('ISSUE-019: goals summary card mounts up to 3 sorted-by-percent rows from seeded data', () => {
+  const s = ctx.window.App._state;
+  const snap = s.goals ? s.goals.slice() : null;
+  try {
+    s.goals = [];
+    const a = ctx.window.Store.addGoal(s, { name: 'A laag',   target: 1000 });
+    const b = ctx.window.Store.addGoal(s, { name: 'B hoog',   target: 1000 });
+    const c = ctx.window.Store.addGoal(s, { name: 'C mid',    target: 1000 });
+    const d = ctx.window.Store.addGoal(s, { name: 'D 4e',     target: 1000 });
+    ctx.window.Store.fundGoal(s, a.id, { amount: 100 });   // 10%
+    ctx.window.Store.fundGoal(s, b.id, { amount: 900 });   // 90%
+    ctx.window.Store.fundGoal(s, c.id, { amount: 500 });   // 50%
+    ctx.window.Store.fundGoal(s, d.id, { amount: 200 });   // 20% — should be hidden (>3)
+    navigateToView('dashboard');
+    const appRoot = ctx.window.document.querySelector('#app');
+    const strip = findAll(appRoot, n => (n.classList?._set || new Set()).has('savings-strip'))[0];
+    if (!strip) throw new Error('savings-strip missing');
+    const cards = findAll(strip, n => (n.classList?._set || new Set()).has('savings-card'));
+    if (cards.length !== 2) throw new Error(`expected 2 cards, got ${cards.length}`);
+    const goalsCard = cards[0]; // Goals is the first card in the strip.
+    const rows = findAll(goalsCard, n => (n.classList?._set || new Set()).has('savings-row'));
+    if (rows.length !== 3) throw new Error(`expected 3 rows, got ${rows.length}`);
+    const names = rows.map(r => r.querySelector('.savings-row-name')?.textContent);
+    // Sorted desc by percent: B (90%), C (50%), D (20%) — A (10%)
+    // is below the top-3 cut and must NOT appear.
+    if (names[0] !== 'B hoog' || names[1] !== 'C mid' || names[2] !== 'D 4e') {
+      throw new Error(`unexpected order: ${JSON.stringify(names)}`);
+    }
+    if (names.includes('A laag')) throw new Error('A laag (10%) leaked into top 3');
+    // "View all" should appear because we have 4 goals.
+    if (!goalsCard.querySelector('.savings-card-link')) {
+      throw new Error('view-all link missing when goals.length > 3');
+    }
+  } finally {
+    s.goals = snap;
+  }
+});
+
+test('ISSUE-019: envelopes summary card mounts up to 3 sorted-by-percent rows from seeded data', () => {
+  const s = ctx.window.App._state;
+  const snap = { envelopes: s.envelopes.slice(), transactions: s.transactions.slice() };
+  try {
+    s.envelopes = [];
+    s.transactions = [];
+    // Seed a current-month txn that will match all three envelopes
+    // via the c_eat category, so they all have non-zero spend.
+    const today = new Date();
+    const todayIso = today.toISOString().slice(0, 10);
+    s.transactions.push({
+      id: 'env-seed-tx', type: 'expense', amount: 100,
+      date: todayIso, categoryId: 'c_eat',
+      description: 'Test', paidByUserId: '', sourceId: '',
+      scope: 'private', notes: '', createdAt: today.toISOString(), updatedAt: today.toISOString(),
+    });
+    const e1 = ctx.window.Store.addEnvelope(s, { name: 'E1 rustig',  cap: 200, period: 'monthly', categoryIds: ['c_eat'] }); // 50%
+    void e1;
+    const e2 = ctx.window.Store.addEnvelope(s, { name: 'E2 waarschuw', cap: 110, period: 'monthly', categoryIds: ['c_eat'] }); // ~91%
+    void e2;
+    const e3 = ctx.window.Store.addEnvelope(s, { name: 'E3 over',    cap: 50,  period: 'monthly', categoryIds: ['c_eat'] }); // 200%
+    void e3;
+    const e4 = ctx.window.Store.addEnvelope(s, { name: 'E4 hidden',  cap: 500, period: 'monthly', categoryIds: ['c_eat'] }); // 20%
+    void e4;
+    navigateToView('dashboard');
+    const appRoot = ctx.window.document.querySelector('#app');
+    const strip = findAll(appRoot, n => (n.classList?._set || new Set()).has('savings-strip'))[0];
+    const cards = findAll(strip, n => (n.classList?._set || new Set()).has('savings-card'));
+    const envCard = cards[1]; // Envelopes is the second card.
+    const rows = findAll(envCard, n => (n.classList?._set || new Set()).has('savings-row'));
+    if (rows.length !== 3) throw new Error(`expected 3 rows, got ${rows.length}`);
+    const names = rows.map(r => r.querySelector('.savings-row-name')?.textContent);
+    // Sorted desc by % spent: E3 (200%), E2 (~91%), E1 (50%).
+    if (names[0] !== 'E3 over' || names[1] !== 'E2 waarschuw' || names[2] !== 'E1 rustig') {
+      throw new Error(`unexpected order: ${JSON.stringify(names)}`);
+    }
+    // The over envelope should carry the over modifier on the bar.
+    const overFill = rows[0].querySelector('.savings-row-bar-fill');
+    if (!/savings-row-bar-fill--over/.test(overFill.className)) {
+      throw new Error(`over envelope bar missing --over class: ${overFill.className}`);
+    }
+    // ...and the over caption.
+    const overFoot = rows[0].querySelector('.savings-row-foot--over');
+    if (!overFoot) throw new Error('over envelope missing over caption');
+    // The warn envelope should carry --warn.
+    const warnFill = rows[1].querySelector('.savings-row-bar-fill');
+    if (!/savings-row-bar-fill--warn/.test(warnFill.className)) {
+      throw new Error(`warn envelope bar missing --warn class: ${warnFill.className}`);
+    }
+    // "View all" should appear because we have 4 envelopes.
+    if (!envCard.querySelector('.savings-card-link')) {
+      throw new Error('view-all link missing when envelopes.length > 3');
+    }
+  } finally {
+    s.envelopes = snap.envelopes;
+    s.transactions = snap.transactions;
+  }
+});
+
+test('ISSUE-019: period selector change does NOT mutate the savings cards', () => {
+  const s = ctx.window.App._state;
+  const snap = { envelopes: s.envelopes.slice(), transactions: s.transactions.slice(), goals: s.goals ? s.goals.slice() : [] };
+  try {
+    // Seed: one goal (always 100%, no period dependency) and one
+    // monthly envelope with known current-month spend (no period
+    // dependency either).
+    s.goals = [ctx.window.Store.addGoal(s, { name: 'PeriodTest', target: 1000 })];
+    ctx.window.Store.fundGoal(s, s.goals[0].id, { amount: 500 });
+    const today = new Date();
+    const todayIso = today.toISOString().slice(0, 10);
+    s.transactions = [{
+      id: 'pt-tx', type: 'expense', amount: 100,
+      date: todayIso, categoryId: 'c_eat',
+      description: 'X', paidByUserId: '', sourceId: '',
+      scope: 'private', notes: '', createdAt: today.toISOString(), updatedAt: today.toISOString(),
+    }];
+    s.envelopes = [ctx.window.Store.addEnvelope(s, { name: 'PeriodEnv', cap: 200, period: 'monthly', categoryIds: ['c_eat'] })];
+
+    navigateToView('dashboard');
+    const snapshotGoalsBefore = collectSavingsRowSnapshot(ctx.window.document.querySelector('#app'), 0);
+    const snapshotEnvsBefore  = collectSavingsRowSnapshot(ctx.window.document.querySelector('#app'), 1);
+
+    // Switch through every preset the dashboard exposes.
+    for (const preset of ['1m', '3m', '6m', '1y', '2y', 'all', 'custom']) {
+      if (preset === 'custom') {
+        ctx.window.Router.setPeriodRange({ from: '2020-01-01', to: todayIso });
+      } else {
+        ctx.window.Router.setPeriodPreset(preset);
+      }
+    }
+    const snapshotGoalsAfter = collectSavingsRowSnapshot(ctx.window.document.querySelector('#app'), 0);
+    const snapshotEnvsAfter  = collectSavingsRowSnapshot(ctx.window.document.querySelector('#app'), 1);
+    if (JSON.stringify(snapshotGoalsBefore) !== JSON.stringify(snapshotGoalsAfter)) {
+      throw new Error('goals card changed across period presets');
+    }
+    if (JSON.stringify(snapshotEnvsBefore) !== JSON.stringify(snapshotEnvsAfter)) {
+      throw new Error('envelopes card changed across period presets');
+    }
+  } finally {
+    s.envelopes = snap.envelopes;
+    s.transactions = snap.transactions;
+    s.goals = snap.goals;
+  }
+});
+
+// Capture a fingerprint of a savings card's rows for equality tests:
+// name + meta text + bar class + bar width + foot text. Stable across
+// re-renders so we can compare before/after a state mutation.
+function collectSavingsRowSnapshot(root, cardIndex) {
+  const strip = findAll(root, n => (n.classList?._set || new Set()).has('savings-strip'))[0];
+  if (!strip) return null;
+  const cards = findAll(strip, n => (n.classList?._set || new Set()).has('savings-card'));
+  const card = cards[cardIndex];
+  if (!card) return null;
+  const rows = findAll(card, n => (n.classList?._set || new Set()).has('savings-row'));
+  return rows.map(r => ({
+    name: r.querySelector('.savings-row-name')?.textContent || '',
+    meta: r.querySelector('.savings-row-meta')?.textContent || '',
+    barClass: [...(r.querySelector('.savings-row-bar-fill')?.classList?._set || [])].sort().join(' '),
+    barWidth: r.querySelector('.savings-row-bar-fill')?.style.width || '',
+    foot: r.querySelector('.savings-row-foot')?.textContent || '',
+  }));
+}
+
+test('ISSUE-019: goals empty state appears when state.goals is empty', () => {
+  const s = ctx.window.App._state;
+  const snap = s.goals ? s.goals.slice() : null;
+  try {
+    s.goals = [];
+    navigateToView('dashboard');
+    const appRoot = ctx.window.document.querySelector('#app');
+    const strip = findAll(appRoot, n => (n.classList?._set || new Set()).has('savings-strip'))[0];
+    const cards = findAll(strip, n => (n.classList?._set || new Set()).has('savings-card'));
+    const goalsCard = cards[0];
+    if (!goalsCard.querySelector('.savings-card-empty')) throw new Error('goals empty-state copy missing');
+    if (!goalsCard.querySelector('.savings-card-cta')) throw new Error('goals empty-state CTA missing');
+  } finally {
+    s.goals = snap;
+  }
+});
+
+test('ISSUE-019: envelopes empty state appears when state.envelopes is empty', () => {
+  const s = ctx.window.App._state;
+  const snap = s.envelopes.slice();
+  try {
+    s.envelopes = [];
+    navigateToView('dashboard');
+    const appRoot = ctx.window.document.querySelector('#app');
+    const strip = findAll(appRoot, n => (n.classList?._set || new Set()).has('savings-strip'))[0];
+    const cards = findAll(strip, n => (n.classList?._set || new Set()).has('savings-card'));
+    const envCard = cards[1];
+    if (!envCard.querySelector('.savings-card-empty')) throw new Error('envelopes empty-state copy missing');
+    if (!envCard.querySelector('.savings-card-cta')) throw new Error('envelopes empty-state CTA missing');
+  } finally {
+    s.envelopes = snap;
   }
 });
 

@@ -93,6 +93,21 @@ const Strings = {
     'dashboard.top.empty.msg':        'Eens je er één logt, verschijnt die hier.',
     'dashboard.byGroup.toggle':       'Toon per groep',
 
+    // ---- Savings strip (ISSUE-019) --------------------------------
+    // Top-of-dashboard summary cards for Goals & Envelopes. These
+    // always reflect current state — NOT the active period selector —
+    // so a future contributor doesn't "fix" them by gating on it.
+    'dashboard.goals.title':          'Doelen',
+    'dashboard.goals.empty':          'Nog geen doelen — voeg er één toe.',
+    'dashboard.goals.viewAll':        'Alle doelen',
+    'dashboard.envelopes.title':      'Enveloppen',
+    'dashboard.envelopes.empty':      'Nog geen enveloppen — stel een limiet in.',
+    'dashboard.envelopes.viewAll':    'Alle enveloppen',
+    // `Fmt.money()` already prefixes `€`; the template must NOT include
+    // it or we'll render `€€X over limiet`.
+    'dashboard.envelopes.overspent':  '{over} over limiet',
+    'dashboard.addNew':               'Toevoegen',
+
     // ---- Trends / charts --------------------------------------------
     'trends.section.flow.title':       'Inkomsten vs uitgaven per maand',
     'trends.section.flow.sub':         'groen = die maand gespaard, rood = meer uitgegeven dan verdiend',
@@ -372,6 +387,64 @@ const Strings = {
     'settings.import.err.scheme':'Back-up schemaVersion {ver} wordt niet ondersteund door deze app-versie (verwacht 1).',
     'settings.import.err.noState':'Back-up mist de "state"-sleutel.',
     'settings.import.err.noSchema':'Back-up mist schemaVersion.',
+
+    // ---- Goals (ISSUE-017) ----------------------------------------
+    'goals.nav':              'Doelen',
+    'goals.title':            'Doelen',
+    'goals.sub':              'Sparen voor iets groters — zonnepanelen, een reis, een grote aankoop.',
+    'goals.add':              'Doel toevoegen',
+    'goals.edit':             'Bewerken',
+    'goals.delete':           'Verwijderen',
+    'goals.fund':             'Storten',
+    'goals.empty.title':      'Nog geen doelen',
+    'goals.empty.msg':        'Voeg je eerste spaardoel toe — bijvoorbeeld zonnepanelen of een reis.',
+    'goals.form.name':        'Naam',
+    'goals.form.target':      'Doelbedrag',
+    'goals.form.targetDate':  'Streefdatum',
+    'goals.form.notes':       'Notities',
+    'goals.fund.amount':      'Bedrag',
+    'goals.fund.date':        'Datum',
+    'goals.fund.confirm':     'Storten',
+    'goals.fund.cancel':      'Annuleren',
+    'goals.card.funded':      '{funded} van {target}',
+    'goals.card.remaining':   'Nog {remaining} te gaan',
+    'goals.card.reached':     'Doel bereikt 🎉',
+    'goals.card.over':        '{over} boven doel',
+    'goals.delete.confirm':   'Weet je zeker dat je dit doel wilt verwijderen?',
+    'goals.err.nameRequired': 'Naam is verplicht.',
+    'goals.err.targetRequired':'Doelbedrag moet groter zijn dan €0.',
+    'goals.err.amountRequired':'Storting moet groter zijn dan €0.',
+    'goals.added':            'Doel toegevoegd.',
+    'goals.updated':          'Doel bijgewerkt.',
+    'goals.deleted':          'Doel verwijderd.',
+    'goals.funded':           'Storting toegevoegd.',
+
+    // ---- Envelopes (ISSUE-018) ------------------------------------
+    'envelopes.nav':                  'Enveloppen',
+    'envelopes.title':                'Enveloppen',
+    'envelopes.add':                  'Envelop toevoegen',
+    'envelopes.edit':                 'Bewerken',
+    'envelopes.delete':               'Verwijderen',
+    'envelopes.empty.title':          'Nog geen enveloppen',
+    'envelopes.empty.msg':            'Stel een limiet in voor restaurants, boodschappen of een andere categorie.',
+    'envelopes.form.name':            'Naam',
+    'envelopes.form.cap':             'Limiet',
+    'envelopes.form.period':          'Periode',
+    'envelopes.form.period.monthly':  'Maandelijks',
+    'envelopes.form.period.yearly':   'Jaarlijks',
+    'envelopes.form.categories':      'Categorieën',
+    'envelopes.form.payees':          'Begunstigden',
+    'envelopes.form.notes':           'Notitie',
+    'envelopes.form.links.required':  'Kies minstens één categorie of begunstigde.',
+    'envelopes.card.spent':           '{spent} van {cap}',
+    'envelopes.card.remaining':       'Nog {remaining} over',
+    'envelopes.card.overspent':       '{over} over limiet',
+    'envelopes.card.period.monthly':  'Deze maand',
+    'envelopes.card.period.yearly':   'Dit jaar',
+    'envelopes.delete.confirm':       'Weet je zeker dat je deze envelop wilt verwijderen?',
+    'envelopes.added':                'Envelop toegevoegd.',
+    'envelopes.updated':              'Envelop bijgewerkt.',
+    'envelopes.deleted':              'Envelop verwijderd.',
   },
 };
 

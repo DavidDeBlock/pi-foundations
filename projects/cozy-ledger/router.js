@@ -167,6 +167,8 @@ const Router = (() => {
       sources:      [t('page.sources.title'),      t('page.sources.sub')],
       users:        [t('page.users.title'),        t('page.users.sub')],
       payees:       [t('page.payees.title'),       t('page.payees.sub')],
+      goals:        [t('goals.title'),             t('goals.sub')],
+      envelopes:    [t('envelopes.title'),         ''],
       settings:     [t('page.settings.title'),     t('page.settings.sub')],
     };
     $('#page-title').innerHTML = titles[view][0];
@@ -174,7 +176,7 @@ const Router = (() => {
 
     // Topbar in-place updates.
     const at = $('#add-txn-btn');
-    at.style.display = (view === 'categories' || view === 'sources' || view === 'users' || view === 'settings') ? 'none' : 'inline-flex';
+    at.style.display = (view === 'categories' || view === 'sources' || view === 'users' || view === 'settings' || view === 'goals' || view === 'envelopes') ? 'none' : 'inline-flex';
     Shell.ensureMonthPicker();
     Shell.updateScopePills();
 
@@ -190,6 +192,8 @@ const Router = (() => {
     else if (view === 'sources')      viewEl.appendChild(Sources.render());
     else if (view === 'users')        viewEl.appendChild(Users.render());
     else if (view === 'payees')       viewEl.appendChild(Payees.render());
+    else if (view === 'goals')        viewEl.appendChild(Goals.render());
+    else if (view === 'envelopes')    viewEl.appendChild(Envelopes.render());
     else if (view === 'settings')     viewEl.appendChild(Settings.render());
   }
 

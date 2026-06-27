@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>a4-math — Printable Math Worksheets</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="controls" aria-label="Worksheet controls">
+    <h1>a4-math</h1>
+    <p class="subtitle">Generate A4-sized printable math worksheets</p>
+
+    <form id="config" class="config-grid">
+      <label>
+        <span>Operation</span>
+        <select name="operation">
+          <option value="addition" selected>Addition</option>
+          <option value="subtraction">Subtraction</option>
+          <option value="mixed">Mixed (+ and −)</option>
+        </select>
+      </label>
+
+      <label>
+        <span>Min number</span>
+        <input type="number" name="min" value="1" min="0" max="999">
+      </label>
+
+      <label>
+        <span>Max number</span>
+        <input type="number" name="max" value="20" min="1" max="999">
+      </label>
+
+      <label>
+        <span>Problems per page</span>
+        <select name="count">
+          <option value="20">20 (4 × 5)</option>
+          <option value="30" selected>30 (3 × 10)</option>
+          <option value="40">40 (4 × 10)</option>
+        </select>
+      </label>
+
+      <label class="checkbox" id="borrowing-row">
+        <input type="checkbox" name="borrowing">
+        <span>Allow borrowing (subtraction only)</span>
+      </label>
+
+      <label class="checkbox">
+        <input type="checkbox" name="answers">
+        <span>Include answer key page</span>
+      </label>
+
+      <label>
+        <span>Page title</span>
+        <input type="text" name="title" value="Math Practice" maxlength="40">
+      </label>
+
+      <div class="actions">
+        <button type="submit" class="primary">Generate</button>
+        <button type="button" id="print">Print</button>
+        <button type="button" id="reset">Reset</button>
+      </div>
+    </form>
+  </header>
+
+  <main id="worksheets" class="worksheets" aria-label="Worksheet preview">
+    <p class="empty">Click <strong>Generate</strong> to create a worksheet.</p>
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>
