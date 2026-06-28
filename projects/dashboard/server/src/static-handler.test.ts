@@ -50,3 +50,78 @@ describe('static asset handler', () => {
     expect(await res.text()).toBe(onDisk)
   })
 })
+
+// ── Issue #011: styling foundation assets ────────────────────────────────
+
+describe('static asset handler (issue #011: styling foundation)', () => {
+  it('serves /static/styles.css with the file contents and correct content-type', async () => {
+    const app = new Hono()
+    app.route('/static', staticAssets())
+
+    const res = await app.request('/static/styles.css')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('text/css; charset=utf-8')
+
+    const onDisk = readFileSync(
+      resolve(process.cwd(), 'static', 'styles.css'),
+      'utf8',
+    )
+    expect(await res.text()).toBe(onDisk)
+  })
+
+  it('serves /static/theme.js with the file contents and correct content-type', async () => {
+    const app = new Hono()
+    app.route('/static', staticAssets())
+
+    const res = await app.request('/static/theme.js')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('application/javascript; charset=utf-8')
+
+    const onDisk = readFileSync(
+      resolve(process.cwd(), 'static', 'theme.js'),
+      'utf8',
+    )
+    expect(await res.text()).toBe(onDisk)
+  })
+
+  it('serves all three font files with the font/woff2 content-type', async () => {
+    const app = new Hono()
+    app.route('/static', staticAssets())
+
+    const fonts = [
+      '/static/fonts/Inter-Regular.woff2',
+      '/static/fonts/Inter-SemiBold.woff2',
+      '/static/fonts/JetBrainsMono-Regular.woff2',
+    ]
+    for (const path of fonts) {
+      const res = await app.request(path)
+      expect(res.status, `${path} should be 200`).toBe(200)
+      expect(res.headers.get('Content-Type'), `${path} content-type`).toBe('font/woff2')
+    }
+  })
+
+  it('returns 404 for an unknown font', async () => {
+    const app = new Hono()
+    app.route('/static', staticAssets())
+
+    const res = await app.request('/static/fonts/DoesNotExist.woff2')
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('static asset handler (issue #012: clipboard helper)', () => {
+  it('serves /static/clipboard.js with the correct content-type', async () => {
+    const app = new Hono()
+    app.route('/static', staticAssets())
+
+    const res = await app.request('/static/clipboard.js')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('application/javascript; charset=utf-8')
+
+    const onDisk = readFileSync(
+      resolve(process.cwd(), 'static', 'clipboard.js'),
+      'utf8',
+    )
+    expect(await res.text()).toBe(onDisk)
+  })
+})

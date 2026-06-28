@@ -1,0 +1,849 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   styles.css — issues #011, #012, #013
+   Centralized stylesheet for the dashboard. Card layout (#012) and
+   sidebar + sticky header (#013) live here. A handful of inline
+   <style> blocks in views (settings table, detail-page <dl>, search
+   filters) remain until later slices migrate them; inline rules win
+   cascade order where they overlap.
+
+   See: docs/30-plans/styling-pass.md
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ─── @font-face ──────────────────────────────────────────────────────── */
+
+@font-face {
+  font-family: 'Inter';
+  src: url('/static/fonts/Inter-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('/static/fonts/Inter-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/static/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ─── Reset ───────────────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; padding: 0; }
+html {
+  -webkit-text-size-adjust: 100%;
+  /* Crossfade on theme switch — applied to <html> so the transition
+     covers the whole viewport, not just <body>. */
+  transition: background-color 200ms ease, color 200ms ease;
+}
+img, picture, video, canvas, svg { display: block; max-width: 100%; }
+input, button, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: none; }
+a { color: inherit; text-decoration: none; }
+
+/* ─── Theme tokens (light defaults, dark overrides) ───────────────────── */
+
+:root {
+  /* Light theme — applied when [data-theme] is missing or "light" */
+  --bg:            #FFFFFF;
+  --surface:       #F7F9FC;
+  --surface-hover: #EEF2F7;
+  --border:        #E2E8F0;
+  --text:          #1A202C;
+  --muted:         #4A5568;
+  --accent:        #0891B2;
+  --accent-dim:    #CFFAFE;
+  --accent-text:   #FFFFFF;
+  --success:       #059669;
+  --danger:        #DC2626;
+}
+
+:root[data-theme="dark"] {
+  /* Dark theme — applied when [data-theme="dark"] (the default for
+     first-time visitors; see theme.ts DEFAULT_THEME). */
+  --bg:            #0E1217;
+  --surface:       #151B23;
+  --surface-hover: #1C232C;
+  --border:        #232B35;
+  --text:          #E6EAF0;
+  --muted:         #8B95A4;
+  --accent:        #22D3EE;
+  --accent-dim:    #155E75;
+  --accent-text:   #0E1217;
+  --success:       #34D399;
+  --danger:        #F87171;
+}
+
+/* ─── Typography ──────────────────────────────────────────────────────── */
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont,
+               'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background-color: var(--bg);
+  min-height: 100vh;
+}
+
+code, pre, kbd, samp {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo,
+               Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.95em;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text);
+}
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.25rem; }
+h3 { font-size: 1.125rem; }
+h4 { font-size: 1rem; }
+
+/* ─── Layout primitives (expanded in issue #013) ──────────────────────── */
+
+.layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: calc(100vh - 56px);
+}
+
+.site-header {
+  position: sticky;
+  top: 0;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  background-color: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 10;
+}
+
+/* ─── Focus visible (keyboard accessibility) ──────────────────────────── */
+
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+/* ─── Theme toggle button (placeholder; issue #013 wires it into the
+        site header. For now it floats top-right on every page so the
+        theme can be exercised end-to-end during slice 1 testing.) ─── */
+
+.theme-toggle {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background-color: var(--surface);
+  color: var(--text);
+  font-size: 1rem;
+  transition: background-color 150ms ease, border-color 150ms ease,
+              color 150ms ease;
+}
+.theme-toggle:hover {
+  background-color: var(--surface-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.theme-toggle-floating {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 100;
+}
+
+/* ─── Card layout (issue #012: daily.dev shape) ──────────────────────────── */
+
+/* The feed container — a plain block so cards stack vertically.
+   Was a <ul> in v1; changed to <div> in #012 so <article> children
+   are valid HTML. */
+.feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* The card itself. The "surface on bg" pattern gives each card a subtle
+   raised feel without using shadows (slices #014 + #015 may add a
+   shadow on hover). */
+.feed-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.feed-item:hover {
+  background-color: var(--surface-hover);
+  border-color: var(--accent-dim);
+}
+
+.feed-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* Source badge — small uppercase chip showing the URL domain.
+   Teal accent by default; red for YouTube (slice #014 fills the
+   thumb slot with a video thumbnail). */
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background-color: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  line-height: 1;
+}
+.source-badge-youtube {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* Thumbnail slot — filled in slice #014. The 32px height reserves
+   space so cards don't jump when the thumb loads. */
+.feed-item-thumb-slot {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+/* Thumbnail image (slice #014). The slot either holds a favicon
+   (32×32, square) or a YouTube video thumbnail (80×45, 16:9). The
+   placeholder background masks the moment before the image loads. */
+.feed-item-thumb {
+  flex-shrink: 0;
+  display: block;
+  background-color: var(--surface-hover);
+}
+.feed-item-thumb-favicon {
+  width: 32px;
+  height: 32px;
+  border-radius: 0.25rem;
+  object-fit: contain;
+}
+.feed-item-thumb-youtube {
+  width: 80px;
+  height: 45px;
+  border-radius: 0.375rem;
+  object-fit: cover;
+}
+
+.feed-item-title {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0;
+}
+.feed-item-title a {
+  color: var(--text);
+  transition: color 150ms ease;
+}
+.feed-item:hover .feed-item-title a {
+  color: var(--accent);
+}
+
+/* Meta line — folder path, relative time, tags. Wraps on narrow
+   screens; the separator dots are visible breakpoints for the user. */
+.feed-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 13px;
+  color: var(--muted);
+}
+.feed-item-meta .folder-path {
+  color: var(--muted);
+}
+.feed-item-meta .meta-sep {
+  color: var(--muted);
+  opacity: 0.6;
+}
+.feed-item-meta .tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Tag chip — carried over from v1 with theme-aware colors. */
+.tag {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+}
+.tag-remove {
+  margin-left: 0.25rem;
+  padding: 0 0.25rem;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted);
+}
+.tag-remove:hover {
+  color: var(--danger);
+}
+
+/* Action button row — ↗ Open, ✏ Edit, 📋 Copy (+ folder select +
+   delete in categorize mode). */
+.feed-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+.action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--muted);
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease,
+              border-color 150ms ease;
+}
+.action-button:hover {
+  color: var(--accent);
+  background-color: var(--accent-dim);
+}
+.action-button[data-copied="true"] {
+  color: var(--success);
+}
+
+/* Categorize-only controls — folder select + delete + status span.
+   Sized to align with the action buttons. */
+.action-select {
+  margin-left: auto;
+  height: 28px;
+  padding: 0 0.5rem;
+  font-size: 12px;
+  color: var(--text);
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+}
+.actions-status {
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 0.5rem;
+  min-width: 4rem;
+}
+
+/* Title edit input — appears inside the h3 when the user clicks ✏.
+   Sizing matches the title's line-height so the card doesn't jump. */
+.title-input {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.25rem;
+  background-color: var(--bg);
+  color: var(--text);
+  width: 100%;
+}
+
+/* ─── Site header (issue #013 slice 5) ─────────────────────────────────── */
+
+/* Page layout — sidebar (left, fixed-width) + main (flex-grow). */
+.layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 1.5rem;
+  margin-top: 0; /* sidebar sits under the sticky header */
+  padding: 1.5rem;
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.site-header {
+  position: sticky;
+  top: 0;
+  height: 56px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 1.5rem;
+  background-color: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 10;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+.brand:hover {
+  color: var(--accent);
+}
+.brand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 1.1rem;
+  color: var(--accent);
+  background-color: var(--accent-dim);
+  border-radius: 0.375rem;
+  line-height: 1;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Header search form — compact, used on every page as a quick search
+   jump. The full filter form on the search page lives in <main>. */
+.header-right .search-form {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+}
+.header-right .search-form input[type=search] {
+  font-size: 0.875rem;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background-color: var(--bg);
+  color: var(--text);
+  width: 18rem;
+  max-width: 30vw;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.header-right .search-form input[type=search]:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.header-right .search-form .search-button {
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.4rem 0.8rem;
+  color: var(--bg);
+  background-color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.header-right .search-form .search-button:hover {
+  background-color: var(--accent-text);
+  border-color: var(--accent-text);
+}
+
+/* Theme toggle in the header (was a floating button in #011; now sits
+   inside .header-right next to the search and logout). */
+.theme-toggle {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  line-height: 1;
+  color: var(--text);
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease,
+              border-color 150ms ease;
+}
+.theme-toggle:hover {
+  color: var(--accent);
+  background-color: var(--surface-hover);
+  border-color: var(--accent-dim);
+}
+
+/* Logout link — text link in the header; clear affordance without a
+   button chrome. Browser-side logout is a 401-with-new-realm trick
+   (see /api/logout in app.ts). */
+.logout-link {
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.375rem;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.logout-link:hover {
+  color: var(--text);
+  background-color: var(--surface-hover);
+}
+
+/* ─── Sidebar (issue #013 slice 4) ─────────────────────────────────────── */
+
+.sidebar {
+  position: sticky;
+  top: 56px; /* sit just below the header */
+  width: 240px;
+  height: calc(100vh - 56px);
+  overflow-y: auto;
+  padding: 1rem 0.75rem;
+  /* Subtle right border keeps the sidebar visually separated from
+     the main feed without using a heavy divider. */
+  border-right: 1px solid var(--border);
+  background-color: var(--bg);
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.sidebar-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 0;
+}
+.add-folder-btn {
+  width: 1.5rem;
+  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--muted);
+  background-color: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease,
+              border-color 150ms ease;
+}
+.add-folder-btn:hover {
+  color: var(--accent);
+  background-color: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+.sidebar-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Each row in the tree. `data-depth` (0 for top-level, 1 for nested,
+   etc.) drives padding-left via attr() in modern browsers with a
+   fallback to depth-based class hooks. */
+.sidebar-item {
+  position: relative;
+}
+/* Use attr() for indentation; browsers without attr() support fall
+   back to the per-depth rules below. */
+.sidebar-item[data-depth="0"] > .folder-label { padding-left: 0.6rem; }
+.sidebar-item[data-depth="1"] > .folder-label { padding-left: 1.6rem; }
+.sidebar-item[data-depth="2"] > .folder-label { padding-left: 2.6rem; }
+.sidebar-item[data-depth="3"] > .folder-label { padding-left: 3.6rem; }
+
+.sidebar-item .folder-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.875rem;
+  color: var(--text);
+  text-decoration: none;
+  border-radius: 0.375rem;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease,
+              border-left-color 150ms ease;
+}
+.sidebar-item .folder-label:hover {
+  background-color: var(--surface-hover);
+  color: var(--accent);
+}
+.sidebar-item .folder-label.sidebar-link-active,
+.sidebar-item .folder-label[data-active="true"] {
+  background-color: var(--accent-dim);
+  color: var(--accent);
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+
+.sidebar-icon {
+  flex-shrink: 0;
+  font-size: 0.95rem;
+  line-height: 1;
+  opacity: 0.7;
+  /* Chromium renders colour emoji inconsistently across OS themes;
+     keep the icon muted by default so the active folder's accent
+     colour wins the eye. */
+}
+
+.sidebar-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-chevron {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: var(--muted);
+  opacity: 0.6;
+  transform: rotate(90deg); /* › → ▼ (always-expanded tree) */
+  transition: transform 150ms ease, opacity 150ms ease;
+}
+.sidebar-item[data-has-children="true"]:hover .sidebar-chevron {
+  opacity: 1;
+  color: var(--accent);
+}
+
+/* Add-folder form — hidden by default, shown when the user clicks + */
+.add-folder-form {
+  display: none;
+  margin-top: 0.75rem;
+  padding: 0 0.6rem;
+  font-size: 0.85rem;
+}
+.add-folder-form[data-open="true"] {
+  display: block;
+}
+.add-folder-form input {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background-color: var(--bg);
+  color: var(--text);
+  width: 100%;
+  margin-bottom: 0.35rem;
+}
+.add-folder-form input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+.add-folder-form button {
+  font-size: 0.8rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background-color: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  margin-right: 0.25rem;
+}
+.add-folder-form button[type="submit"] {
+  color: var(--bg);
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+.add-folder-form button:hover {
+  background-color: var(--surface-hover);
+}
+.add-folder-form .actions-status {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* ─── Empty state (issue #015) ─────────────────────────────────────────── */
+
+/* Centred, icon + message + CTA pattern. Used by feed (no bookmarks),
+   empty folder, search (no results), and tag filter (no matches). */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 4rem 2rem;
+  text-align: center;
+}
+.empty-icon {
+  font-size: 3rem;
+  opacity: 0.5;
+  line-height: 1;
+}
+.empty-message {
+  color: var(--muted);
+  font-size: 1rem;
+  max-width: 32rem;
+  margin: 0;
+}
+.empty-cta {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 0.375rem;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.9rem;
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+.empty-cta:hover {
+  background: var(--accent-dim);
+  color: var(--accent-text);
+  transform: translateY(-1px);
+}
+
+/* ─── Activity heading suffix (replaces inline styles) ────────────────── */
+
+.heading-suffix {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.9rem;
+  margin-left: 0.5rem;
+}
+.heading-suffix-muted {
+  color: var(--muted);
+}
+.heading-clear {
+  font-size: 0.85rem;
+  margin-left: 0.25rem;
+}
+
+/* ─── Hamburger button (issue #015) ───────────────────────────────────── */
+
+/* Hidden on desktop; the mobile media query reveals it. Lives in the
+   header next to the brand so it's discoverable on small screens. */
+.hamburger {
+  display: none;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  font-size: 1.1rem;
+  cursor: pointer;
+  margin-right: 0.75rem;
+  padding: 0;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.hamburger:hover {
+  background-color: var(--surface-hover);
+  border-color: var(--accent-dim);
+}
+
+/* ─── Mobile responsive (issue #015) ──────────────────────────────────── */
+
+@media (max-width: 720px) {
+  /* Header is more compact on mobile — the search form already lives
+     in the header so it stays accessible. */
+  .site-header {
+    padding: 0 1rem;
+    gap: 0.5rem;
+  }
+  /* The brand text takes too much space next to a search input on
+     narrow viewports; hide it and keep just the icon. */
+  .brand-name {
+    display: none;
+  }
+  /* Collapse the sidebar+main grid to a single column. The sidebar
+     slides in from the left as an overlay when the hamburger toggles
+     data-open on it. */
+  .layout {
+    grid-template-columns: 1fr;
+    padding: 1rem;
+  }
+  /* Sidebar becomes a fixed-position drawer. It's translated off-screen
+     by default; [data-open="true"] brings it in. Z-index 20 keeps it
+     above the feed but below modal dialogs (which would be 50+). */
+  .sidebar {
+    position: fixed;
+    top: 56px;
+    left: 0;
+    width: 280px;
+    height: calc(100vh - 56px);
+    transform: translateX(-100%);
+    transition: transform 200ms ease;
+    background-color: var(--bg);
+    border-right: 1px solid var(--border);
+    z-index: 20;
+    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.15);
+  }
+  .sidebar[data-open="true"] {
+    transform: translateX(0);
+  }
+  /* Reveal the hamburger now that it has work to do. */
+  .hamburger {
+    display: inline-flex;
+  }
+  /* Shrink the YouTube thumb on narrow screens so it doesn't push
+     the title onto its own line. Favicon stays 32×32 — already
+     small enough. */
+  .feed-item-thumb-youtube {
+    width: 60px;
+    height: 34px;
+  }
+  /* Tighter button row so the three default actions fit on one line. */
+  .feed-item-actions {
+    gap: 0.25rem;
+  }
+  /* Header search input shrinks so the right side stays on screen. */
+  .header-right .search-form input[type="search"] {
+    width: 10rem;
+  }
+  /* Settings table reflows to a more readable width. */
+  .settings-table {
+    font-size: 0.85rem;
+  }
+}

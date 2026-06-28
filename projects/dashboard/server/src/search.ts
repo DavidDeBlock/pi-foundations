@@ -40,6 +40,7 @@ import { queryFolderOptions, queryAllTagOptions, type CategorizeContext } from '
 // Re-export SearchFilters so callers (HTTP layer, tests) only import from
 // this module; the search-query-builder is an implementation detail.
 export type { SearchFilters } from './search-query-builder.js'
+import { COMMON_HEAD, THEME_SCRIPT_TAG, CLIPBOARD_SCRIPT_TAG, HAMBURGER_SCRIPT_TAG, renderHeader, renderEmptyState } from './view-shared.js'
 
 // ─── Result types ─────────────────────────────────────────────────────────
 
@@ -474,11 +475,15 @@ function renderSearchPage(
   response: SearchResponse,
   opts: SearchPageRenderOpts,
 ): string {
+  // Three display modes:
+  //   1. Empty query ("")          → prompt: "Type a query…"
+  //   2. Query with zero results   → centred .empty-state panel
+  //   3. Query with N>0 results    → status line + result list
   const statusHtml =
     response.mode === 'empty'
       ? `<p class="search-status">Type a query above to search bookmarks.</p>`
       : response.results.length === 0
-        ? `<p class="search-status">No matches for <strong>${escapeHtml(response.query)}</strong>.</p>`
+        ? renderEmptyState({ kind: 'no-results', query: response.query })
         : `<p class="search-status">${response.results.length} result${response.results.length === 1 ? '' : 's'} for <strong>${escapeHtml(response.query)}</strong>${response.mode === 'fuzzy' ? ' <span class="fuzzy">(fuzzy match)</span>' : ''}</p>`
 
   const resultsHtml =
@@ -491,19 +496,23 @@ function renderSearchPage(
   return `<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
+${COMMON_HEAD}
     <title>Search — Dashboard</title>
     <style>${SEARCH_PAGE_STYLES}</style>
   </head>
-  <body>
-    <h1>Dashboard</h1>
-    <p class="user">Signed in as <strong>${escapeHtml(user)}</strong></p>
-    ${renderSearchForm(opts)}
-    ${statusHtml}
-    ${resultsHtml}
-    ${paginationHtml}
-    <nav><a href="/">Activity</a> &middot; <a href="/settings">Settings</a></nav>
+  <body data-user="${escapeHtml(user)}">
+    ${renderHeader({ initialQuery: opts.query })}
+    <main class="search-main">
+      ${renderSearchForm(opts)}
+      ${statusHtml}
+      ${resultsHtml}
+      ${paginationHtml}
+      <nav><a href="/">Activity</a> &middot; <a href="/settings">Settings</a></nav>
+    </main>
     <script src="/static/search.js" defer></script>
+    ${CLIPBOARD_SCRIPT_TAG}
+    ${THEME_SCRIPT_TAG}
+    ${HAMBURGER_SCRIPT_TAG}
   </body>
 </html>`
 }

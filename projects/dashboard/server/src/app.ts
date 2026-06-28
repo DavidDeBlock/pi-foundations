@@ -68,5 +68,19 @@ export function createApp({
   app.route('/api/search', searchApi(db))
   app.route('/search', searchViewApi(db))
 
+  // Logout endpoint — returns 401 with a *new* realm so the browser
+  // drops the cached Basic-auth credentials and prompts again.
+  // Browser behaviour with Basic auth means there's no clean server-
+  // side "forget me" — a 401 with the original realm is silently
+  // re-authenticated by some browsers. The new realm name is the
+  // standard workaround.
+  app.get('/api/logout', (c) => {
+    c.header(
+      'WWW-Authenticate',
+      'Basic realm="Dashboard (logged out — enter credentials to sign back in)"',
+    )
+    return c.text('Logged out. Close this tab or refresh the dashboard.', 401)
+  })
+
   return app
 }

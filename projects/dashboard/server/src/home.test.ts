@@ -73,7 +73,11 @@ describe('GET / — activity feed landing page', () => {
     // Activity feed: the bookmark appears in the main area.
     expect(html).toContain('>A</a>')
     expect(html).toContain('href="https://a.com"')
-    expect(html).toContain('href="/bookmarks/')
+    // The edit button is the equivalent affordance in categorize mode
+    // (slice #012: card layout removed the explicit "details →" link in
+    // favour of the action row). The non-categorize path keeps the
+    // detail-page link via the same button.
+    expect(html).toContain('data-edit-title="true"')
   })
 
   it('renders the full tree structure (nested <ul>s in sidebar)', async () => {
@@ -188,7 +192,11 @@ describe('GET / — activity feed landing page', () => {
     const html = await res.text()
     // HTML-escaped form of: My & "special" title
     expect(html).toContain('My &amp; &quot;special&quot; title')
-    expect(html).toMatch(/href="\/bookmarks\/[^"]+"/)
+    // The ✏ edit button is the inline-rename affordance in categorize
+    // mode (slice #012). In non-categorize mode this same button is an
+    // <a href="/bookmarks/..."> linking to the detail page.
+    expect(html).toContain('data-edit-title="true"')
+    expect(html).toContain('data-action="edit"')
   })
 })
 
@@ -463,7 +471,7 @@ describe('GET /?folder=:id — sidebar folder filter', () => {
     expect(html).toContain('Web-book')
     expect(html).not.toContain('Cook-book')
     // Active folder is highlighted.
-    expect(html).toMatch(/<a[^>]+class="folder-label active"[^>]+data-active="true"[^>]*>[\s\S]*?Tech[\s\S]*?<\/a>/)
+    expect(html).toMatch(/<a[^>]+class="folder-label sidebar-link-active"[^>]+data-active="true"[^>]*>[\s\S]*?Tech[\s\S]*?<\/a>/)
     // Filter label in the heading (non-empty branch uses <span>, empty uses <strong>).
     expect(html).toContain('in Bar &gt; Tech')
   })

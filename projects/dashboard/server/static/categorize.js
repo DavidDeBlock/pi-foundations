@@ -385,7 +385,11 @@ function wireSidebar(aside) {
         }
       }
       const newEl = document.createElement('span')
-      newEl.className = 'folder-name'
+      // Keep BOTH the legacy `folder-name` class (this is what the
+      // dblclick handler queries to start a new rename) and the new
+      // `sidebar-name` class introduced in slice #013 so the new
+      // sidebar styling keeps applying after a rename.
+      newEl.className = 'sidebar-name folder-name'
       newEl.setAttribute('data-folder-name', '')
       newEl.setAttribute('data-folder-id', folderId)
       newEl.title = 'Double-click to rename'
@@ -405,20 +409,40 @@ function wireSidebar(aside) {
   })
 }
 
-/** Insert a newly created folder at the top of the sidebar tree. */
+/**
+ * Insert a newly created folder at the top of the sidebar tree.
+ *
+ * Mirrors the markup produced by `renderFolderTree` in activity-feed.ts
+ * so the new <li> picks up the same CSS (icon, chevron slot, active
+ * state) without needing a server round-trip. Slice #013 added the
+ * icon + chevron wrapper, so this client-side helper must match.
+ */
 function insertSidebarFolder(aside, folder) {
-  const tree = aside.querySelector('aside ul, ul')
   // Find the first <ul> in the aside (the top-level folder list).
   const topUl = aside.querySelector('ul')
   if (!topUl) return
   const li = document.createElement('li')
+  li.className = 'sidebar-item'
+  li.setAttribute('data-folder-id', folder.id)
+  li.setAttribute('data-depth', '0')
+  const a = document.createElement('a')
+  a.className = 'folder-label'
+  a.href = `/?folder=${encodeURIComponent(folder.id)}`
+  const icon = document.createElement('span')
+  icon.className = 'sidebar-icon'
+  icon.setAttribute('aria-hidden', 'true')
+  icon.textContent = '\ud83d\udcc1' // 📁
   const span = document.createElement('span')
-  span.className = 'folder-name'
+  // Both classes: `folder-name` for the rename hook, `sidebar-name`
+  // for the slice-#013 styling.
+  span.className = 'sidebar-name folder-name'
   span.setAttribute('data-folder-name', '')
   span.setAttribute('data-folder-id', folder.id)
   span.title = 'Double-click to rename'
   span.textContent = folder.name
-  li.appendChild(span)
+  a.appendChild(icon)
+  a.appendChild(span)
+  li.appendChild(a)
   topUl.appendChild(li)
 }
 

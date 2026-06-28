@@ -1,5 +1,6 @@
 import type { Context } from 'hono'
 import type { CreateTokenResult, TokenRecord, TokenStore } from './token-store.js'
+import { COMMON_HEAD, THEME_SCRIPT_TAG, CLIPBOARD_SCRIPT_TAG, HAMBURGER_SCRIPT_TAG, renderHeader } from './view-shared.js'
 
 export interface SettingsView {
   list(c: Context): Promise<Response>
@@ -52,7 +53,7 @@ function renderPage(
   return `<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
+${COMMON_HEAD}
     <title>Dashboard — Settings</title>
     <style>
       body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
@@ -74,7 +75,9 @@ function renderPage(
     </style>
   </head>
   <body>
-    <h1>Settings</h1>
+    ${renderHeader({ showSearch: false })}
+    <main class="settings-main">
+      <h1>Settings</h1>
     <nav><a href="/">Home</a><a href="/settings">Settings</a></nav>
 
     ${justCreated ? renderPlaintextOnce(justCreated) : ''}
@@ -89,6 +92,10 @@ function renderPage(
       <input type="text" name="label" placeholder="Label (e.g. 'Chrome extension — home desktop')" maxlength="100" />
       <button type="submit">Generate</button>
     </form>
+    ${CLIPBOARD_SCRIPT_TAG}
+    ${THEME_SCRIPT_TAG}
+    ${HAMBURGER_SCRIPT_TAG}
+    </main>
   </body>
 </html>`
 }

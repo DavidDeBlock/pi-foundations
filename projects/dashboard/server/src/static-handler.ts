@@ -1,13 +1,18 @@
-// static-handler.ts — small static-file handler for categorize.js
+// static-handler.ts — small static-file handler for browser-side assets
 //
 // The dashboard is server-rendered HTML and has no public/static
-// directory; the only static asset we ship is the browser-side
-// categorize.js (issue #008). Rather than introducing a static-file
-// middleware library, we hand-roll a tiny handler that resolves the
-// file from `static/` relative to the server's CWD.
+// directory; the assets we ship are listed in the ASSETS manifest
+// below. Rather than introducing a static-file middleware library,
+// we hand-roll a tiny handler that resolves the file from `static/`
+// relative to the server's CWD.
 //
-// Tradeoff: this is a special-case handler. If we ever need more
-// static assets, swap to Hono's `serveStatic` middleware.
+// Tradeoff: this is a special-case handler. If the manifest ever
+// grows past ~20 entries, swap to Hono's `serveStatic` middleware
+// with a directory listing.
+//
+// Adding a new asset: append to ASSETS, then add a test in
+// static-handler.test.ts that fetches the new path and asserts on
+// its content-type.
 
 import { Hono } from 'hono'
 import { readFileSync } from 'node:fs'
@@ -28,6 +33,31 @@ const ASSETS: Record<string, Asset> = {
   '/search.js': {
     path: resolve(STATIC_DIR, 'search.js'),
     contentType: 'application/javascript; charset=utf-8',
+  },
+  '/clipboard.js': {
+    path: resolve(STATIC_DIR, 'clipboard.js'),
+    contentType: 'application/javascript; charset=utf-8',
+  },
+  // ── Issue #011: styling foundation ─────────────────────────────
+  '/styles.css': {
+    path: resolve(STATIC_DIR, 'styles.css'),
+    contentType: 'text/css; charset=utf-8',
+  },
+  '/theme.js': {
+    path: resolve(STATIC_DIR, 'theme.js'),
+    contentType: 'application/javascript; charset=utf-8',
+  },
+  '/fonts/Inter-Regular.woff2': {
+    path: resolve(STATIC_DIR, 'fonts', 'Inter-Regular.woff2'),
+    contentType: 'font/woff2',
+  },
+  '/fonts/Inter-SemiBold.woff2': {
+    path: resolve(STATIC_DIR, 'fonts', 'Inter-SemiBold.woff2'),
+    contentType: 'font/woff2',
+  },
+  '/fonts/JetBrainsMono-Regular.woff2': {
+    path: resolve(STATIC_DIR, 'fonts', 'JetBrainsMono-Regular.woff2'),
+    contentType: 'font/woff2',
   },
 }
 

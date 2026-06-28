@@ -25,11 +25,43 @@
 //   - HTTP routing (app.ts owns that)
 //   - Browser-side JS (categorize.js is its own file)
 //   - Search (#009)
+//
+// #012 additions (card layout):
+//   - `getSourceFromUrl(url)` parses the URL hostname and detects
+//     YouTube (used by the source badge in the new card markup).
+//   - `formatRelativeTime(iso)` returns a short relative-time string
+//     ("just now", "5m ago", "2h ago", "yesterday", "3d ago",
+//     "Jan 15", "Mar 2025") used inside the <time> element of the
+//     card. The raw ISO datetime is still emitted in the `datetime`
+//     and `title` attributes for machine-readability + hover tooltip.
+//   - The card markup is now <article class="feed-item"> with a
+//     `.feed-item-header` (source badge + thumb slot),
+//     `.feed-item-title`, `.feed-item-meta` (folder + relative time
+//     + tags), and `.feed-item-actions` (open/edit/copy buttons).
+//
+// #014 additions (favicons + YouTube thumbnails):
+//   - `getCardThumbnail(url)` returns `{ type, src, alt }` for a
+//     favicon (google.com/s2/favicons) or a YouTube video thumbnail
+//     (img.youtube.com/vi/<id>/hqdefault.jpg). Returns null for
+//     malformed URLs.
+//   - `getYouTubeVideoId(url)` extracts the 11-char ID from a
+//     YouTube watch/embed/short URL; null otherwise.
+//   - `.feed-item-thumb-slot` is now populated by `renderFeedItem`
+//     with an <img class="feed-item-thumb …"> carrying `loading="lazy"`
+//     and an `onerror` handler that hides the broken-image icon.
 
 import { Hono } from 'hono'
 import type { Database } from './db.js'
 import { buildTree, type FolderNode } from './folders.js'
 import type { AuthVariables } from './auth.js'
+import {
+  COMMON_HEAD,
+  THEME_SCRIPT_TAG,
+  CLIPBOARD_SCRIPT_TAG,
+  HAMBURGER_SCRIPT_TAG,
+  renderHeader,
+  renderEmptyState,
+} from './view-shared.js'
 
 // ─── Public types ─────────────────────────────────────────────────────────
 
@@ -300,42 +332,31 @@ function splitTags(csv: string): string[] {
 
 // ─── View layer ───────────────────────────────────────────────────────────
 
+// Only the rules that aren't yet in /static/styles.css (and aren't
+// scheduled for a future slice) belong here. After slice #013 the
+// inline block is small — just the bookmark-detail <dl> styling, the
+// pagination links, and a couple of categorize.js hooks that depend
+// on inline rules for cascade ordering during the migration.
 const BASE_STYLES = `
-  body { font-family: system-ui, sans-serif; max-width: 56rem; margin: 4rem auto; padding: 0 1rem; color: #1a1a1a; }
-  h1 { font-weight: 500; }
-  .user { color: #666; font-size: 0.9rem; }
   nav { margin-top: 1.5rem; }
-  nav a { margin-right: 1rem; color: #06c; }
-  .layout { display: grid; grid-template-columns: 14rem 1fr; gap: 2rem; margin-top: 1.5rem; }
-  aside { border-right: 1px solid #eee; padding-right: 1rem; }
-  aside h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: #666; margin: 0 0 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
-  aside ul { list-style: none; padding: 0; margin: 0; }
-  aside li { margin: 0.15rem 0; }
-  aside .folder-label { color: #1a1a1a; text-decoration: none; display: block; padding: 0.2rem 0.4rem; border-radius: 0.25rem; cursor: pointer; }
-  aside .folder-label:hover { background: #f0f0f0; }
-  aside .folder-label.active { background: #06c; color: #fff; font-weight: 500; }
-  aside .folder-label.active:hover { background: #06c; }
-  aside .empty { color: #999; font-style: italic; }
-  main h2 { font-weight: 500; font-size: 1.1rem; margin: 0 0 1rem; }
-  main .empty { color: #999; font-style: italic; padding: 2rem 0; text-align: center; }
-  ul.feed { list-style: none; padding: 0; margin: 0; }
-  .feed-item { padding: 1rem 0; border-bottom: 1px solid #eee; }
-  .feed-item:last-child { border-bottom: none; }
-  .feed-item .title { font-size: 1rem; margin: 0 0 0.25rem; font-weight: 500; }
-  .feed-item .title a { color: #1a1a1a; text-decoration: none; }
-  .feed-item .title a:hover { text-decoration: underline; }
-  .feed-item .detail-link { margin-left: 0.5rem; color: #06c; text-decoration: none; font-size: 0.85rem; }
-  .feed-item .meta { color: #666; font-size: 0.85rem; margin: 0 0 0.5rem; }
-  .feed-item .meta .folder-path { color: #444; }
-  .feed-item .tags { margin: 0; }
-  .tag { display: inline-block; background: #eef; color: #335; padding: 0.1rem 0.5rem; border-radius: 0.25rem; font-size: 0.8rem; margin-right: 0.25rem; margin-bottom: 0.25rem; }
-  .pagination { display: flex; justify-content: space-between; align-items: center; padding: 1rem 0; color: #666; font-size: 0.9rem; }
-  .pagination a { color: #06c; text-decoration: none; }
+  nav a { margin-right: 1rem; color: var(--accent); }
+  nav a:hover { text-decoration: underline; }
+  .pagination { display: flex; justify-content: space-between; align-items: center; padding: 1rem 0; color: var(--muted); font-size: 0.9rem; }
+  .pagination a { color: var(--accent); text-decoration: none; }
   .pagination a:hover { text-decoration: underline; }
-  .pagination .disabled { color: #bbb; }
-  .search-form { margin: 1rem 0; display: flex; gap: 0.5rem; align-items: center; }
-  .search-form input[type=search] { font-size: 1rem; padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 0.25rem; min-width: 20rem; }
-  .search-form button { font-size: 0.9rem; padding: 0.4rem 0.8rem; border: 1px solid #06c; background: #06c; color: #fff; border-radius: 0.25rem; cursor: pointer; }
+  .pagination .disabled { color: var(--border); }
+  main h2 { font-weight: 500; font-size: 1.1rem; margin: 0 0 1rem; }
+  main .empty { color: var(--muted); font-style: italic; padding: 2rem 0; text-align: center; }
+  .sidebar .empty { color: var(--muted); font-style: italic; padding: 0.5rem 0.6rem; }
+  dl { margin: 1.5rem 0; }
+  dt { color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 1rem; }
+  dd { margin-left: 0; margin-bottom: 0.5rem; }
+  .detail-main h1 { font-weight: 500; margin: 1.5rem 0 0.5rem; }
+  .detail-main h1 a { color: var(--text); text-decoration: none; }
+  .detail-main h1 a:hover { color: var(--accent); text-decoration: underline; }
+  .detail-main .url a { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.875rem; word-break: break-all; color: var(--accent); }
+  .detail-main .detail-edit select { font-size: 0.85rem; padding: 0.2rem 0.3rem; border: 1px solid var(--border); border-radius: 0.25rem; background-color: var(--bg); color: var(--text); }
+  .detail-main nav.back { margin-top: 2rem; }
 `
 
 const CATEGORIZE_STYLES = `
@@ -392,21 +413,14 @@ export function renderFeedPage(
   return `<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
+${COMMON_HEAD}
     <title>Dashboard — Activity</title>
     <style>${styles}</style>
   </head>
-  <body>
-    <h1>Dashboard</h1>
-    <p class="user">Signed in as <strong>${escapeHtml(user)}</strong></p>
-    <form class="search-form" data-search-form method="get" action="/search">
-      <input type="search" name="q" placeholder="Search\u2026" data-search-input>
-      <button type="submit">Search</button>
-    </form>
+  <body data-user="${escapeHtml(user)}">
+    ${renderHeader()}
     <div class="layout">
-      <aside>
-        ${sidebarHtml}
-      </aside>
+      ${sidebarHtml}
       <main>
         ${renderFeedMain(feed, itemsHtml, activeFolderId ?? undefined, activeFolderPath ?? undefined)}
         <nav><a href="/settings">Settings</a> &middot; <a href="/api/folders">JSON</a></nav>
@@ -414,6 +428,9 @@ export function renderFeedPage(
     </div>
     ${categorize ? renderCategorizeDatalists(feed.items, categorize.allTags) : ''}
     ${categorize ? categorizeScriptTag() : ''}
+    ${CLIPBOARD_SCRIPT_TAG}
+    ${THEME_SCRIPT_TAG}
+    ${HAMBURGER_SCRIPT_TAG}
   </body>
 </html>`
 }
@@ -452,44 +469,82 @@ function findFolderNodeId(
 
 function renderFeedMain(feed: FeedPage, itemsHtml: string, activeFolderId?: string, activeFolderPath?: string): string {
   if (feed.totalItems === 0) {
-    const emptyMessage = activeFolderPath
-      ? `No bookmarks in <strong>${escapeHtml(activeFolderPath)}</strong> or its subfolders. <a href="/">Show all bookmarks</a>.`
-      : 'No bookmarks synced yet. Install the Chrome extension and save its settings to import your bookmark tree.'
+    const emptyState = activeFolderPath
+      ? { kind: 'empty-folder' as const, folderPath: activeFolderPath }
+      : { kind: 'no-bookmarks' as const }
     return `
-      <h2>Activity${activeFolderPath ? ` <span style="color:#666;font-weight:400;font-size:0.9rem">in ${escapeHtml(activeFolderPath)}</span>` : ''}</h2>
-      <p class="empty">${emptyMessage}</p>
+      <h2>Activity${activeFolderPath ? ` <span class="heading-suffix">in ${escapeHtml(activeFolderPath)}</span>` : ''}</h2>
+      ${renderEmptyState(emptyState)}
     `
   }
   const start = (feed.page - 1) * feed.perPage + 1
   const end = Math.min(start + feed.perPage - 1, feed.totalItems)
   const range = start === end ? `${start}` : `${start}–${end}`
   const headingSuffix = activeFolderPath
-    ? ` <span style="color:#666;font-weight:400;font-size:0.9rem">in ${escapeHtml(activeFolderPath)} (${range} of ${feed.totalItems}) <a href="/" style="font-size:0.85rem">clear</a></span>`
-    : ` <span style="color:#999;font-weight:400;font-size:0.9rem">(${range} of ${feed.totalItems})</span>`
+    ? ` <span class="heading-suffix">in ${escapeHtml(activeFolderPath)} (${range} of ${feed.totalItems}) <a href="/" class="heading-clear">clear</a></span>`
+    : ` <span class="heading-suffix heading-suffix-muted">(${range} of ${feed.totalItems})</span>`
   return `
     <h2>Activity${headingSuffix}</h2>
-    <ul class="feed">${itemsHtml}</ul>
+    <div class="feed-list">${itemsHtml}</div>
     ${renderPagination(feed, activeFolderId)}
   `
 }
 
 function renderFeedItem(item: FeedItem, categorize?: CategorizeContext): string {
+  const source = getSourceFromUrl(item.url)
+  const thumb = renderThumb(item.url)
   const tagsHtml = renderTagList(item.tags, categorize, item.id)
-  const actionsHtml = categorize ? renderCardActions(item, categorize) : ''
+  const sourceBadgeClass = source.isYouTube ? 'source-badge source-badge-youtube' : 'source-badge'
+  const sourceBadgeTitle = source.isYouTube ? 'YouTube' : source.domain
+  const editAttr = categorize
+    ? 'data-edit-title="true"'
+    : `href="/bookmarks/${encodeURIComponent(item.id)}"`
+  const editTag = categorize ? 'button' : 'a'
   return `
-    <li class="feed-item" data-bookmark-id="${escapeHtml(item.id)}" data-folder-path="${escapeHtml(item.folderPath)}">
-      <h3 class="title">
+    <article class="feed-item" data-bookmark-id="${escapeHtml(item.id)}" data-folder-path="${escapeHtml(item.folderPath)}" data-bookmark-url="${escapeHtml(item.url)}">
+      <header class="feed-item-header">
+        <span class="${sourceBadgeClass}" data-source="${escapeHtml(source.domain)}" title="${escapeHtml(sourceBadgeTitle)}">${escapeHtml(source.badgeLabel)}</span>
+        ${thumb}
+      </header>
+      <h3 class="feed-item-title title">
         <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">${escapeHtml(item.title)}</a>
-        <a class="detail-link" href="/bookmarks/${encodeURIComponent(item.id)}">details →</a>
       </h3>
-      <p class="meta">
-        <span class="folder-path">${escapeHtml(item.folderPath)}</span> ·
-        <time datetime="${escapeHtml(item.createdAt)}">${formatDate(item.createdAt)}</time>
-      </p>
-      ${tagsHtml}
-      ${actionsHtml}
-    </li>
+      <div class="feed-item-meta">
+        <span class="folder-path" data-folder-display>${escapeHtml(item.folderPath)}</span>
+        <span class="meta-sep">·</span>
+        <time datetime="${escapeHtml(item.createdAt)}" title="${escapeHtml(item.createdAt)}">${formatRelativeTime(item.createdAt)}</time>
+        ${tagsHtml ? `<span class="meta-sep">·</span>${tagsHtml}` : ''}
+      </div>
+      <div class="feed-item-actions">
+        <a class="action-button" href="${escapeHtml(item.url)}" target="_blank" rel="noopener" data-action="open" title="Open in new tab" aria-label="Open in new tab">↗</a>
+        <${editTag} class="action-button" ${editAttr} data-action="edit" title="${categorize ? 'Edit title inline' : 'View details'}" aria-label="${categorize ? 'Edit title' : 'View details'}">${categorize ? '✏' : 'ⓘ'}</${editTag}>
+        <button type="button" class="action-button" data-action="copy" title="Copy URL" aria-label="Copy URL">📋</button>
+        ${categorize ? renderCategorizeControls(item, categorize) : ''}
+      </div>
+    </article>
   `
+}
+
+/**
+ * Render the thumbnail <img> for a card. Returns an empty string when
+ * the URL is malformed (no thumbnail to show); otherwise emits a
+ * lazy-loaded <img> with an `onerror` handler that hides broken-image
+ * icons. The handler uses `style.display='none'` (not `remove()`)
+ * so the surrounding flex layout doesn't reflow mid-fade.
+ *
+ * Slice #014 fills the slot that #012 left empty.
+ */
+function renderThumb(url: string): string {
+  const thumb = getCardThumbnail(url)
+  if (!thumb) return ''
+  const klass =
+    thumb.type === 'youtube'
+      ? 'feed-item-thumb feed-item-thumb-youtube'
+      : 'feed-item-thumb feed-item-thumb-favicon'
+  // src/alt come from a trusted URL parser + a fixed CDN host, so
+  // they're already safe to interpolate; escapeHtml is still applied
+  // so future refactors don't silently introduce an injection.
+  return `<img class="${klass}" src="${escapeHtml(thumb.src)}" alt="${escapeHtml(thumb.alt)}" loading="lazy" decoding="async" onerror="this.style.display='none'">`
 }
 
 function renderTagList(
@@ -515,21 +570,17 @@ function renderTagList(
   const inputHtml = categorize
     ? `<input type="text" class="tag-input" list="tag-suggestions-${escapeHtml(bookmarkId)}" placeholder="add tag…" data-tag-input>`
     : ''
-  return `<p class="tags" data-tag-list>${chips}${inputHtml}</p>`
+  return `<div class="tags" data-tag-list>${chips}${inputHtml}</div>`
 }
 
-function renderCardActions(item: FeedItem, ctx: CategorizeContext): string {
+function renderCategorizeControls(item: FeedItem, ctx: CategorizeContext): string {
   const folderSelect = renderFolderSelect(item.id, ctx.folderOptions)
   return `
-    <div class="actions">
-      <span class="folder-path" data-folder-display>${escapeHtml(item.folderPath)}</span>
-      <select class="folder-select" data-folder-select title="Move to folder">
-        ${folderSelect}
-      </select>
-      <button type="button" class="edit-title-btn" data-edit-title>edit title</button>
-      <button type="button" class="delete-btn" data-delete-bookmark title="Delete this bookmark">delete</button>
-      <span class="actions-status" data-actions-status></span>
-    </div>
+    <select class="folder-select action-select" data-folder-select title="Move to folder" aria-label="Move to folder">
+      ${folderSelect}
+    </select>
+    <button type="button" class="action-button" data-delete-bookmark title="Delete this bookmark" aria-label="Delete">🗑</button>
+    <span class="actions-status" data-actions-status></span>
   `
 }
 
@@ -613,11 +664,14 @@ export function renderDetailPage(
   return `<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
+${COMMON_HEAD}
     <title>${escapeHtml(detail.title)} — Dashboard</title>
     <style>${styles}</style>
   </head>
   <body>
+    ${renderHeader()}
+    <div class="layout">
+      <main class="detail-main">
     <h1><a href="${escapeHtml(detail.url)}" target="_blank" rel="noopener">${escapeHtml(detail.title)}</a></h1>
     <dl>
       <dt>URL</dt>
@@ -640,6 +694,11 @@ export function renderDetailPage(
     <nav class="back"><a href="/">← Back to activity feed</a></nav>
     ${categorize ? `<datalist id="tag-suggestions-${escapeHtml(detail.id)}">${categorize.allTags.map((t) => `<option value="${escapeHtml(t.name)}">`).join('')}</datalist>` : ''}
     ${categorize ? categorizeScriptTag() : ''}
+    ${CLIPBOARD_SCRIPT_TAG}
+    ${THEME_SCRIPT_TAG}
+    ${HAMBURGER_SCRIPT_TAG}
+      </main>
+    </div>
   </body>
 </html>`
 }
@@ -659,14 +718,20 @@ export function renderDetailNotFound(): string {
   return `<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
+${COMMON_HEAD}
     <title>Not found — Dashboard</title>
     <style>body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem; color: #1a1a1a; } h1 { font-weight: 500; } nav { margin-top: 2rem; } nav a { color: #06c; text-decoration: none; }</style>
   </head>
   <body>
-    <h1>Bookmark not found</h1>
-    <p>That bookmark doesn't exist (or was deleted).</p>
-    <nav><a href="/">← Back to activity feed</a></nav>
+    ${renderHeader()}
+    <main class="detail-main">
+      <h1>Bookmark not found</h1>
+      <p>That bookmark doesn't exist (or was deleted).</p>
+      <nav><a href="/">← Back to activity feed</a></nav>
+    </main>
+    ${CLIPBOARD_SCRIPT_TAG}
+    ${THEME_SCRIPT_TAG}
+    ${HAMBURGER_SCRIPT_TAG}
   </body>
 </html>`
 }
@@ -679,14 +744,21 @@ function renderFolderSidebarCategorize(
   activeFolderId?: string | null,
 ): string {
   return `
-    <h2>Folders <button type="button" class="add-folder-btn" data-add-folder title="Create folder">+</button></h2>
-    ${renderFolderTreeBody(tree, true, activeFolderId)}
-    <form class="add-folder-form" data-add-folder-form>
-      <input type="text" placeholder="New folder name" required>
-      <button type="submit">Add</button>
-      <button type="button" data-cancel-add-folder>cancel</button>
-      <span class="actions-status" data-actions-status></span>
-    </form>
+    <aside class="sidebar">
+      <header class="sidebar-header">
+        <h2 class="sidebar-title">Folders</h2>
+        <button type="button" class="add-folder-btn" data-add-folder title="New folder" aria-label="New folder">＋</button>
+      </header>
+      <div class="sidebar-tree">
+        <ul>${renderFolderTree(tree, true, activeFolderId, 0)}</ul>
+      </div>
+      <form class="add-folder-form" data-add-folder-form>
+        <input type="text" placeholder="New folder name" required>
+        <button type="submit">Add</button>
+        <button type="button" data-cancel-add-folder>cancel</button>
+        <span class="actions-status" data-actions-status></span>
+      </form>
+    </aside>
   `
 }
 
@@ -696,52 +768,62 @@ function renderFolderSidebar(
   activeFolderId?: string | null,
 ): string {
   return `
-    <h2>Folders</h2>
-    ${renderFolderTreeBody(tree, false, activeFolderId)}
+    <aside class="sidebar">
+      <header class="sidebar-header">
+        <h2 class="sidebar-title">Folders</h2>
+      </header>
+      <div class="sidebar-tree">
+        <ul>${renderFolderTree(tree, false, activeFolderId, 0)}</ul>
+      </div>
+    </aside>
   `
 }
 
-function renderFolderTreeBody(
-  nodes: readonly FolderNode[],
-  categorize: boolean,
-  activeFolderId?: string | null,
-): string {
-  if (nodes.length === 0) {
-    return '<p class="empty">No folders yet. Click + to create one.</p>'
-  }
-  return `<ul>${renderFolderTree(nodes, categorize, activeFolderId)}</ul>`
-}
-
+/**
+ * Render the folder tree as a flat list of <li class="sidebar-item">.
+ *
+ * Each item carries:
+ *   - `data-folder-id` so JS hooks (categorize.js) can find the node.
+ *   - `data-depth` so CSS can compute padding-left from it without
+ *     counting ancestor <ul> levels.
+ *
+ * The visible label is `<a class="folder-label">` containing:
+ *   - a folder icon (`📁`) — purely visual
+ *   - the folder name (`.sidebar-name.folder-name` so rename hook
+ *     targets it without needing a new selector)
+ *   - a chevron (`›`) when the folder has children, rotated 90°
+ *     via CSS to point down (the tree is always server-expanded)
+ */
 function renderFolderTree(
   nodes: readonly FolderNode[],
   categorize: boolean,
-  activeFolderId?: string | null,
+  activeFolderId: string | null | undefined,
+  depth: number,
 ): string {
   return nodes
     .map((node) => {
-      const childHtml =
-        node.children.length > 0
-          ? `<ul>${renderFolderTree(node.children, categorize, activeFolderId)}</ul>`
-          : ''
-      // Each folder is rendered as a link that filters the feed to
-      // that folder (and its descendants). The currently-active
-      // folder is marked with data-active="true" and styled
-      // differently — both for affordance and so tests can assert it.
+      const hasChildren = node.children.length > 0
+      const childHtml = hasChildren
+        ? `<ul>${renderFolderTree(node.children, categorize, activeFolderId, depth + 1)}</ul>`
+        : ''
       const isActive = node.id === activeFolderId
       const activeAttr = isActive ? ' data-active="true"' : ''
-      const labelClass = isActive ? 'folder-label active' : 'folder-label'
+      const labelClass = isActive ? 'folder-label sidebar-link-active' : 'folder-label'
+      const chevronHtml = hasChildren
+        ? '<span class="sidebar-chevron" aria-hidden="true">›</span>'
+        : ''
       const href = `/?folder=${encodeURIComponent(node.id)}`
       if (categorize) {
-        // Categorize-mode folders still get the data attributes the
-        // inline rename hook depends on, but the click target is the
-        // anchor (not the span) so a single click filters while a
-        // double-click on the span still triggers rename. The
-        // categorize.js script checks `event.target` to disambiguate.
-        const nameHtml = `<a class="${labelClass}" href="${href}"${activeAttr}><span class="folder-name" data-folder-id="${escapeHtml(node.id)}" data-folder-name title="Click to filter, double-click to rename">${escapeHtml(node.name)}</span></a>`
-        return `<li>${nameHtml}${childHtml}</li>`
+        // Categorize-mode folders keep the data attributes the inline
+        // rename hook depends on. The chevron and icon live OUTSIDE
+        // the `.folder-name` span so they survive the rename
+        // swap (categorize.js only replaces the inner span with an
+        // <input>).
+        const nameHtml = `<a class="${labelClass}" href="${href}"${activeAttr}><span class="sidebar-icon" aria-hidden="true">\ud83d\udcc1</span><span class="sidebar-name folder-name" data-folder-name data-folder-id="${escapeHtml(node.id)}" title="Click to filter, double-click to rename">${escapeHtml(node.name)}</span>${chevronHtml}</a>`
+        return `<li class="sidebar-item" data-folder-id="${escapeHtml(node.id)}" data-depth="${depth}"${hasChildren ? ' data-has-children="true"' : ''}>${nameHtml}${childHtml}</li>`
       }
-      const nameHtml = `<a class="${labelClass}" href="${href}"${activeAttr}>${escapeHtml(node.name)}</a>`
-      return `<li>${nameHtml}${childHtml}</li>`
+      const nameHtml = `<a class="${labelClass}" href="${href}"${activeAttr}><span class="sidebar-icon" aria-hidden="true">\ud83d\udcc1</span><span class="sidebar-name">${escapeHtml(node.name)}</span>${chevronHtml}</a>`
+      return `<li class="sidebar-item" data-folder-id="${escapeHtml(node.id)}" data-depth="${depth}"${hasChildren ? ' data-has-children="true"' : ''}>${nameHtml}${childHtml}</li>`
     })
     .join('')
 }
@@ -757,6 +839,168 @@ function formatDate(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+/**
+ * ISO 8601 → short relative-time string for card meta line.
+ *
+ *   < 60s          → "just now"
+ *   < 60m          → "Nm ago"
+ *   < 24h, same d  → "Nh ago"
+ *   exactly 1 day  → "yesterday"
+ *   < 7d           → "Nd ago"
+ *   same calendar year → "Jan 15"
+ *   different year     → "Mar 2025"
+ *
+ * Returns the raw ISO string if parsing fails so a malformed date
+ * never blanks out the card meta line.
+ */
+function formatRelativeTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.valueOf())) return iso
+  const now = Date.now()
+  const diffMs = now - d.valueOf()
+  if (diffMs < 0) {
+    // Future-dated (clock skew, manual import). Show the same shape
+    // but with "in" so the user notices.
+    return formatRelativeTimeFuture(diffMs)
+  }
+  const diffSec = Math.floor(diffMs / 1000)
+  if (diffSec < 60) return 'just now'
+  const diffMin = Math.floor(diffSec / 60)
+  if (diffMin < 60) return `${diffMin}m ago`
+  const diffHour = Math.floor(diffMin / 60)
+  if (diffHour < 24) return `${diffHour}h ago`
+  const diffDay = Math.floor(diffHour / 24)
+  if (diffDay === 1) return 'yesterday'
+  if (diffDay < 7) return `${diffDay}d ago`
+  return formatRelativeTimeAbsolute(d)
+}
+
+/** "in Nm / Nh / Nd" counterpart for clock skew / future dates. */
+function formatRelativeTimeFuture(negativeDiffMs: number): string {
+  const diffSec = Math.ceil(-negativeDiffMs / 1000)
+  if (diffSec < 60) return 'in a moment'
+  const diffMin = Math.ceil(diffSec / 60)
+  if (diffMin < 60) return `in ${diffMin}m`
+  const diffHour = Math.ceil(diffMin / 60)
+  if (diffHour < 24) return `in ${diffHour}h`
+  const diffDay = Math.ceil(diffHour / 24)
+  return `in ${diffDay}d`
+}
+
+/** "Jan 15" (same year) or "Mar 2025" (different year). */
+function formatRelativeTimeAbsolute(d: Date): string {
+  const now = new Date()
+  const sameYear = d.getFullYear() === now.getFullYear()
+  return d.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  })
+}
+
+/**
+ * Parse a URL into the bits the card header needs.
+ *
+ *   - `domain`: hostname with leading `www.` stripped (e.g.
+ *     `github.com`, not `www.github.com`).
+ *   - `badgeLabel`: same as `domain` today; kept separate so we can
+ *     upper-case, abbreviate, or override per-site without changing
+ *     every call site.
+ *   - `isYouTube`: true for `youtube.com` and `youtu.be` URLs. Used by
+ *     the source badge (red accent) and by slice #014 to swap the
+ *     favicon thumbnail for a YouTube video thumbnail.
+ *
+ * Returns safe fallbacks if `url` can't be parsed so a single bad
+ * bookmark never crashes the feed render.
+ */
+export interface SourceInfo {
+  readonly domain: string
+  readonly badgeLabel: string
+  readonly isYouTube: boolean
+}
+
+export function getSourceFromUrl(url: string): SourceInfo {
+  try {
+    const parsed = new URL(url)
+    let host = parsed.hostname.toLowerCase()
+    if (host.startsWith('www.')) host = host.slice(4)
+    if (!host) return { domain: url, badgeLabel: url, isYouTube: false }
+    const isYouTube = host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtu.be'
+    return { domain: host, badgeLabel: host, isYouTube }
+  } catch {
+    return { domain: url, badgeLabel: url, isYouTube: false }
+  }
+}
+
+// ─── Thumbnail helper (issue #014) ─────────────────────────────────────────
+
+/**
+ * What kind of thumbnail (if any) should be rendered for a bookmark URL.
+ * YouTube URLs get a proper video thumbnail (80×45); everything else
+ * gets a 32×32 favicon. `null` means "no thumbnail" (malformed URL).
+ */
+export type Thumbnail =
+  | { readonly type: 'youtube'; readonly src: string; readonly alt: string }
+  | { readonly type: 'favicon'; readonly src: string; readonly alt: string }
+  | null
+
+/**
+ * Extract the YouTube video ID from a watch/embed/short URL, or null
+ * if the URL isn't a YouTube link with a recognised shape.
+ *
+ * Accepts:
+ *   - youtube.com/watch?v=ID         (with optional www. or m. prefix)
+ *   - youtube.com/embed/ID
+ *   - youtu.be/ID
+ * The video ID is the canonical 11-character base64-ish token.
+ *
+ * Single capture group: the alternation is structured so the ID is
+ * always at the END of the match, regardless of which branch fires.
+ */
+const YOUTUBE_REGEX =
+  /^https?:\/\/(?:(?:(?:www|m)\.)?youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+
+export function getYouTubeVideoId(url: string): string | null {
+  const m = url.match(YOUTUBE_REGEX)
+  return m ? m[1] : null
+}
+
+/**
+ * Resolve a bookmark URL to a thumbnail source. Used by the card
+ * layout to populate `.feed-item-thumb-slot`.
+ *
+ * - YouTube → returns a `youtube` thumbnail pointing at the standard
+ *   `img.youtube.com/vi/<id>/hqdefault.jpg` (120×90, scaled by CSS).
+ * - Anything else with a hostname → returns a `favicon` thumbnail
+ *   using Google's public favicon service (always 32×32 actual size;
+ *   `sz=64` requests a 2× version so high-DPI displays don't blur).
+ * - Malformed / no-hostname URLs → returns `null`. The card skips
+ *   the `<img>` and the thumb slot collapses to zero width.
+ */
+export function getCardThumbnail(url: string): Thumbnail {
+  const videoId = getYouTubeVideoId(url)
+  if (videoId) {
+    return {
+      type: 'youtube',
+      src: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+      alt: 'YouTube video thumbnail',
+    }
+  }
+  try {
+    const parsed = new URL(url)
+    let host = parsed.hostname.toLowerCase()
+    if (host.startsWith('www.')) host = host.slice(4)
+    if (!host) return null
+    return {
+      type: 'favicon',
+      src: `https://www.google.com/s2/favicons?domain=${host}&sz=64`,
+      alt: `${host} favicon`,
+    }
+  } catch {
+    return null
+  }
 }
 
 /** HTML-escape user-controlled values (titles, URLs, folder names). */
