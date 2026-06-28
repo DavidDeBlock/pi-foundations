@@ -214,3 +214,324 @@ function seedFolders(db: Database, folders: readonly FolderSeed[]): void {
     )
   }
 }
+
+// ─── POST /api/folders ────────────────────────────────────────────────────
+
+describe('POST /api/folders', () => {
+  async function buildAppWithDb(): Promise<{
+    app: Hono<{ Variables: AuthVariables }>
+    db: Database
+    tokenStore: InMemoryTokenStore
+  }> {
+    const db = new Database(':memory:')
+    await runMigrations(db, { dir: resolve(process.cwd(), 'migrations') })
+    const tokenStore = new InMemoryTokenStore()
+    const app = new Hono<{ Variables: AuthVariables }>()
+    app.use('*', auth({ passwordHash: HASH, tokenStore }))
+    const { foldersApi } = await import('./folders.js')
+    app.route('/api/folders', foldersApi(db))
+    return { app, db, tokenStore }
+  }
+
+  it('creates a root-level folder with name only', async () => {
+    const { app, db } = await buildAppWithDb()
+    const res = await app.request('/api/folders', {
+      method: 'POST',
+      headers: {
+        authorization: basicHeader('david', PASSWORD),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Tech' }),
+    })
+    expect(res.status).toBe(201)
+    const created = (await res.json()) as { id: string; name: string; parentId: string | null }
+    expect(created.name).toBe('Tech')
+    expect(created.parentId).toBeNull()
+    expect(db.get<{ name: string }>('SELECT name FROM folders WHERE id = ?', [created.id])?.name).toBe('Tech')
+  })
+
+  it('creates a nested folder under a valid parent', async () => {
+    const { app, db } = await buildAppWithDb()
+    seedFolders(db, [{ id: 'p1', parentId: null, name: 'Parent' }])
+    const res = await app.request('/api/folders', {
+      method: 'POST',
+      headers: {
+        authorization: basicHeader('david', PASSWORD),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Child', parentId: 'p1' }),
+    })
+    expect(res.status).toBe(201)
+    const created = (await res.json()) as { name: string; parentId: string }
+    expect(created.name).toBe('Child')
+    expect(created.parentId).toBe('p1')
+  })
+
+  it('rejects empty / whitespace-only name (400 invalid_name)', async () => {
+    const { app } = await buildAppWithDb()
+    for (const bad of ['', '   ', '\t\n']) {
+      const res = await app.request('/api/folders', {
+        method: 'POST',
+        headers: {
+          authorization: basicHeader('david', PASSWORD),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ name: bad }),
+      })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({ error: 'invalid_name' })
+    }
+  })
+
+  it('rejects unknown parent id (400 unknown_parent)', async () => {
+    const { app } = await buildAppWithDb()
+    const res = await app.request('/api/folders', {
+      method: 'POST',
+      headers: {
+        authorization: basicHeader('david', PASSWORD),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Orphan', parentId: 'does-not-exist' }),
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: 'unknown_parent' })
+  })
+
+  it('rejects malformed JSON (400 malformed_json)', async () => {
+    const { app } = await buildAppWithDb()
+    const res = await app.request('/api/folders', {
+      method: 'POST',
+      headers: {
+        authorization: basicHeader('david', PASSWORD),
+        'content-type': 'application/json',
+      },
+      body: '{not json',
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('requires auth (401)', async () => {
+    const { app } = await buildAppWithDb()
+    const res = await app.request('/api/folders', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Tech' }),
+    })
+    expect(res.status).toBe(401)
+  })
+
+  it('preserves case and spaces in the name (no normalization)', async () => {
+    const { app } = await buildAppWithDb()
+    const res = await app.request('/api/folders', {
+      method: 'POST',
+      headers: {
+        authorization: basicHeader('david', PASSWORD),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Tech & Science' }),
+    })
+    const created = (await res.json()) as { name: string }
+    expect(created.name).toBe('Tech & Science')
+  })
+})
+
+// ─── PATCH /api/folders/:id ──────────────────────────────────────────────
+
+describe('PATCH /api/folders/:id', () => {
+  async function buildAppWithDb(): Promise<{
+    app: Hono<{ Variables: AuthVariables }>
+    db: Database
+  }> {
+    const db = new Database(':memory:')
+    await runMigrations(db, { dir: resolve(process.cwd(), 'migrations') })
+    const tokenStore = new InMemoryTokenStore()
+    const app = new Hono<{ Variables: AuthVariables }>()
+    app.use('*', auth({ passwordHash: HASH, tokenStore }))
+    const { foldersApi } = await import('./folders.js')
+    app.route('/api/folders', foldersApi(db))
+    return { app, db }
+  }
+
+  it('renames an existing folder', async () => {
+    const { app, db } = await buildAppWithDb()
+    seedFolders(db, [{ id: 'f1', parentId: null, name: 'Old' }])
+
+    const res = await app.request('/api/folders/f1', {
+      method: 'PATCH',
+      headers: {
+        authorization: basicHeader('david', PASSWORD),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'New' }),
+    })
+    expect(res.status).toBe(200)
+    const updated = (await res.json()) as { id: string; name: string }
+    expect(updated.id).toBe('f1')
+    expect(updated.name).toBe('New')
+    expect(db.get<{ name: string }>('SELECT name FROM folders WHERE id = ?', ['f1'])?.name).toBe('New')
+  })
+
+  it('refreshes updated_at on rename', async () => {
+    const { app, db } = await buildAppWithDb()
+    seedFolders(db, [{ id: 'f1', parentId: null, name: 'Old' }])
+    const before = db.get<{ updated_at: string }>(
+      'SELECT updated_at FROM folders WHERE id = ?',
+      ['f1'],
+    )?.updated_at
+    expect(before).toBeTruthy()
+
+    // SQLite's strftime('%Y-%m-%dT%H:%M:%fZ', 'now') has ms precision;
+    // sleep >1ms to guarantee a different timestamp.
+    await new Promise((r) => setTimeout(r, 5))
+
+    const res = await app.request('/api/folders/f1', {
+      method: 'PATCH',
+      headers: {
+        authorization: basicHeader('david', PASSWORD),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'New' }),
+    })
+    expect(res.status).toBe(200)
+    const after = db.get<{ updated_at: string }>(
+      'SELECT updated_at FROM folders WHERE id = ?',
+      ['f1'],
+    )?.updated_at
+    expect(after).toBeTruthy()
+    expect(after).not.toEqual(before)
+  })
+
+  it('returns 404 for unknown id', async () => {
+    const { app } = await buildAppWithDb()
+    const res = await app.request('/api/folders/does-not-exist', {
+      method: 'PATCH',
+      headers: {
+        authorization: basicHeader('david', PASSWORD),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Whatever' }),
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('rejects empty name (400)', async () => {
+    const { app, db } = await buildAppWithDb()
+    seedFolders(db, [{ id: 'f1', parentId: null, name: 'Old' }])
+    const res = await app.request('/api/folders/f1', {
+      method: 'PATCH',
+      headers: {
+        authorization: basicHeader('david', PASSWORD),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: '' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('requires auth (401)', async () => {
+    const { app, db } = await buildAppWithDb()
+    seedFolders(db, [{ id: 'f1', parentId: null, name: 'Old' }])
+    const res = await app.request('/api/folders/f1', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'New' }),
+    })
+    expect(res.status).toBe(401)
+  })
+})
+
+// ─── DELETE /api/folders/:id ─────────────────────────────────────────────
+
+describe('DELETE /api/folders/:id', () => {
+  async function buildAppWithDb(): Promise<{
+    app: Hono<{ Variables: AuthVariables }>
+    db: Database
+  }> {
+    const db = new Database(':memory:')
+    await runMigrations(db, { dir: resolve(process.cwd(), 'migrations') })
+    const tokenStore = new InMemoryTokenStore()
+    const app = new Hono<{ Variables: AuthVariables }>()
+    app.use('*', auth({ passwordHash: HASH, tokenStore }))
+    const { foldersApi } = await import('./folders.js')
+    app.route('/api/folders', foldersApi(db))
+    return { app, db }
+  }
+
+  it('deletes an existing folder (204)', async () => {
+    const { app, db } = await buildAppWithDb()
+    seedFolders(db, [{ id: 'f1', parentId: null, name: 'X' }])
+
+    const res = await app.request('/api/folders/f1', {
+      method: 'DELETE',
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    expect(res.status).toBe(204)
+    expect(db.get<{ id: string }>('SELECT id FROM folders WHERE id = ?', ['f1'])).toBeUndefined()
+  })
+
+  it('returns 404 for unknown id', async () => {
+    const { app } = await buildAppWithDb()
+    const res = await app.request('/api/folders/does-not-exist', {
+      method: 'DELETE',
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('re-parents direct children to the deleted folder\'s parent', async () => {
+    const { app, db } = await buildAppWithDb()
+    seedFolders(db, [
+      { id: 'r', parentId: null, name: 'Root' },
+      { id: 'm', parentId: 'r', name: 'Mid' },
+      { id: 'm1', parentId: 'm', name: 'MidChild1' },
+      { id: 'm2', parentId: 'm', name: 'MidChild2' },
+    ])
+
+    const res = await app.request('/api/folders/m', {
+      method: 'DELETE',
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    expect(res.status).toBe(204)
+
+    // m1 and m2 are now children of r (Mid's parent).
+    const m1 = db.get<{ parent_id: string }>(
+      'SELECT parent_id FROM folders WHERE id = ?',
+      ['m1'],
+    )
+    const m2 = db.get<{ parent_id: string }>(
+      'SELECT parent_id FROM folders WHERE id = ?',
+      ['m2'],
+    )
+    expect(m1?.parent_id).toBe('r')
+    expect(m2?.parent_id).toBe('r')
+    // m itself is gone.
+    expect(db.get<{ id: string }>('SELECT id FROM folders WHERE id = ?', ['m'])).toBeUndefined()
+  })
+
+  it('cascade-deletes bookmarks in the deleted folder', async () => {
+    const { app, db } = await buildAppWithDb()
+    seedFolders(db, [
+      { id: 'f1', parentId: null, name: 'X' },
+    ])
+    db.run(
+      `INSERT INTO bookmarks (id, url, title, folder_id, chrome_id) VALUES (?, ?, ?, ?, ?)`,
+      ['b1', 'https://a.com', 'A', 'f1', 'chrome-b1'],
+    )
+
+    const res = await app.request('/api/folders/f1', {
+      method: 'DELETE',
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    expect(res.status).toBe(204)
+    expect(
+      db.get<{ id: string }>('SELECT id FROM bookmarks WHERE id = ?', ['b1']),
+    ).toBeUndefined()
+  })
+
+  it('requires auth (401)', async () => {
+    const { app, db } = await buildAppWithDb()
+    seedFolders(db, [{ id: 'f1', parentId: null, name: 'X' }])
+    const res = await app.request('/api/folders/f1', { method: 'DELETE' })
+    expect(res.status).toBe(401)
+  })
+})

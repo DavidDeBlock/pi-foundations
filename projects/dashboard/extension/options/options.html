@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dashboard Sync — Options</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Dashboard Sync</h1>
+      <p class="lede">
+        Connect this extension to your self-hosted dashboard server.
+        Generate an API token at <code>/settings</code> on the dashboard.
+      </p>
+
+      <form id="config-form" autocomplete="off">
+        <label class="field">
+          <span class="field-label">Server URL</span>
+          <input
+            type="url"
+            id="server-url"
+            name="server-url"
+            required
+            placeholder="http://192.168.0.136:8080"
+            spellcheck="false"
+            autocomplete="off"
+          />
+          <span class="field-hint">
+            Include the protocol and port. The extension will request
+            host access to this origin when you save.
+          </span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">API token</span>
+          <input
+            type="password"
+            id="api-token"
+            name="api-token"
+            required
+            placeholder="paste token from dashboard /settings"
+            spellcheck="false"
+            autocomplete="off"
+          />
+          <span class="field-hint">
+            Stored in <code>chrome.storage.local</code> — never leaves
+            this device.
+          </span>
+        </label>
+
+        <div class="actions">
+          <button type="submit" id="save-button">Save and validate</button>
+          <button type="button" id="clear-button" class="secondary">
+            Clear saved settings
+          </button>
+        </div>
+      </form>
+
+      <div
+        id="status"
+        class="status"
+        role="status"
+        aria-live="polite"
+        hidden
+      ></div>
+
+      <section id="saved-info" class="saved-info" hidden>
+        <h2>Currently saved</h2>
+        <dl>
+          <dt>Server</dt>
+          <dd id="saved-server"></dd>
+          <dt>Saved at</dt>
+          <dd id="saved-at"></dd>
+        </dl>
+      </section>
+    </main>
+
+    <script src="options.js" type="module"></script>
+  </body>
+</html>

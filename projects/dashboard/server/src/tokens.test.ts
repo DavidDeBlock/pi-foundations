@@ -190,12 +190,16 @@ describe('Bearer auth via app.request()', () => {
     expect(res.status).toBe(200)
   })
 
-  it('rejects an unknown Bearer token with 401', async () => {
+  it('rejects an unknown Bearer token with 401 (no WWW-Authenticate so Chrome does not pop Basic dialog)', async () => {
     const res = await app.request('/api/tokens', {
       headers: { authorization: bearerHeader('definitely-not-real') },
     })
     expect(res.status).toBe(401)
-    expect(res.headers.get('WWW-Authenticate')).toBe('Basic realm="Dashboard"')
+    // Critical: the Bearer failure path must NOT include
+    // `WWW-Authenticate: Basic` — otherwise Chrome's fetch() pops the
+    // HTTP Basic auth dialog, trapping the user in an interactive
+    // prompt they can't satisfy (a password doesn't fix a bad token).
+    expect(res.headers.get('WWW-Authenticate')).toBeNull()
   })
 
   it('rejects a revoked Bearer token with 401', async () => {

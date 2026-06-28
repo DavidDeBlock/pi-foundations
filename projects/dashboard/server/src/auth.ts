@@ -66,9 +66,13 @@ export type AuthVariables = { user?: string; tokenId?: string }
  *   - `c.set('user', username)` for Basic auth
  *   - `c.set('tokenId', id)` for Bearer auth
  *
- * On failure, returns 401 + `WWW-Authenticate: Basic realm="Dashboard"`.
- * Browsers ignore Bearer challenges and prompt for Basic, so the same
- * header works for both UI and API routes.
+ * On failure, returns 401. The `WWW-Authenticate` challenge is only sent
+ * for Basic-related failures (and missing auth) — NOT for failed Bearer
+ * attempts. Sending `WWW-Authenticate: Basic` on a Bearer-failed response
+ * makes Chrome's `fetch()` pop up the HTTP Basic dialog even though the
+ * request was Bearer-authenticated, which traps the user in an
+ * interactive prompt they can't actually satisfy (a password doesn't fix
+ * an invalid token).
  *
  * Per ADR-007, the user password is a bcrypt hash and `bcrypt.compare`
  * is constant-time. Bearer tokens are looked up via SHA-256 (O(1)) and
@@ -80,35 +84,42 @@ export function auth({
 }: AuthDeps): MiddlewareHandler<{ Variables: AuthVariables }> {
   return async (c, next) => {
     const header = c.req.header('authorization')
+    const scheme = header?.split(' ')[0]?.toLowerCase()
 
     // 1) Bearer (extension). Try first so a missing scheme is unambiguous.
-    if (header?.toLowerCase().startsWith('bearer ')) {
+    if (scheme === 'bearer') {
       const token = parseBearerAuth(header)
-      if (!token) return deny(c)
+      if (!token) return denyBearer(c)
       const record = await tokenStore.findByPlaintext(token)
-      if (!record) return deny(c)
+      if (!record) return denyBearer(c)
       c.set('tokenId', record.id)
       await next()
       return
     }
 
     // 2) Basic (UI).
-    if (header?.toLowerCase().startsWith('basic ')) {
+    if (scheme === 'basic') {
       const credentials = parseBasicAuth(header)
-      if (!credentials) return deny(c)
+      if (!credentials) return denyBasic(c)
       const matches = await bcrypt.compare(credentials.password, passwordHash)
-      if (!matches) return deny(c)
+      if (!matches) return denyBasic(c)
       c.set('user', credentials.username)
       await next()
       return
     }
 
-    // 3) Missing or unrecognized scheme.
-    return deny(c)
+    // 3) Missing or unrecognized scheme — tell browsers to prompt for Basic.
+    return denyBasic(c)
   }
 }
 
-function deny(c: Context): Response {
+/** 401 with no challenge — Chrome will NOT pop a Basic auth dialog. */
+function denyBearer(c: Context): Response {
+  return c.body('Unauthorized', 401)
+}
+
+/** 401 with `WWW-Authenticate: Basic` — browsers prompt for credentials. */
+function denyBasic(c: Context): Response {
   c.header('WWW-Authenticate', 'Basic realm="Dashboard"')
   return c.body('Unauthorized', 401)
 }

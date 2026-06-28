@@ -1,0 +1,50 @@
+# /etc/systemd/system/dashboard.service
+#
+# Drop this in place at that path, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now dashboard.service
+#
+# Environment file is /etc/dashboard/dashboard.env (mode 0640, owned
+# root:dashboard). See docs/deployment.md §2 for the variables.
+
+[Unit]
+Description=Dashboard server (Hono on Node)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dashboard
+Group=dashboard
+
+# ── Environment ──────────────────────────────────────────────────────────
+EnvironmentFile=/etc/dashboard/dashboard.env
+
+# ── Working directory + exec ─────────────────────────────────────────────
+WorkingDirectory=/opt/dashboard/server
+ExecStart=/usr/bin/pnpm start
+
+# ── Hardening ────────────────────────────────────────────────────────────
+# No new privileges (drops any ambient caps); protect /tmp and /home.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# Only the data dir needs to be writable.
+ReadWritePaths=/var/lib/dashboard
+
+# Auto-restart on crash, but not on graceful exit.
+Restart=on-failure
+RestartSec=5s
+
+# Send SIGTERM and give it 10s to drain in-flight requests before SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=10s
+
+# Console logs go to journald.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dashboard
+
+[Install]
+WantedBy=multi-user.target

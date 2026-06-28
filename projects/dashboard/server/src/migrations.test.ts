@@ -83,7 +83,7 @@ describe('Migrations runner', () => {
     const applied = db.all<{ name: string }>(
       'SELECT name FROM migrations ORDER BY name',
     )
-    expect(applied.map((r) => r.name)).toEqual(['001_initial'])
+    expect(applied.map((r) => r.name)).toEqual(['001_initial', '002_search_trigram'])
 
     // Spot-check that every table from the PRD schema now exists.
     const tables = db.all<{ name: string }>(
@@ -98,18 +98,22 @@ describe('Migrations runner', () => {
     expect(names).toContain('migrations')
     // FTS5 virtual table also lives in sqlite_master with type='table'.
     expect(names).toContain('bookmark_fts')
+    // Trigram index table from issue #009.
+    expect(names).toContain('bookmark_trigrams')
   })
 
   it('is idempotent — running twice does NOT re-apply', async () => {
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const firstApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(firstApplied).toHaveLength(1)
+    expect(firstApplied).toHaveLength(2)
 
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const secondApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(secondApplied).toHaveLength(1)
-    // applied_at should be unchanged on re-run (still the original timestamp).
-    expect(secondApplied[0]?.name).toBe(firstApplied[0]?.name)
+    expect(secondApplied).toHaveLength(2)
+    // applied_at should be unchanged on re-run (still the original timestamps).
+    expect(secondApplied.map((r) => r.name).sort()).toEqual(
+      firstApplied.map((r) => r.name).sort(),
+    )
   })
 
   it('enforces the folders self-referential FK', async () => {

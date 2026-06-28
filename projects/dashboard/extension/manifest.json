@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Dashboard Sync",
+  "version": "0.1.0",
+  "description": "Syncs Chrome bookmarks to a self-hosted Dashboard server.",
+  "permissions": ["bookmarks", "storage"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "options_page": "options/options.html",
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Dashboard Sync",
+    "default_popup": "options/options.html"
+  }
+}

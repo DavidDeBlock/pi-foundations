@@ -17,6 +17,10 @@ const MIGRATIONS = [
     name: '001_initial',
     filename: '001_initial.sql',
   },
+  {
+    name: '002_search_trigram',
+    filename: '002_search_trigram.sql',
+  },
 ] as const
 
 export interface RunMigrationsOptions {

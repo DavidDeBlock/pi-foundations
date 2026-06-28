@@ -5,6 +5,11 @@ import type { TokenStore } from './token-store.js'
 import { tokenApi } from './api-tokens.js'
 import { settingsView } from './settings-view.js'
 import { foldersApi } from './folders.js'
+import { bookmarksApi } from './bookmarks.js'
+import { activityFeedApi, bookmarkDetailApi } from './activity-feed.js'
+import { tagsApi } from './tags.js'
+import { staticAssets } from './static-handler.js'
+import { searchApi, searchViewApi } from './search.js'
 
 export interface AppDeps {
   readonly passwordHash: string
@@ -30,12 +35,11 @@ export function createApp({
   // See ADR-007 for the rationale on dual auth.
   app.use('*', auth({ passwordHash, tokenStore }))
 
-  app.get('/', (c) => {
-    const who = c.get('user') ?? c.get('tokenId') ?? 'unknown'
-    return c.html(homePage(who))
-  })
+  // Activity feed is the landing page. Mount at root so `GET /` lands
+  // on the feed handler inside the activity-feed module.
+  app.route('/', activityFeedApi(db))
 
-  // Placeholder for the future activity feed / bookmark UI.
+  // Health check (auth required by the middleware above).
   app.get('/health', (c) => c.json({ status: 'ok' }))
 
   // Settings (HTML, UI-driven) — token list + generate + revoke.
@@ -44,41 +48,25 @@ export function createApp({
   app.post('/settings/tokens', settings.createToken)
   app.post('/settings/tokens/:id/revoke', settings.revokeFromUi)
 
-  // JSON API — token management + folder read.
+  // Bookmark detail page (HTML; 404 if missing). Mounted at /bookmarks
+  // so it doesn't shadow future routes.
+  app.route('/bookmarks', bookmarkDetailApi(db))
+
+  // JSON API — token management + folder read + bookmark sync.
   app.route('/api/tokens', tokenApi(tokenStore))
   app.route('/api/folders', foldersApi(db))
+  app.route('/api/bookmarks', bookmarksApi(db))
+  app.route('/api/tags', tagsApi(db))
+
+  // Static assets (categorize.js for the categorize UI). Hand-rolled
+  // tiny handler — see static-handler.ts for why we don't use Hono's
+  // serveStatic yet.
+  app.route('/static', staticAssets())
+
+  // Search — JSON endpoint for the search-as-you-type JS, plus a
+  // server-rendered HTML page for direct navigation and deep links.
+  app.route('/api/search', searchApi(db))
+  app.route('/search', searchViewApi(db))
 
   return app
-}
-
-function homePage(user: string): string {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <title>Dashboard</title>
-    <style>
-      body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1rem; color: #1a1a1a; }
-      h1 { font-weight: 500; }
-      .user { color: #666; font-size: 0.9rem; }
-      nav { margin-top: 1.5rem; }
-      nav a { margin-right: 1rem; color: #06c; }
-    </style>
-  </head>
-  <body>
-    <h1>Dashboard is up</h1>
-    <p class="user">Signed in as <strong>${escapeHtml(user)}</strong></p>
-    <p>The activity feed and bookmark UI land in v1 issues #007–#009.</p>
-    <nav><a href="/settings">Settings</a></nav>
-  </body>
-</html>`
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
 }
