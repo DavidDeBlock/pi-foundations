@@ -32,12 +32,27 @@ const Strings = {
     'nav.trends':       'Trends',
     'nav.transactions': 'Transacties',
     'nav.categories':   'Categorieën',
+    'nav.categoriesManage': 'Categorieën beheren',
     'nav.sources':      'Rekeningen',
     'nav.users':        'Personen',
     'nav.payees':       'Tegenpartijen',
     'nav.settings':     'Instellingen',
 
     // ---- Page titles / subs ------------------------------------------
+    // ---- Categories list page (ISSUE-023) ---------------------------
+    'categories.title':            'Categorieën',
+    'categories.count':            '{n} categorieën',
+    'categories.empty.title':      'Nog geen categorieën',
+    'categories.empty.msg':        'Voeg categorieën toe om uitgaven te groeperen.',
+    'categories.col.name':         'Categorie',
+    'categories.col.thisMonth':    'Deze maand',
+    'categories.col.thisYear':     'Dit jaar',
+    'categories.col.count':        'Aantal',
+    'categories.col.percent':      '% van uitgaven',
+    'categories.sort.thisMonth':   'Sorteer op deze maand',
+    'categories.manage.title':     'Categorieën en groepen beheren',
+    'categories.manage.btn':       'Beheer',
+
     'page.dashboard.title':    'Ons <em>overzicht</em>',
     'page.dashboard.sub':      'Waar het geld deze maand naartoe ging.',
     'page.trends.title':       'Geld<em>trends</em>',
@@ -141,6 +156,15 @@ const Strings = {
     'trends.balance.today':            'vandaag',
 
     // ---- Transactions list ------------------------------------------
+    // ISSUE-025: stats strip shown above the transactions table when
+    // exactly one entity filter is set. The prefix is `txns.*`
+    // (plural) to match the spec, even though the column-header keys
+    // above use `txn.*` (singular) — the strip is a separate concern.
+    'txns.stats.total':                'Totaal',
+    'txns.stats.count':                'Aantal',
+    'txns.stats.avg':                  'Gemiddeld',
+    'txns.stats.period':               'Periode',
+    'txns.stats.empty':                '— geen transacties —',
     'txn.empty.title':                 'Niets matcht je filters',
     'txn.empty.msg':                   'Wis er een paar of voeg een nieuwe transactie toe.',
     'txn.th.date':                     'Datum',
@@ -471,6 +495,42 @@ const Strings = {
     'envelopes.compare.current.yearly':  'Dit jaar ({year})',
     'envelopes.compare.previous.yearly': 'Vorig jaar ({year})',
     'envelopes.compare.nYearsAgo.yearly':'{n} jaar geleden ({year})',
+
+    // ---- Category / Payee detail (ISSUE-021) ------------------------
+    // The detail pages share most of their chrome; the keys below
+    // cover both `categoryDetail` (ISSUE-021) and `payeeDetail`
+    // (ISSUE-024). `payeeDetail.*` keys are pre-registered here so
+    // the shared EntityDetail renderer can call t('payeeDetail.*')
+    // without crashing on the category page if a future change
+    // shares one of those keys.
+    'categoryDetail.title':         'Categorie: {name}',
+    'categoryDetail.thisMonth':     'Deze maand',
+    'categoryDetail.thisYear':      'Dit jaar',
+    'categoryDetail.count':         '{count} boekingen',
+    'categoryDetail.percentOfExpenses': '% van uitgaven',
+    'categoryDetail.trend':         'Maandelijks verloop (12 maanden)',
+    'categoryDetail.topPayees':     'Top begunstigden in deze categorie',
+    'categoryDetail.recent':        'Recente transacties',
+    'categoryDetail.viewAll':       'Alle transacties bekijken',
+    'categoryDetail.setEnvelope':   'Envelop instellen voor deze categorie',
+    'categoryDetail.back':          'Terug',
+    'categoryDetail.notFound':      'Categorie niet gevonden',
+    'payeeDetail.title':            'Tegenpartij: {name}',
+    'payeeDetail.thisMonth':        'Deze maand',
+    'payeeDetail.thisYear':         'Dit jaar',
+    'payeeDetail.count':            '{count} boekingen',
+    'payeeDetail.percentOfExpenses': '% van uitgaven',
+    'payeeDetail.trend':            'Maandelijks verloop (12 maanden)',
+    'payeeDetail.topCategories':    'Top categorieën bij deze tegenpartij',
+    'payeeDetail.recent':           'Recente transacties',
+    'payeeDetail.viewAll':          'Alle transacties bekijken',
+    'payeeDetail.back':             'Terug',
+    'payeeDetail.notFound':         'Tegenpartij niet gevonden',
+    'payeeDetail.notImplemented.title': 'Tegenpartij-detail volgt later',
+    'payeeDetail.notImplemented.msg':   'De detailpagina voor tegenpartij “{name}” komt in een latere iteratie.',
+    // Shared by EntityDetail's not-found + empty-recent states.
+    'entityDetail.notFoundHint':    'Categorie “{id}” bestaat niet (meer).',
+    'entityDetail.recent.empty':    'Nog geen transacties in deze selectie.',
   },
 };
 

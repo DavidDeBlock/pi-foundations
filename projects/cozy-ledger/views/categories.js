@@ -1,153 +1,110 @@
 // =====================================================================
-// views/categories.js — Group management + categorised entity grids
+// views/categories.js — Categories list page (ISSUE-023, Slice C of
+// PRD-006). Read-only totals per category, sorted by this-month spend
+// desc, every row drillable into the category detail view (ISSUE-021).
+//
+// The CRUD / group-management UI lives in views/categories-manage.js
+// at the `categories-manage` route. From here we link to it via a
+// "Beheer" button in the header so power-users aren't stuck.
 // =====================================================================
 // Reads: App._state
-// Calls: window.Modals.{category,categoryDelete,group,groupDelete},
-//        ViewHelpers.emptyState/escapeText
+// Calls: Selectors.allCategoryTotals, Router.goTo
 // =====================================================================
 
 const Categories = (() => {
-  function renderGroupCard(g) {
-    return el('div', { class: 'entity' },
-      el('div', { class: 'cat-swatch', style: { background: g.color } }, g.icon || '✦'),
-      el('div', { style: { flex: 1, minWidth: 0 } },
-        el('div', { class: 'e-name', style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, g.name),
-        el('div', { class: 'e-meta' }, `${g.icon || '✦'} · ${t('grp.section.title')}`),
-      ),
-      el('div', { class: 'e-actions' },
-        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => window.Modals.group(g.id), html: Icons.edit }),
-        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => window.Modals.groupDelete(g.id), html: Icons.trash }),
-      ),
-    );
-  }
-
-  function renderCategoryCard(c) {
-    return el('div', { class: 'entity' + (c.active ? '' : ' inactive'), style: { '--cat-color': c.color } },
-      el('div', { class: 'cat-swatch', style: { background: c.color } }, c.icon || '✦'),
-      el('div', { style: { flex: 1, minWidth: 0 } },
-        el('div', { class: 'e-name', style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, c.name),
-        el('div', { class: 'e-meta' }, c.active ? c.type : t('cat.inactive')),
-      ),
-      el('div', { class: 'e-actions' },
-        el('button', { class: 'btn-icon', title: t('btn.edit'),   onclick: () => window.Modals.category(c.id), html: Icons.edit }),
-        el('button', { class: 'btn-icon btn-danger', title: t('btn.delete'), onclick: () => window.Modals.categoryDelete(c.id), html: Icons.trash }),
-      ),
-    );
-  }
-
-  // A single group header inside the expense section. Tinted with the
-  // group's color so it scans as a distinct band under the section banner.
-  function renderExpenseGroupHead(g, count) {
-    const head = el('div', { class: 'cat-group-head' });
-    if (g) {
-      head.appendChild(el('span', { class: 'cat-group-icon', style: { background: g.color } }, g.icon || '✦'));
-      head.appendChild(el('span', { class: 'cat-group-name' }, g.name));
-      head.dataset.groupId = g.id;
-      head.style.borderLeftColor = g.color;
-    } else {
-      head.appendChild(el('span', { class: 'cat-group-icon cat-group-icon-none' }, '✦'));
-      head.appendChild(el('span', { class: 'cat-group-name' }, t('grp.uncategorized')));
-    }
-    head.appendChild(el('span', { class: 'cat-group-count' }, String(count)));
-    return head;
-  }
-
-  // Expenses get a warm (terracotta) banner and roll up under their
-  // group headers — there are many expense categories and a hierarchy
-  // helps scanability. Income stays flat: only a handful of categories
-  // (typically 1–2) and grouping would add noise without value.
-  function renderExpenseSection(cats) {
-    const byGroup = new Map();
-    for (const c of cats) {
-      const key = c.groupId || '__none__';
-      if (!byGroup.has(key)) byGroup.set(key, []);
-      byGroup.get(key).push(c);
-    }
-    const groups = App._state.groups || [];
-    const sortedGroups = [...groups].sort((a, b) => (a.order || 0) - (b.order || 0));
-    const activeCount = cats.filter(c => c.active).length;
-
-    const content = el('div', {});
-    for (const g of sortedGroups) {
-      const list = byGroup.get(g.id) || [];
-      if (!list.length) continue;
-      content.appendChild(renderExpenseGroupHead(g, list.length));
-      const grid = el('div', { class: 'entity-grid' });
-      list.forEach(c => grid.appendChild(renderCategoryCard(c)));
-      content.appendChild(grid);
-    }
-    const ungrouped = byGroup.get('__none__') || [];
-    if (ungrouped.length) {
-      content.appendChild(renderExpenseGroupHead(null, ungrouped.length));
-      const grid = el('div', { class: 'entity-grid' });
-      ungrouped.forEach(c => grid.appendChild(renderCategoryCard(c)));
-      content.appendChild(grid);
-    }
-
-    return el('div', { class: 'card cat-section cat-section--expense' },
-      el('div', { class: 'cat-section-banner is-expense' },
-        el('div', { class: 'cat-section-icon is-expense' }, '↑'),
+  // -- Header ---------------------------------------------------------
+  // Two-line header: title + count, with a right-aligned button that
+  // links to the management page. The button only renders when
+  // `categories-manage` is wired (it's always wired in our app, but
+  // we keep the link's presence cheap to gate if needed).
+  function renderHeader(count) {
+    return el('div', { class: 'card' },
+      el('div', { class: 'card-head' },
+        el('div', { class: 'card-title', html: Icons.tags }),
         el('div', { style: { flex: '1', minWidth: '0' } },
-          el('div', { class: 'cat-section-title' }, t('cat.section.expense.title')),
-          el('div', { class: 'cat-section-sub muted' }, `${cats.length} ${t('cat.total')} · ${activeCount} ${t('cat.active')}`),
+          el('div', { class: 'card-title-text' }, t('categories.title')),
+          el('div', { class: 'muted', style: { fontSize: '.82rem' } },
+            t('categories.count', { n: count })),
         ),
+        el('button', {
+          class: 'btn btn-ghost btn-sm',
+          onclick: () => Router.goTo('categories-manage'),
+          title: t('categories.manage.title'),
+        }, t('categories.manage.btn')),
       ),
-      cats.length ? content : ViewHelpers.emptyState(t('cat.section.expense.empty.title'), t('cat.section.expense.empty.msg')),
     );
   }
 
-  // Income categories: flat, no grouping, sage banner.
-  function renderIncomeSection(cats) {
-    const activeCount = cats.filter(c => c.active).length;
-    const grid = el('div', { class: 'entity-grid' });
-    cats.forEach(c => grid.appendChild(renderCategoryCard(c)));
-
-    return el('div', { class: 'card cat-section cat-section--income' },
-      el('div', { class: 'cat-section-banner is-income' },
-        el('div', { class: 'cat-section-icon is-income' }, '↓'),
-        el('div', { style: { flex: '1', minWidth: '0' } },
-          el('div', { class: 'cat-section-title' }, t('cat.section.income.title')),
-          el('div', { class: 'cat-section-sub muted' }, `${cats.length} ${t('cat.total')} · ${activeCount} ${t('cat.active')}`),
-        ),
+  // -- Column header row --------------------------------------------
+  // The "this-month" header carries a sort arrow so users know the list
+  // is currently sorted by that column. Click-sort is out of scope for
+  // ISSUE-023 — only the default sort ships.
+  function renderColumnHead() {
+    return el('div', { class: 'categories-list-row categories-list-row--head' },
+      el('div', { class: 'categories-col col-name' }, t('categories.col.name')),
+      el('div', { class: 'categories-col col-month' },
+        t('categories.col.thisMonth'),
+        el('span', { class: 'categories-sort-indicator', 'aria-hidden': 'true', title: t('categories.sort.thisMonth') }, ' ↓'),
       ),
-      cats.length ? grid : ViewHelpers.emptyState(t('cat.section.income.empty.title'), t('cat.section.income.empty.msg')),
+      el('div', { class: 'categories-col col-year' }, t('categories.col.thisYear')),
+      el('div', { class: 'categories-col col-count' }, t('categories.col.count')),
+      el('div', { class: 'categories-col col-pct' }, t('categories.col.percent')),
     );
+  }
+
+  // -- One row per category ----------------------------------------
+  // A real <button> for free keyboard support (Enter/Space) and
+  // proper semantic markup; CSS resets native button styling to match
+  // a plain row. data-cat-id lets tests target rows by id without
+  // depending on visible text.
+  function renderRow(row) {
+    const cat = row.category;
+    return el('button', {
+      class: 'categories-list-row clickable',
+      type: 'button',
+      onclick: () => Router.goTo('category-' + cat.id),
+      'data-cat-id': cat.id,
+    },
+      el('div', { class: 'categories-col col-name' },
+        el('div', { class: 'cat-swatch', style: { background: cat.color } }, cat.icon || '✦'),
+        el('div', { class: 'categories-name' }, cat.name),
+      ),
+      el('div', { class: 'categories-col col-month' }, Fmt.money(row.thisMonth)),
+      el('div', { class: 'categories-col col-year' }, Fmt.money(row.thisYear)),
+      el('div', { class: 'categories-col col-count' }, String(row.count)),
+      el('div', { class: 'categories-col col-pct' }, row.percentOfExpenses.toFixed(0) + '%'),
+    );
+  }
+
+  // -- List card -----------------------------------------------------
+  function renderList(rows) {
+    const card = el('div', { class: 'card', style: { marginTop: '16px' } },
+      el('div', { class: 'card-head', style: { padding: '0 12px 8px 12px' } },
+        // Reuse the column-head row as the card's first line so it
+        // sits flush against the rows underneath.
+        renderColumnHead(),
+      ),
+      el('div', { class: 'categories-list', 'data-testid': 'categories-list' },
+        ...rows.map(renderRow),
+      ),
+    );
+    return card;
   }
 
   // -- Top-level render ---------------------------------------------
   function render() {
+    const rows = Selectors.allCategoryTotals(App._state);
     const wrap = el('div', {});
 
-    // Groepen section sits above the category lists so users see what
-    // grouping layer is available without having to scroll.
-    const groups = App._state.groups || [];
-    const groupsGrid = el('div', { class: 'entity-grid' });
-    groups.forEach(g => groupsGrid.appendChild(renderGroupCard(g)));
+    wrap.appendChild(renderHeader(rows.length));
 
-    const groupsHead = el('div', { class: 'section-head' },
-      el('div', { class: 'section-label' }, t('cat.section.manage')),
-    );
-    const addGrpBtn = el('button', { class: 'btn btn-sage', onclick: () => window.Modals.group() });
-    addGrpBtn.innerHTML = `${Icons.plus} ${ViewHelpers.escapeText(t('grp.add'))}`;
-    groupsHead.appendChild(addGrpBtn);
-    const groupsCard = el('div', { class: 'card', style: { marginBottom: '24px' } },
-      el('div', { class: 'card-head' },
-        el('div', { class: 'card-title' }, t('grp.section.title')),
-        el('div', { class: 'muted', style: { fontSize: '.82rem' } }, t('grp.section.sub'))),
-      groups.length ? groupsGrid : ViewHelpers.emptyState(t('grp.empty.title'), t('grp.empty.msg')),
-    );
-    wrap.appendChild(groupsHead);
-    wrap.appendChild(groupsCard);
+    if (rows.length === 0) {
+      wrap.appendChild(el('div', { class: 'card', style: { marginTop: '16px' } },
+        ViewHelpers.emptyState(t('categories.empty.title'), t('categories.empty.msg'))));
+      return wrap;
+    }
 
-    const expenses = App._state.categories.filter(c => c.type === 'expense');
-    const incomes  = App._state.categories.filter(c => c.type === 'income');
-    wrap.appendChild(renderExpenseSection(expenses));
-    wrap.appendChild(renderIncomeSection(incomes));
-
-    const addBtn = el('button', { class: 'btn btn-sage', onclick: () => window.Modals.category(), style: { marginTop: '16px' } });
-    addBtn.innerHTML = `${Icons.plus} ${ViewHelpers.escapeText(t('cat.add'))}`;
-    wrap.appendChild(addBtn);
-
+    wrap.appendChild(renderList(rows));
     return wrap;
   }
 

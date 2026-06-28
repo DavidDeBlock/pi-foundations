@@ -88,6 +88,18 @@ const Dashboard = (() => {
   }
 
   // -- Category / group row lists (shared with Trends) ---------------
+  // Per ISSUE-022, category rows in the dashboard's top-categories
+  // card are clickable and navigate to `category-{id}` (the drill-down
+  // view delivered by ISSUE-021). We render each row as a real
+  // `<button>` so we get keyboard support (Enter/Space) and proper
+  // semantic markup for free. CSS resets the button defaults so it
+  // looks like the plain `.cat-row` it replaced.
+  //
+  // Group-mode rows are NOT clickable in this slice — the group
+  // drill-down is out of scope for ISSUE-022 (see the issue's "Out
+  // of scope" section). Future contributor: don't extend this without
+  // a new issue. Use `<div class="cat-row">` not a `<button>` so
+  // screen readers don't announce an inert action target.
   function renderCatList(items, total) {
     const list = el('div', { class: 'cat-list' });
     items.forEach(({ cat, amount }) => {
@@ -96,7 +108,14 @@ const Dashboard = (() => {
       const bar = el('div', { class: 'cat-bar' },
         el('div', { class: 'cat-bar-fill', style: { width: pct + '%', background: cat.color } }),
       );
-      list.appendChild(el('div', { class: 'cat-row' },
+      list.appendChild(el('button', {
+        class: 'cat-row clickable',
+        type: 'button',
+        onclick: () => Router.goTo('category-' + cat.id),
+        // data-cat-id so tests can locate a specific row without
+        // depending on visible-text brittleness.
+        'data-cat-id': cat.id,
+      },
         swatch,
         el('div', { class: 'cat-name' }, cat.name),
         bar,
@@ -115,6 +134,8 @@ const Dashboard = (() => {
       const bar = el('div', { class: 'cat-bar' },
         el('div', { class: 'cat-bar-fill', style: { width: pct + '%', background: grp.color } }),
       );
+      // Intentionally a plain div — group drill-down is out of scope
+      // for ISSUE-022. See the comment above renderCatList.
       list.appendChild(el('div', { class: 'cat-row' },
         swatch,
         el('div', { class: 'cat-name' }, grp.name),

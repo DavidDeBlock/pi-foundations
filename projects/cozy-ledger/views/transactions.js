@@ -142,10 +142,26 @@ const Transactions = (() => {
     const user = App._state.users.find(u => u.id === txn.paidByUserId);
     const source = App._state.sources.find(s => s.id === txn.sourceId);
 
+    // ISSUE-024: the payee name in the description cell is now a
+    // clickable button that drills into the payee detail view. We
+    // resolve the slug up-front so tests can target the row by the
+    // `data-payee-slug` attribute. If the description has no
+    // extractable payee, fall back to a plain text span so the cell
+    // still renders (no dead link).
+    const payeeName = extractPayee(txn.description);
+    const payeeCellContent = payeeName
+      ? el('button', {
+          class: 'payee-cell-link',
+          type: 'button',
+          'data-payee-slug': ViewHelpers.slugifyPayee(payeeName),
+          onclick: () => Router.goTo('payee-' + ViewHelpers.slugifyPayee(payeeName)),
+        }, payeeName)
+      : el('span', {}, txn.description || (cat ? cat.name : '—'));
+
     const tr = el('tr', {});
     tr.appendChild(el('td', { class: 'txn-date' }, Fmt.date(txn.date)));
     tr.appendChild(el('td', {},
-      el('div', { class: 'txn-desc', title: txn.description || '' }, extractPayee(txn.description) || txn.description || (cat ? cat.name : '—')),
+      el('div', { class: 'txn-desc', title: txn.description || '' }, payeeCellContent),
       txn.notes ? el('div', { class: 'cell-meta' }, txn.notes) : null,
     ));
     tr.appendChild(el('td', {},
@@ -175,12 +191,90 @@ const Transactions = (() => {
     return tr;
   }
 
+  // -- Stats strip (ISSUE-025) --------------------------------------
+  // Visibility: the strip renders only when EXACTLY ONE entity
+  // filter is set to a single value (not 'all'). `month`, `type`,
+  // and `scope` are intentionally NOT counted — those are usually
+  // combined with an entity filter and don't represent "one thing".
+  // `groupId === '__none__'` is treated as set (it's a deliberate
+  // "categories without a group" filter, not the wildcard).
+  function activeEntityFilterCount(f) {
+    let n = 0;
+    if (f.categoryId !== 'all') n++;
+    if (f.groupId !== 'all' && f.groupId !== undefined) n++;
+    if (f.userId !== 'all') n++;
+    if (f.sourceId !== 'all') n++;
+    if (f.payee !== 'all') n++;
+    return n;
+  }
+
+  // Compact period label for the strip: "15 jun – 25 jun" within the
+  // same year, "1 jan 2025 – 25 jun 2026" across years. The full
+  // `Fmt.date` always includes the year which is noisy for the
+  // common case where both endpoints are in the current year.
+  function periodLabel(minDate, maxDate) {
+    if (!minDate || !maxDate) return null;
+    const sameYear = minDate.slice(0, 4) === maxDate.slice(0, 4);
+    // en-US locale gives 'Jun' which is fine, but for the strip
+    // we want lowercase 'jun' so the label reads as a range, not
+    // two date stamps.
+    const fmt = (iso, dropYear) => {
+      const dt = new Date(iso);
+      const m = dt.toLocaleDateString('en-US', { month: 'short' }).toLowerCase();
+      const d = String(dt.getDate());
+      return dropYear ? `${d} ${m}` : `${d} ${m} ${dt.getFullYear()}`;
+    };
+    if (minDate === maxDate) return fmt(minDate, sameYear);
+    return `${fmt(minDate, sameYear)} \u2013 ${fmt(maxDate, false)}`;
+  }
+
+  function renderStatsStrip(list) {
+    // Run the visibility check on the live filter, not on `list`
+    // — the user may have set a filter that matches zero txns, and
+    // we still want the strip to render (with `—` placeholders).
+    if (activeEntityFilterCount(Router.txnFilters) !== 1) return null;
+
+    const stats = Selectors.entityTransactionStats(list);
+    const isEmpty = stats.count === 0;
+    // The em-dash per cell keeps the strip at a uniform height when
+    // the filter matches nothing; the spec's `txns.stats.empty`
+    // message is shown in the tooltip so users on hover get the full
+    // "no transactions" hint without us bloating each cell with the
+    // same long string.
+    const emptyTitle = t('txns.stats.empty');
+    return el('div', { class: 'txn-stats-strip' },
+      el('div', { class: 'txn-stats-cell', title: isEmpty ? emptyTitle : null },
+        el('div', { class: 'tss-label' }, t('txns.stats.total')),
+        el('div', { class: 'tss-value' }, isEmpty ? '\u2014' : Fmt.money(stats.total)),
+      ),
+      el('div', { class: 'txn-stats-cell', title: isEmpty ? emptyTitle : null },
+        el('div', { class: 'tss-label' }, t('txns.stats.count')),
+        el('div', { class: 'tss-value' }, isEmpty ? '\u2014' : String(stats.count)),
+      ),
+      el('div', { class: 'txn-stats-cell', title: isEmpty ? emptyTitle : null },
+        el('div', { class: 'tss-label' }, t('txns.stats.avg')),
+        el('div', { class: 'tss-value' }, isEmpty ? '\u2014' : Fmt.money(stats.avg)),
+      ),
+      el('div', { class: 'txn-stats-cell', title: isEmpty ? emptyTitle : null },
+        el('div', { class: 'tss-label' }, t('txns.stats.period')),
+        el('div', { class: 'tss-value' }, isEmpty ? '\u2014' : periodLabel(stats.minDate, stats.maxDate)),
+      ),
+    );
+  }
+
   // -- Top-level render ---------------------------------------------
   function render() {
     const wrap = el('div', {});
     wrap.appendChild(renderFilters());
     const list = filteredTxns();
+    // Stats strip renders even when `list` is empty \u2014 the user
+    // has set a filter, so they want to see what (if anything) it
+    // matched. We just hide the table body in that case.
+    const strip = renderStatsStrip(list);
+    if (strip) wrap.appendChild(strip);
     if (!list.length) {
+      // Show the empty placeholder alongside the strip so the user
+      // knows "yes, your filter is applied \u2014 no rows match".
       wrap.appendChild(emptyState(t('txn.empty.title'), t('txn.empty.msg')));
       return wrap;
     }

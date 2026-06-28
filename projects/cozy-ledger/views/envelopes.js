@@ -232,6 +232,20 @@ const Envelopes = (() => {
 
     const wrap = el('div', { class: 'view-envelopes' });
 
+    // ISSUE-021: consume a one-shot pre-fill payload that the
+    // category detail CTA set just before navigating here. We open
+    // the modal after the view paints (setTimeout 0) so the user
+    // briefly sees the envelopes page behind the modal — otherwise
+    // the modal would mount before `#view` is attached and could
+    // anchor to the wrong scroll position. Clearing the slot is the
+    // view's responsibility: leaving it set would re-open the modal
+    // on every re-render (e.g. after a save fires `store:changed`).
+    if (Router.pendingEnvelopeInit) {
+      const init = Router.pendingEnvelopeInit;
+      Router.pendingEnvelopeInit = null;
+      setTimeout(() => window.Modals.envelope(null, init), 0);
+    }
+
     const addBtn = el('button', {
       class: 'btn btn-primary',
       onclick: () => window.Modals.envelope(),

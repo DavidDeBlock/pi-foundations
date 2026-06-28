@@ -98,6 +98,44 @@ const ViewHelpers = (() => {
     window.dispatchEvent(new Event('store:changed'));
   }
 
+  // -- Slug helpers for payee URLs (ISSUE-024) -----------------------
+  // Payee names are free-text strings extracted from CSV descriptions,
+  // not first-class entities with an id. The detail view needs a URL-
+  // safe identifier, so we slugify the name and reverse-lookup the
+  // original by scanning all distinct payees when the route arrives.
+  //
+  // Slugification rules (deliberately permissive so the round-trip is
+  // stable across inputs like "Café Bombala" / "café-bombala"):
+  //   - lowercase
+  //   - strip diacritics (NFD + remove combining marks)
+  //   - any non-[a-z0-9] run collapses to a single '-'
+  //   - trim leading/trailing '-'
+  //
+  // The reverse lookup is a linear scan over distinctPayees() — fine
+  // for the 18-ish payees in seed data; if a real installation ever
+  // grows to thousands we'd want a precomputed Map.
+  function slugifyPayee(name) {
+    if (!name) return '';
+    return String(name)
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  // Resolve a payee slug back to its canonical name. Returns the slug
+  // itself (verbatim) when no match is found, so callers can show a
+  // graceful not-found instead of crashing.
+  function unsplitPayeeSlug(slug) {
+    if (!slug) return '';
+    const target = String(slug);
+    const list = distinctPayees();
+    for (const p of list) {
+      if (slugifyPayee(p.name) === target) return p.name;
+    }
+    return target;
+  }
+
   return {
     sum,
     countTxns,
@@ -110,6 +148,8 @@ const ViewHelpers = (() => {
     extractPayee,
     distinctPayees,
     bulkUpdatePayeeCategory,
+    slugifyPayee,
+    unsplitPayeeSlug,
   };
 })();
 window.ViewHelpers = ViewHelpers;

@@ -883,6 +883,499 @@ const Selectors = {
 
     return { current, history };
   },
+
+  // ---- Category / Payee deep-dives (ISSUE-021) -------------------
+  // The category and payee detail views share the same shape: totals
+  // (this month / this year / count / % of expenses), a 12-month
+  // trend, top related entities, and the recent in-scope transactions
+  // for that entity. All helpers below operate in-scope via
+  // `transactionsInScope(state)` so the detail page matches the rest
+  // of the dashboard.
+  //
+  // For payee-scoped variants the helper takes the raw payee name
+  // (the value `CSVImport.extractPayee` returns) and matches against
+  // `txn.description` through the same extractor.
+
+  /**
+   * Current month range as ISO {from, to}, matching the dashboard's
+   * 'this month' window. Exposed so category/payee selectors don't
+   * each duplicate the first-of-month arithmetic.
+   * @param {Date} [today=new Date()]
+   * @returns {{ from: string, to: string }}
+   */
+  _currentMonthRange(today = new Date()) {
+    return {
+      from: new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10),
+      to: new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString().slice(0, 10),
+    };
+  },
+
+  /**
+   * Current year range as ISO {from, to}, Jan 1 through today.
+   * @param {Date} [today=new Date()]
+   * @returns {{ from: string, to: string }}
+   */
+  _currentYearRange(today = new Date()) {
+    return {
+      from: `${today.getFullYear()}-01-01`,
+      to: new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString().slice(0, 10),
+    };
+  },
+
+  /**
+   * Filter a list of transactions to those matching `categoryId`.
+   * Defensive: missing `txn.categoryId` never matches.
+   * @param {Transaction[]} txns
+   * @param {string} categoryId
+   * @returns {Transaction[]}
+   */
+  _txnsByCategory(txns, categoryId) {
+    if (!categoryId) return [];
+    return txns.filter(t => t && t.categoryId === categoryId);
+  },
+
+  /**
+   * Filter a list of transactions to those whose extracted payee
+   * equals `payeeName`. Empty/missing payee matches nothing.
+   * @param {Transaction[]} txns
+   * @param {string} payeeName
+   * @returns {Transaction[]}
+   */
+  _txnsByPayee(txns, payeeName) {
+    if (!payeeName) return [];
+    const ext = (typeof CSVImport !== 'undefined' && CSVImport.extractPayee)
+      || (typeof window !== 'undefined' && window.CSVImport && window.CSVImport.extractPayee)
+      || (d => String(d || ''));
+    return txns.filter(t => t && ext(t.description) === payeeName);
+  },
+
+  /**
+   * Absolute expense total for a transaction set (income rows add
+   * nothing). `sign` is 1 for expenses, -1 for income-only totals.
+   * @param {Transaction[]} txns
+   * @param {{ type?: 'expense'|'income'|'all', sign?: 1|-1 }} [opts]
+   * @returns {number}
+   */
+  _absTotal(txns, opts) {
+    const o = opts || {};
+    const sign = o.sign || 1;
+    let total = 0;
+    for (const t of txns) {
+      if (!t) continue;
+      if (o.type === 'expense' && t.type !== 'expense') continue;
+      if (o.type === 'income'  && t.type !== 'income')  continue;
+      total += sign * Math.abs(Number(t.amount) || 0);
+    }
+    return round2(total);
+  },
+
+  /**
+   * Totals for one expense category: this-month, this-year, count,
+   * and the share of this-month's total expense (0..100). All
+   * in-scope; income rows in the same category are excluded.
+   * Returns zeros for an unknown / empty category.
+   * @param {State} state
+   * @param {string} categoryId
+   * @param {Date} [today=new Date()]
+   * @returns {{ thisMonth: number, thisYear: number, count: number, percentOfExpenses: number }}
+   */
+  categoryTotals(state, categoryId, today = new Date()) {
+    const inScope = Selectors.transactionsInScope(state || {});
+    const matching = Selectors._txnsByCategory(inScope, categoryId);
+    const month = Selectors._currentMonthRange(today);
+    const year  = Selectors._currentYearRange(today);
+    const inMonth = matching.filter(t => t.date >= month.from && t.date <= month.to);
+    const inYear  = matching.filter(t => t.date >= year.from  && t.date <= year.to);
+    const thisMonth = Selectors._absTotal(inMonth, { type: 'expense' });
+    const thisYear  = Selectors._absTotal(inYear,  { type: 'expense' });
+    const count = inYear.length;
+    // Denominator: total in-scope expense in this month, across every
+    // category. Computed from the same month filter so the percentage
+    // stays consistent with the dashboard's expense card.
+    const totalMonthExpense = Selectors._absTotal(
+      inScope.filter(t => t.date >= month.from && t.date <= month.to && t.type === 'expense'),
+      { type: 'expense' }
+    );
+    const percentOfExpenses = totalMonthExpense > 0
+      ? round2((thisMonth / totalMonthExpense) * 100)
+      : 0;
+    return { thisMonth, thisYear, count, percentOfExpenses };
+  },
+
+  /**
+   * 12 (or N) month buckets for a category, oldest first. Months with
+   * no matching in-scope transactions render with `amount = 0`. The
+   * returned `month` keys are `YYYY-MM` and are stable so the chart
+   * renderer can label each bar.
+   * @param {State} state
+   * @param {string} categoryId
+   * @param {number} [months=12]
+   * @param {Date} [today=new Date()]
+   * @returns {{ month: string, amount: number }[]}
+   */
+  categoryMonthlyTrend(state, categoryId, months = 12, today = new Date()) {
+    const inScope = Selectors.transactionsInScope(state || {});
+    const matching = Selectors._txnsByCategory(inScope, categoryId);
+    const keys = [];
+    for (let i = months - 1; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      keys.push(d.toISOString().slice(0, 7));
+    }
+    const buckets = Object.create(null);
+    for (const k of keys) buckets[k] = 0;
+    for (const t of matching) {
+      if (!t || !t.date || t.type !== 'expense') continue;
+      const k = t.date.slice(0, 7);
+      if (!(k in buckets)) continue;
+      buckets[k] = round2(buckets[k] + Math.abs(Number(t.amount) || 0));
+    }
+    return keys.map(k => ({ month: k, amount: buckets[k] }));
+  },
+
+  /**
+   * Top payees driving spend in a category, by total expense desc.
+   * Each row: `{ payeeName, total, count }`. In-scope; cap at
+   * `limit` (default 5). Payees whose extractor returns null/empty
+   * collapse into a single '—' bucket so uncategorised rows still
+   * contribute to the ranking.
+   *
+   * NOTE: The spec signature is `topPayeesInCategory(state, categoryId,
+   * today, limit)` for symmetry with `categoryTotals`. We currently
+   * compute all-time totals — `today` is accepted but unused so the
+   * public API matches the spec without lint warnings. Wiring a
+   * year/month filter here would be a behaviour change for the
+   * dashboard; keep that as a deliberate follow-up if the user asks
+   * for it.
+   * @param {State} state
+   * @param {string} categoryId
+   * @param {Date} [_today=new Date()]  Unused; kept for spec symmetry.
+   * @param {number} [limit=5]
+   * @returns {{ payeeName: string, total: number, count: number }[]}
+   */
+  topPayeesInCategory(state, categoryId, _today = new Date(), limit = 5) {
+    const inScope = Selectors.transactionsInScope(state || {});
+    const matching = Selectors._txnsByCategory(inScope, categoryId)
+      .filter(t => t.type === 'expense');
+    const ext = (typeof CSVImport !== 'undefined' && CSVImport.extractPayee)
+      || (typeof window !== 'undefined' && window.CSVImport && window.CSVImport.extractPayee)
+      || (d => String(d || ''));
+    const map = new Map();
+    for (const t of matching) {
+      const name = ext(t.description) || '—';
+      if (!map.has(name)) map.set(name, { payeeName: name, total: 0, count: 0 });
+      const row = map.get(name);
+      row.total = round2(row.total + Math.abs(Number(t.amount) || 0));
+      row.count++;
+    }
+    return [...map.values()]
+      .sort((a, b) => (b.total - a.total) || (b.count - a.count))
+      .slice(0, limit);
+  },
+
+  /**
+   * Recent in-scope transactions for a category, sorted date desc
+   * with `createdAt` as tie-breaker. Cap at `limit` (default 25).
+   * @param {State} state
+   * @param {string} categoryId
+   * @param {number} [limit=25]
+   * @returns {Transaction[]}
+   */
+  recentTransactionsForCategory(state, categoryId, limit = 25) {
+    const inScope = Selectors.transactionsInScope(state || {});
+    return Selectors._txnsByCategory(inScope, categoryId)
+      .slice()
+      .sort((a, b) =>
+        (b.date || '').localeCompare(a.date || '') ||
+        (b.createdAt || '').localeCompare(a.createdAt || ''))
+      .slice(0, limit);
+  },
+
+  /**
+   * All-category totals for the categories list page (ISSUE-023).
+   *
+   * Returns one row per category in `state.categories`, regardless of
+   * whether the category has any in-scope transactions — a category
+   * with no spend still shows up (with zeros) because it's a real
+   * category the user can drill into. Rows are sorted by this-month
+   * expense total desc, with ties broken by this-year total desc, so
+   * the most recently-active categories bubble to the top.
+   *
+   * `percentOfExpenses` is computed against the sum of this-month
+   * expenses across all in-scope expense categories — categories
+   * that are `type: 'income'` get 0% by design (the user is asking
+   * "where did my money go?", income is the answer, not the bucket).
+   *
+   * @param {State} state
+   * @param {Date} [_today=new Date()]  Reserved for symmetry; not used
+   *   yet — the selector always evaluates "this month" relative to
+   *   the device clock. Adding a custom-month filter is a deliberate
+   *   follow-up if the page ever needs historical scrubbing.
+   * @returns {{ category: Category, thisMonth: number, thisYear: number, count: number, percentOfExpenses: number }[]}
+   */
+  allCategoryTotals(state, _today = new Date()) {
+    const cats = (state && state.categories) || [];
+    const monthRange = Selectors._currentMonthRange(new Date());
+    const yearRange = Selectors._currentYearRange(new Date());
+    const inScope = Selectors.transactionsInScope(state || {});
+
+    // Pre-aggregate expense totals per category so we only walk the
+    // txns once and so the percent denominator is consistent across
+    // every row.
+    const monthByCat = Object.create(null);
+    const yearByCat = Object.create(null);
+    const countByCat = Object.create(null);
+    let totalMonthExpense = 0;
+    for (const t of inScope) {
+      if (t.type !== 'expense') continue;
+      const cid = t.categoryId;
+      if (!cid) continue;
+      const isMonth = t.date >= monthRange.from && t.date <= monthRange.to;
+      const isYear = t.date >= yearRange.from && t.date <= yearRange.to;
+      if (isMonth) {
+        monthByCat[cid] = (monthByCat[cid] || 0) + Math.abs(t.amount);
+        totalMonthExpense += Math.abs(t.amount);
+      }
+      if (isYear) yearByCat[cid] = (yearByCat[cid] || 0) + Math.abs(t.amount);
+      countByCat[cid] = (countByCat[cid] || 0) + 1;
+    }
+
+    const rows = cats.map(cat => {
+      const thisMonth = round2(monthByCat[cat.id] || 0);
+      const thisYear = round2(yearByCat[cat.id] || 0);
+      const count = countByCat[cat.id] || 0;
+      const percentOfExpenses = totalMonthExpense > 0
+        ? round2((thisMonth / totalMonthExpense) * 100)
+        : 0;
+      return { category: cat, thisMonth, thisYear, count, percentOfExpenses };
+    });
+
+    rows.sort((a, b) =>
+      (b.thisMonth - a.thisMonth) ||
+      (b.thisYear - a.thisYear) ||
+      // Deterministic fallback for full ties (no spend, no count) so
+      // tests can assert exact order.
+      a.category.id.localeCompare(b.category.id));
+    return rows;
+  },
+
+  /**
+   * Totals for one payee (ISSUE-024). Same shape as `categoryTotals`
+   * so the shared EntityDetail renderer can reuse the header card
+   * without branching on kind.
+   *
+   * `payeeName` is matched against `extractPayee(txn.description)`,
+   * the same extractor the rest of the app uses. In-scope only.
+   *
+   * `percentOfExpenses` is the payee's share of this-month's total
+   * expense across every category. A payee that appears only in
+   * income transactions returns all-zeros (income is the answer,
+   * not the bucket).
+   *
+   * @param {State} state
+   * @param {string} payeeName
+   * @param {Date} [today=new Date()]
+   * @returns {{ thisMonth: number, thisYear: number, count: number, percentOfExpenses: number }}
+   */
+  payeeTotals(state, payeeName, today = new Date()) {
+    const month = Selectors._currentMonthRange(today);
+    const year = Selectors._currentYearRange(today);
+    const inScope = Selectors.transactionsInScope(state || {});
+    const matching = Selectors._txnsByPayee(inScope, payeeName);
+
+    const inMonth = matching.filter(t => t.date >= month.from && t.date <= month.to);
+    const inYear = matching.filter(t => t.date >= year.from && t.date <= year.to);
+    const thisMonth = Selectors._absTotal(inMonth, { type: 'expense' });
+    const thisYear = Selectors._absTotal(inYear, { type: 'expense' });
+    const count = inYear.length;
+
+    const totalMonthExpense = Selectors._absTotal(
+      inScope.filter(t => t.date >= month.from && t.date <= month.to && t.type === 'expense'),
+      { type: 'expense' });
+    const percentOfExpenses = totalMonthExpense > 0
+      ? round2((thisMonth / totalMonthExpense) * 100)
+      : 0;
+    return { thisMonth, thisYear, count, percentOfExpenses };
+  },
+
+  /**
+   * 12 (or N) monthly buckets for one payee, oldest first. Mirrors
+   * `categoryMonthlyTrend` exactly — empty months fill with 0 so the
+   * chart always renders 12 bars. The series is expense-only; income
+   * rows don't drive the "where does the money go" question.
+   *
+   * @param {State} state
+   * @param {string} payeeName
+   * @param {number} [months=12]
+   * @param {Date} [today=new Date()]
+   * @returns {{ month: string, amount: number }[]}
+   */
+  payeeMonthlyTrend(state, payeeName, months = 12, today = new Date()) {
+    const inScope = Selectors.transactionsInScope(state || {});
+    const matching = Selectors._txnsByPayee(inScope, payeeName);
+    const keys = [];
+    for (let i = months - 1; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      keys.push(d.toISOString().slice(0, 7));
+    }
+    const buckets = Object.create(null);
+    for (const k of keys) buckets[k] = 0;
+    for (const t of matching) {
+      if (!t || !t.date || t.type !== 'expense') continue;
+      const k = t.date.slice(0, 7);
+      if (!(k in buckets)) continue;
+      buckets[k] = round2(buckets[k] + Math.abs(Number(t.amount) || 0));
+    }
+    return keys.map(k => ({ month: k, amount: buckets[k] }));
+  },
+
+  /**
+   * Top categories for one payee, by total expense desc (ISSUE-024).
+   * Symmetric with `topPayeesInCategory`: same shape (just `category`
+   * in place of `payeeName`), same tie-break (count desc), same
+   * spec-driven `_today` parameter for symmetry.
+   *
+   * Rows include the live `category` object so the top-list renderer
+   * can build a click target to `category-{category.id}` without a
+   * second lookup. Categories with no spend still appear when the
+   * payee has any other expense — actually no: a category only
+   * appears if the payee has spent against it, by construction.
+   *
+   * @param {State} state
+   * @param {string} payeeName
+   * @param {Date} [_today=new Date()]  Unused; kept for spec symmetry.
+   * @param {number} [limit=5]
+   * @returns {{ category: Category, total: number, count: number }[]}
+   */
+  topCategoriesForPayee(state, payeeName, _today = new Date(), limit = 5) {
+    const inScope = Selectors.transactionsInScope(state || {});
+    const matching = Selectors._txnsByPayee(inScope, payeeName)
+      .filter(t => t.type === 'expense');
+    const map = new Map();
+    for (const t of matching) {
+      const cid = t.categoryId;
+      if (!cid) continue;
+      if (!map.has(cid)) {
+        const cat = (state.categories || []).find(c => c.id === cid);
+        // Skip rows whose category was deleted from state — the
+        // expense still counted toward the payee total, but we
+        // can't show "deleted category" in the top list.
+        if (!cat) continue;
+        map.set(cid, { category: cat, total: 0, count: 0 });
+      }
+      const row = map.get(cid);
+      row.total = round2(row.total + Math.abs(Number(t.amount) || 0));
+      row.count++;
+    }
+    return [...map.values()]
+      .sort((a, b) => (b.total - a.total) || (b.count - a.count))
+      .slice(0, limit);
+  },
+
+  /**
+   * Recent in-scope transactions for one payee, sorted date desc
+   * with `createdAt` as tie-breaker. Cap at `limit` (default 25).
+   * Symmetric with `recentTransactionsForCategory` so the shared
+   * EntityDetail renderer can render either kind's recent card.
+   *
+   * @param {State} state
+   * @param {string} payeeName
+   * @param {number} [limit=25]
+   * @returns {Transaction[]}
+   */
+  recentTransactionsForPayee(state, payeeName, limit = 25) {
+    const inScope = Selectors.transactionsInScope(state || {});
+    return Selectors._txnsByPayee(inScope, payeeName)
+      .slice()
+      .sort((a, b) =>
+        (b.date || '').localeCompare(a.date || '') ||
+        (b.createdAt || '').localeCompare(a.createdAt || ''))
+      .slice(0, limit);
+  },
+
+  /**
+   * Every distinct payee with a positive this-month total (ISSUE-024,
+   * optional browse-list support). The result is sorted by thisMonth
+   * desc so the natural display order is "biggest first". Payees
+   * with zero spend this month are excluded — the page is about
+   * "who's getting our money right now", which excludes dormant
+   * names.
+   *
+   * Documented as a deliberate follow-up if a payee list page ever
+   * ships; the selector is here so callers can experiment without
+   * re-implementing the aggregation.
+   *
+   * @param {State} state
+   * @param {Date} [_today=new Date()]  Unused; for API symmetry.
+   * @returns {{ name: string, thisMonth: number }[]}
+   */
+  payeeList(state, _today = new Date()) {
+    const month = Selectors._currentMonthRange(new Date());
+    const inScope = Selectors.transactionsInScope(state || {});
+    const map = new Map();
+    for (const t of inScope) {
+      if (t.type !== 'expense') continue;
+      if (t.date < month.from || t.date > month.to) continue;
+      const name = (typeof CSVImport !== 'undefined' && CSVImport.extractPayee)
+        ? CSVImport.extractPayee(t.description)
+        : String(t.description || '');
+      if (!name) continue;
+      if (!map.has(name)) map.set(name, { name, thisMonth: 0 });
+      map.get(name).thisMonth = round2(
+        map.get(name).thisMonth + Math.abs(Number(t.amount) || 0));
+    }
+    return [...map.values()]
+      .filter(p => p.thisMonth > 0)
+      .sort((a, b) => b.thisMonth - a.thisMonth);
+  },
+
+  /**
+   * Aggregate stats over a (already-filtered) list of transactions
+   * (ISSUE-025). Used by the Transactions view to power the "exactly
+   * one entity filter is set" stats strip above the table.
+   *
+   * The selector is deliberately pure and doesn't read state or
+   * know about filters — the view already ran `transactionsInScope`
+   * and applied the active filter pipeline before calling this, so
+   * "in-scope only" is the caller's responsibility, not ours. This
+   * keeps the selector testable in isolation and reusable for any
+   * future filtered-list view that wants a "totals" header.
+   *
+   * `minDate` / `maxDate` are ISO strings (`'YYYY-MM-DD'`) so the
+   * view can format them with whatever locale it likes; we don't
+   * pre-format here because we want to keep the selector
+   * presentation-agnostic.
+   *
+   * `avg` is the simple mean of `txn.amount` over the set — it's
+   * the same number you'd get by dividing `total / count`, but
+   * computed as a single pass so callers can rely on it being
+   * `0` (not `NaN`) when count is 0.
+   *
+   * @param {Transaction[]} txns  Already-filtered (incl. in-scope) txns.
+   * @returns {{ total: number, count: number, avg: number, minDate: string|null, maxDate: string|null }}
+   */
+  entityTransactionStats(txns) {
+    if (!txns || txns.length === 0) {
+      return { total: 0, count: 0, avg: 0, minDate: null, maxDate: null };
+    }
+    let total = 0;
+    let minDate = null;
+    let maxDate = null;
+    for (const t of txns) {
+      if (!t) continue;
+      total += Number(t.amount) || 0;
+      if (t.date) {
+        if (minDate === null || t.date < minDate) minDate = t.date;
+        if (maxDate === null || t.date > maxDate) maxDate = t.date;
+      }
+    }
+    return {
+      total: round2(total),
+      count: txns.length,
+      avg: round2(total / txns.length),
+      minDate,
+      maxDate,
+    };
+  },
 };
 
 function round2(n) { return Math.round(n * 100) / 100; }

@@ -59,6 +59,10 @@ const Shell = (() => {
         navItem('transactions', t('nav.transactions'), Icons.list, txCount),
         el('div', { class: 'nav-label' }, t('sidebar.label.manage')),
         navItem('categories',   t('nav.categories'),   Icons.tags, App._state.categories.length),
+        // categories-manage is the CRUD / group-management page;
+        // landing here is rare (most users visit the categories list
+        // and click "Beheer" in its header).
+        navItem('categories-manage', t('nav.categoriesManage'), Icons.settings),
         navItem('sources',      t('nav.sources'),      Icons.wallet, App._state.sources.length),
         navItem('users',        t('nav.users'),        Icons.users, App._state.users.length),
         navItem('payees',       t('nav.payees'),       Icons.store, payeesBadge),

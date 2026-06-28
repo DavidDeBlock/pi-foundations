@@ -23,6 +23,14 @@ const Router = (() => {
   // re-render keeps the user's open panels open.
   /** @type {Set<string>} */
   const envelopeCompareExpanded = new Set();
+  // ISSUE-021: one-shot pre-fill payload consumed by the next
+  // envelopes render. The category detail's "Set envelope for this
+  // category" CTA sets this and calls goTo('envelopes'); the envelopes
+  // view opens the modal with these defaults and clears the slot.
+  // Kept as a single object slot (overwritten by each call) rather
+  // than a queue because there is only one entry point for now.
+  /** @type {null | { categoryIds?: string[], payeeIds?: string[], name?: string }} */
+  let pendingEnvelopeInit = null;
 
   // -- Period state (ISSUE-013 / PRD-004) ----------------------------
   // Shared "what time range am I looking at" state for the dashboard
@@ -85,6 +93,23 @@ const Router = (() => {
     view = v;
     Shell.closeSidebar();
     renderView();
+  }
+
+  // ISSUE-021: detail routes encode the kind into the view string so
+  // the existing single-string view state stays the source of truth
+  // (no separate id slot, no router rewiring). Splits on the first
+  // '-' so slug-style ids that themselves contain '-' keep working
+  // later. Returns null for top-level views ('dashboard', 'envelopes')
+  // and unknown prefixes.
+  function parseDetailRoute(v) {
+    if (typeof v !== 'string') return null;
+    const idx = v.indexOf('-');
+    if (idx <= 0) return null;
+    const kind = v.slice(0, idx);
+    const id = v.slice(idx + 1);
+    if (!id) return null;
+    if (kind !== 'category' && kind !== 'payee') return null;
+    return { kind, id };
   }
 
   function setBalanceViewMode(mode) {
@@ -165,7 +190,9 @@ const Router = (() => {
     const viewEl = $('#view');
     viewEl.innerHTML = '';
 
-    // Page title/sub — in place.
+    // Page title/sub — in place. Detail views ('category-...',
+    // 'payee-...') compute their title from the entity name once we
+    // resolve it; we patch the title/sub lines below in that branch.
     const titles = {
       dashboard:    [t('page.dashboard.title'),    t('page.dashboard.sub')],
       trends:       [t('page.trends.title'),       t('page.trends.sub')],
@@ -178,12 +205,14 @@ const Router = (() => {
       envelopes:    [t('envelopes.title'),         ''],
       settings:     [t('page.settings.title'),     t('page.settings.sub')],
     };
-    $('#page-title').innerHTML = titles[view][0];
-    $('#page-sub').textContent = titles[view][1];
+    $('#page-title').innerHTML = titles[view] ? titles[view][0] : '';
+    $('#page-sub').textContent = titles[view] ? titles[view][1] : '';
 
     // Topbar in-place updates.
     const at = $('#add-txn-btn');
-    at.style.display = (view === 'categories' || view === 'sources' || view === 'users' || view === 'settings' || view === 'goals' || view === 'envelopes') ? 'none' : 'inline-flex';
+    const isHiddenView = (v) => v === 'categories' || v === 'categories-manage' || v === 'sources' || v === 'users'
+      || v === 'settings' || v === 'goals' || v === 'envelopes';
+    at.style.display = isHiddenView(view) || parseDetailRoute(view) ? 'none' : 'inline-flex';
     Shell.ensureMonthPicker();
     Shell.updateScopePills();
 
@@ -191,11 +220,30 @@ const Router = (() => {
     Shell.updateSidebarBadges();
     Shell.updateSidebarActiveClass();
 
+    // Detail routes: parse the kind+id from the view string and
+    // dispatch to the matching detail view. The view itself fetches
+    // the entity from state and renders the not-found state when the
+    // id no longer resolves (e.g. category was deleted while on the
+    // page).
+    const detail = parseDetailRoute(view);
+    if (detail) {
+      if (detail.kind === 'category') {
+        viewEl.appendChild(CategoryDetail.render({ categoryId: detail.id }));
+      } else if (detail.kind === 'payee') {
+        // ISSUE-024: the route param is a payee-name slug, not an id
+        // (payees aren't first-class entities). PayeeDetail resolves
+        // the slug back to a name via ViewHelpers.unsplitPayeeSlug.
+        viewEl.appendChild(PayeeDetail.render({ payeeSlug: detail.id }));
+      }
+      return;
+    }
+
     // Mount the active view subtree.
     if (view === 'dashboard')    viewEl.appendChild(Dashboard.render());
     else if (view === 'trends')       viewEl.appendChild(Trends.render());
     else if (view === 'transactions') viewEl.appendChild(Transactions.render());
     else if (view === 'categories')   viewEl.appendChild(Categories.render());
+    else if (view === 'categories-manage') viewEl.appendChild(CategoriesManage.render());
     else if (view === 'sources')      viewEl.appendChild(Sources.render());
     else if (view === 'users')        viewEl.appendChild(Users.render());
     else if (view === 'payees')       viewEl.appendChild(Payees.render());
@@ -233,6 +281,12 @@ const Router = (() => {
     // `has(id)` / `add(id)` / `delete(id)` without going through a
     // dedicated mutator. Not persisted (transient UI state).
     get envelopeCompareExpanded() { return envelopeCompareExpanded; },
+    // ISSUE-021: detail-route parser + one-shot envelope pre-fill.
+    // The envelopes view reads `pendingEnvelopeInit` on render and
+    // clears it after consuming (settable from category detail CTA).
+    parseDetailRoute,
+    get pendingEnvelopeInit() { return pendingEnvelopeInit; },
+    set pendingEnvelopeInit(v) { pendingEnvelopeInit = v; },
   };
 })();
 window.Router = Router;

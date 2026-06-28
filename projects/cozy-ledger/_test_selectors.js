@@ -37,6 +37,14 @@ ctx.window.document = { querySelector: () => null, querySelectorAll: () => [] };
 ctx.globalThis = ctx;
 
 let passed = 0, failed = 0;
+
+// `todayIso()` returns today's date as `YYYY-MM-DD`. Used by selector
+// tests that seed transactions for "this month" without depending on
+// `new Date()` toLocale quirks.
+function todayIso() {
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
+}
 function test(name, fn) {
   try { fn(); console.log(`  ✓ ${name}`); passed++; }
   catch (e) { console.log(`  ✗ ${name}\n      ${e.message}`); failed++; }
@@ -54,7 +62,10 @@ function eq(a, b, msg) {
 // `t()` for period labels) has a populated translation table. Without
 // it the labels would fall through to the key string, which is fine
 // for negative tests but annoying when asserting on shape.
-for (const s of ['data.js', 'selectors.js', 'utils.js', 'i18n.js']) {
+// csv.js is loaded so the ISSUE-024 payee selectors (which depend
+// on CSVImport.extractPayee) can resolve the merchant name out of
+// ING-style descriptions like 'Betaling Bancontact ... - Delhaize ...'.
+for (const s of ['data.js', 'csv.js', 'selectors.js', 'utils.js', 'i18n.js']) {
   const code = fs.readFileSync(path.join(__dirname, s), 'utf8');
   vm.runInContext(code, ctx, { filename: s });
 }
@@ -1367,6 +1378,396 @@ test('ISSUE-020: empty envelope (no links) still returns 7 entries with spent=0'
     if (out.history[i].delta !== 0) throw new Error(`history[${i}].delta = ${out.history[i].delta}, want 0`);
     if (out.history[i].direction !== 'same') throw new Error(`history[${i}].direction = ${out.history[i].direction}, want same`);
   }
+});
+
+// =====================================================================
+// ISSUE-021: Category detail selectors
+// =====================================================================
+// The category detail view composes four pure selectors:
+// categoryTotals, categoryMonthlyTrend, topPayeesInCategory, and
+// recentTransactionsForCategory. Each is in-scope (private-by-default
+// via makeScopedState) and reads from `state.transactions` filtered
+// to the matching `categoryId`.
+
+test('ISSUE-021: categoryTotals — empty category returns all zeros', () => {
+  const today = new Date(2026, 5, 15); // 15 Jun 2026
+  const state = makeScopedState({ txns: [] });
+  const out = Selectors.categoryTotals(state, 'c_eat', today);
+  if (out.thisMonth !== 0) throw new Error(`thisMonth = ${out.thisMonth}, want 0`);
+  if (out.thisYear !== 0) throw new Error(`thisYear = ${out.thisYear}, want 0`);
+  if (out.count !== 0) throw new Error(`count = ${out.count}, want 0`);
+  if (out.percentOfExpenses !== 0) throw new Error(`percentOfExpenses = ${out.percentOfExpenses}, want 0`);
+});
+
+test('ISSUE-021: categoryTotals — single-txn category sums this-month and this-year', () => {
+  const today = new Date(2026, 5, 15);
+  const state = makeScopedState({ txns: [
+    { id: 't1', sourceId: 's_in', type: 'expense', amount: 42, date: '2026-06-10', categoryId: 'c_eat', description: 'X' },
+    { id: 't2', sourceId: 's_in', type: 'expense', amount: 18, date: '2026-01-05', categoryId: 'c_eat', description: 'Y' },
+    { id: 't3', sourceId: 's_in', type: 'expense', amount: 99, date: '2025-12-20', categoryId: 'c_eat', description: 'Z' }, // last year
+  ]});
+  const out = Selectors.categoryTotals(state, 'c_eat', today);
+  if (out.thisMonth !== 42) throw new Error(`thisMonth = ${out.thisMonth}, want 42`);
+  if (out.thisYear !== 60) throw new Error(`thisYear = ${out.thisYear}, want 60 (42+18)`);
+  if (out.count !== 2) throw new Error(`count = ${out.count}, want 2`);
+  // percentOfExpenses = 42 / 42 = 100% (the only this-month expense).
+  if (out.percentOfExpenses !== 100) throw new Error(`percentOfExpenses = ${out.percentOfExpenses}, want 100`);
+});
+
+test('ISSUE-021: categoryTotals — out-of-scope txns are excluded', () => {
+  const today = new Date(2026, 5, 15);
+  const state = makeScopedState({ txns: [
+    { id: 't1', sourceId: 's_in',  type: 'expense', amount: 100, date: '2026-06-05', categoryId: 'c_eat', description: 'X' },
+    { id: 't2', sourceId: 's_out', type: 'expense', amount: 999, date: '2026-06-06', categoryId: 'c_eat', description: 'Y' },
+  ]});
+  const out = Selectors.categoryTotals(state, 'c_eat', today);
+  if (out.thisMonth !== 100) throw new Error(`thisMonth = ${out.thisMonth}, want 100 (out-of-scope excluded)`);
+  if (out.count !== 1) throw new Error(`count = ${out.count}, want 1`);
+});
+
+test('ISSUE-021: categoryTotals — income in same category does NOT inflate expense totals', () => {
+  const today = new Date(2026, 5, 15);
+  const state = makeScopedState({ txns: [
+    { id: 't1', sourceId: 's_in', type: 'expense', amount: 50, date: '2026-06-05', categoryId: 'c_eat', description: 'X' },
+    { id: 't2', sourceId: 's_in', type: 'income',  amount: 30, date: '2026-06-06', categoryId: 'c_eat', description: 'Y' },
+  ]});
+  const out = Selectors.categoryTotals(state, 'c_eat', today);
+  if (out.thisMonth !== 50) throw new Error(`thisMonth = ${out.thisMonth}, want 50 (income excluded)`);
+});
+
+test('ISSUE-021: categoryMonthlyTrend — returns 12 ordered months with empty slots zeroed', () => {
+  const today = new Date(2026, 5, 15);
+  // One txn in 2026-03, one in 2026-06. The other 10 months should be 0.
+  const state = makeScopedState({ txns: [
+    { id: 't1', sourceId: 's_in', type: 'expense', amount: 25, date: '2026-03-10', categoryId: 'c_eat', description: 'X' },
+    { id: 't2', sourceId: 's_in', type: 'expense', amount: 70, date: '2026-06-12', categoryId: 'c_eat', description: 'Y' },
+    { id: 't3', sourceId: 's_in', type: 'expense', amount: 99, date: '2026-04-15', categoryId: 'c_other', description: 'Z' }, // wrong category
+  ]});
+  const out = Selectors.categoryMonthlyTrend(state, 'c_eat', 12, today);
+  if (out.length !== 12) throw new Error(`length = ${out.length}, want 12`);
+  // Oldest month (index 0): 2025-07 — empty → 0
+  if (out[0].month !== '2025-07') throw new Error(`out[0].month = ${out[0].month}, want 2025-07`);
+  if (out[0].amount !== 0) throw new Error(`out[0].amount = ${out[0].amount}, want 0`);
+  // 2026-03 (index 8): 25
+  if (out[8].month !== '2026-03') throw new Error(`out[8].month = ${out[8].month}, want 2026-03`);
+  if (out[8].amount !== 25) throw new Error(`out[8].amount = ${out[8].amount}, want 25`);
+  // 2026-06 (index 11): 70 — the current month.
+  if (out[11].month !== '2026-06') throw new Error(`out[11].month = ${out[11].month}, want 2026-06`);
+  if (out[11].amount !== 70) throw new Error(`out[11].amount = ${out[11].amount}, want 70`);
+  // Sum across all 12 buckets must equal 25 + 70 = 95.
+  const sum = out.reduce((acc, b) => acc + b.amount, 0);
+  if (sum !== 95) throw new Error(`total = ${sum}, want 95`);
+});
+
+test('ISSUE-021: topPayeesInCategory — sorts by total desc and caps at limit', () => {
+  const today = new Date(2026, 5, 15);
+  const state = makeScopedState({ txns: [
+    { id: 't1', sourceId: 's_in', type: 'expense', amount: 100, date: '2026-06-05', categoryId: 'c_eat', description: 'AH' },
+    { id: 't2', sourceId: 's_in', type: 'expense', amount:  60, date: '2026-06-06', categoryId: 'c_eat', description: 'AH' },
+    { id: 't3', sourceId: 's_in', type: 'expense', amount:  40, date: '2026-06-07', categoryId: 'c_eat', description: 'Jumbo' },
+    { id: 't4', sourceId: 's_in', type: 'expense', amount: 200, date: '2026-06-08', categoryId: 'c_eat', description: 'Delhaize' },
+    { id: 't5', sourceId: 's_in', type: 'expense', amount: 999, date: '2026-06-09', categoryId: 'c_other', description: 'X' }, // wrong cat
+  ]});
+  const out = Selectors.topPayeesInCategory(state, 'c_eat', today, 5);
+  if (out.length !== 3) throw new Error(`length = ${out.length}, want 3`);
+  if (out[0].payeeName !== 'Delhaize' || out[0].total !== 200 || out[0].count !== 1) {
+    throw new Error(`row 0 wrong: ${JSON.stringify(out[0])}`);
+  }
+  if (out[1].payeeName !== 'AH' || out[1].total !== 160 || out[1].count !== 2) {
+    throw new Error(`row 1 wrong: ${JSON.stringify(out[1])}`);
+  }
+  if (out[2].payeeName !== 'Jumbo' || out[2].total !== 40) {
+    throw new Error(`row 2 wrong: ${JSON.stringify(out[2])}`);
+  }
+  // Cap at limit=2
+  const out2 = Selectors.topPayeesInCategory(state, 'c_eat', today, 2);
+  if (out2.length !== 2) throw new Error(`capped length = ${out2.length}, want 2`);
+});
+
+test('ISSUE-021: recentTransactionsForCategory — returns in-scope txns sorted date desc, capped at limit', () => {
+  const today = new Date(2026, 5, 15);
+  const state = makeScopedState({ txns: [
+    { id: 't1', sourceId: 's_in',  type: 'expense', amount: 10, date: '2026-06-10', categoryId: 'c_eat', description: 'X', createdAt: '2026-06-10T10:00:00.000Z' },
+    { id: 't2', sourceId: 's_in',  type: 'expense', amount: 20, date: '2026-06-12', categoryId: 'c_eat', description: 'Y', createdAt: '2026-06-12T10:00:00.000Z' },
+    { id: 't3', sourceId: 's_out', type: 'expense', amount: 99, date: '2026-06-13', categoryId: 'c_eat', description: 'Z', createdAt: '2026-06-13T10:00:00.000Z' }, // out of scope
+    { id: 't4', sourceId: 's_in',  type: 'expense', amount: 30, date: '2026-06-14', categoryId: 'c_other', description: 'W', createdAt: '2026-06-14T10:00:00.000Z' }, // wrong cat
+  ]});
+  const out = Selectors.recentTransactionsForCategory(state, 'c_eat', 25);
+  if (out.length !== 2) throw new Error(`length = ${out.length}, want 2 (out-of-scope + wrong-cat excluded)`);
+  // Sorted date desc: 06-12 first, then 06-10.
+  if (out[0].id !== 't2') throw new Error(`out[0].id = ${out[0].id}, want t2`);
+  if (out[1].id !== 't1') throw new Error(`out[1].id = ${out[1].id}, want t1`);
+  // Cap at limit=1.
+  const out2 = Selectors.recentTransactionsForCategory(state, 'c_eat', 1);
+  if (out2.length !== 1) throw new Error(`capped length = ${out2.length}, want 1`);
+  if (out2[0].id !== 't2') throw new Error(`capped out[0].id = ${out2[0].id}, want t2`);
+});
+
+// =====================================================================
+// ISSUE-023 — Categories list page selector (allCategoryTotals)
+// =====================================================================
+
+console.log('\n— ISSUE-023: allCategoryTotals —');
+
+// Helper: build a minimal state with the categories the test cares
+// about. We don't load the full seed here (that would require app.js,
+// which the selector test sandbox deliberately avoids) — just enough
+// categories to exercise the sort/tie-break logic.
+function makeCat(id) {
+  return { id, name: id.replace(/^c_/, ''), type: 'expense', color: '#000', icon: '✦', active: true };
+}
+
+test('ISSUE-023: allCategoryTotals — returns one row per category, sorted by thisMonth desc', () => {
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [{ id: 's_david', ownerId: 'u_david', active: true, balance: 0 }],
+    categories: [
+      makeCat('c_eating'),
+      makeCat('c_groceries'),
+      makeCat('c_streaming'),
+    ],
+    transactions: [
+      { id: 'tA1', type: 'expense', amount: 50,  date: todayIso(), categoryId: 'c_eating',    paidByUserId: 'u_david', sourceId: 's_david', scope: 'private', description: '', notes: '' },
+      { id: 'tA2', type: 'expense', amount: 100, date: todayIso(), categoryId: 'c_groceries', paidByUserId: 'u_david', sourceId: 's_david', scope: 'private', description: '', notes: '' },
+      { id: 'tA3', type: 'expense', amount: 25,  date: todayIso(), categoryId: 'c_streaming', paidByUserId: 'u_david', sourceId: 's_david', scope: 'private', description: '', notes: '' },
+    ],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  const rows = Selectors.allCategoryTotals(state);
+  if (rows.length !== 3) throw new Error(`expected 3 rows, got ${rows.length}`);
+  if (rows[0].category.id !== 'c_groceries') throw new Error(`row 0 should be c_groceries, got ${rows[0].category.id}`);
+  if (rows[1].category.id !== 'c_eating')    throw new Error(`row 1 should be c_eating, got ${rows[1].category.id}`);
+  if (rows[2].category.id !== 'c_streaming') throw new Error(`row 2 should be c_streaming, got ${rows[2].category.id}`);
+});
+
+test('ISSUE-023: allCategoryTotals — empty categories render with zeros but still appear', () => {
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [{ id: 's_david', ownerId: 'u_david', active: true, balance: 0 }],
+    categories: [makeCat('c_a'), makeCat('c_b')],
+    transactions: [],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  const rows = Selectors.allCategoryTotals(state);
+  if (rows.length !== 2) throw new Error(`expected 2 rows even with no txns, got ${rows.length}`);
+  for (const r of rows) {
+    if (r.thisMonth !== 0 || r.thisYear !== 0 || r.count !== 0 || r.percentOfExpenses !== 0) {
+      throw new Error(`row ${r.category.id} should be all zero, got ${JSON.stringify(r)}`);
+    }
+  }
+});
+
+test('ISSUE-023: allCategoryTotals — tie-break by thisYear desc', () => {
+  const lastYear = new Date(); lastYear.setFullYear(lastYear.getFullYear() - 1);
+  const lastYearIso = lastYear.toISOString().slice(0, 10);
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [{ id: 's_david', ownerId: 'u_david', active: true, balance: 0 }],
+    categories: [makeCat('c_eating'), makeCat('c_groceries')],
+    transactions: [
+      { id: 'tie1', type: 'expense', amount: 30, date: todayIso(),   categoryId: 'c_eating',    paidByUserId: 'u_david', sourceId: 's_david', scope: 'private', description: '', notes: '' },
+      { id: 'tie2', type: 'expense', amount: 30, date: todayIso(),   categoryId: 'c_groceries', paidByUserId: 'u_david', sourceId: 's_david', scope: 'private', description: '', notes: '' },
+      { id: 'yr1',  type: 'expense', amount: 500, date: lastYearIso, categoryId: 'c_eating',    paidByUserId: 'u_david', sourceId: 's_david', scope: 'private', description: '', notes: '' },
+    ],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  const rows = Selectors.allCategoryTotals(state);
+  if (rows[0].category.id !== 'c_eating') throw new Error(`row 0 should be c_eating (higher year), got ${rows[0].category.id}`);
+  if (rows[1].category.id !== 'c_groceries') throw new Error(`row 1 should be c_groceries, got ${rows[1].category.id}`);
+});
+
+test('ISSUE-023: allCategoryTotals — in-scope filter excludes txns outside the current scope', () => {
+  // scope=private → only sources with ownerId=currentUserId are
+  // in-scope. txns posted to a shared source must be excluded. The
+  // shared-source txn carries amount 999; the private-source txn
+  // carries amount 7. The expected thisMonth for c_eating is 7.
+  const state = {
+    users: [{ id: 'u_david' }],
+    sources: [
+      { id: 's_shared', ownerId: null, active: true, balance: 0 },
+      { id: 's_david',  ownerId: 'u_david', active: true, balance: 0 },
+    ],
+    categories: [makeCat('c_eating')],
+    transactions: [
+      // shared-source txn — excluded under scope=private.
+      { id: 'shA', type: 'expense', amount: 999, date: todayIso(), categoryId: 'c_eating', paidByUserId: 'u_david', sourceId: 's_shared', scope: 'shared', description: '', notes: '' },
+      // private-source txn — included.
+      { id: 'prA', type: 'expense', amount: 7,   date: todayIso(), categoryId: 'c_eating', paidByUserId: 'u_david', sourceId: 's_david',  scope: 'private', description: '', notes: '' },
+    ],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+  };
+  const rows = Selectors.allCategoryTotals(state);
+  const eating = rows.find(r => r.category.id === 'c_eating');
+  if (!eating) throw new Error('c_eating row missing');
+  if (eating.thisMonth !== 7) {
+    throw new Error(`in-scope filter broken: c_eating thisMonth=${eating.thisMonth}, want 7`);
+  }
+  if (eating.count !== 1) throw new Error(`count should be 1, got ${eating.count}`);
+});
+
+// =====================================================================
+// ISSUE-024 — Payee detail selectors (payeeTotals / payeeMonthlyTrend /
+// topCategoriesForPayee / recentTransactionsForPayee / payeeList)
+// =====================================================================
+
+console.log('\n— ISSUE-024: Payee selectors —');
+
+// Build a state with a handful of payees spanning multiple months
+// and multiple categories. The descriptions match ING-Belgium CSV
+// shapes so CSVImport.extractPayee recognises them as 'Delhaize',
+// 'Colruyt', 'Café Bombala', etc.
+function makeIssue024State() {
+  const t = (id, n, cat) => ({ id, type: 'expense', amount: n, date: '2026-06-10',
+    categoryId: cat, paidByUserId: 'u_david', sourceId: 's_david', scope: 'private',
+    description: '', notes: '' });
+  return {
+    users: [{ id: 'u_david' }],
+    sources: [{ id: 's_david', ownerId: 'u_david', active: true, balance: 0 }],
+    categories: [
+      { id: 'c_groceries', name: 'Boodschappen', type: 'expense', color: '#aaa', icon: '✦', active: true },
+      { id: 'c_eating',    name: 'Eten',         type: 'expense', color: '#bbb', icon: '✦', active: true },
+      { id: 'c_other',     name: 'Overig',       type: 'expense', color: '#ccc', icon: '✦', active: true },
+    ],
+    settings: { currentUserId: 'u_david', scope: 'private' },
+    transactions: [
+      // This month — the "fresh" signal.
+      { ...t('p1', 50, 'c_groceries'), date: '2026-06-10', description: 'Betaling Bancontact 10/06/26 - 14.32 uur - Delhaize 1050 - Bruxelles - BE' },
+      { ...t('p2', 80, 'c_groceries'), date: '2026-06-12', description: 'Betaling Bancontact 12/06/26 - 10.05 uur - Delhaize 1050 - Bruxelles - BE' },
+      { ...t('p3', 25, 'c_eating'),    date: '2026-06-15', description: 'Betaling Bancontact 15/06/26 - 19.18 uur - Café Bombala 1050 - BE' },
+      // Earlier this year — contributes to thisYear but not thisMonth.
+      { ...t('p4', 60, 'c_groceries'), date: '2026-04-08', description: 'Betaling Bancontact 08/04/26 - 11.00 uur - Delhaize 1050 - Bruxelles - BE' },
+      { ...t('p5', 30, 'c_eating'),    date: '2026-02-20', description: 'Betaling Bancontact 20/02/26 - 12.34 uur - Café Bombala 1050 - BE' },
+      // Different payee — should NOT count toward Delhaize totals.
+      { ...t('p6', 40, 'c_groceries'), date: '2026-06-18', description: 'Betaling Bancontact 18/06/26 - 17.00 uur - Colruyt 1030 - BE' },
+    ],
+  };
+}
+
+test('ISSUE-024: payeeTotals — aggregates this-month + this-year + count across in-scope txns', () => {
+  // Pick a fixed today so the test is deterministic across the year
+  // boundary (2026-06-15 sits comfortably mid-year).
+  const today = new Date('2026-06-15T12:00:00Z');
+  const state = makeIssue024State();
+  const out = Selectors.payeeTotals(state, 'Delhaize', today);
+  if (out.thisMonth !== 130) throw new Error(`thisMonth: ${out.thisMonth}, want 130 (50+80)`);
+  if (out.thisYear !== 190)  throw new Error(`thisYear: ${out.thisYear}, want 190 (50+80+60)`);
+  if (out.count !== 3)      throw new Error(`count: ${out.count}, want 3`);
+  // percentOfExpenses denominator is this-month total expense across
+  // every category. With today=2026-06-15, month.to = 2026-06-15, so
+  // the Colruyt txn on 2026-06-18 is excluded. Denominator =
+  // Delhaize (130) + Café Bombala (25) = 155. Delhaize share =
+  // 130/155 = 83.87%.
+  if (Math.abs(out.percentOfExpenses - 83.87) > 0.05) {
+    throw new Error(`percentOfExpenses: ${out.percentOfExpenses}, want ~83.87`);
+  }
+});
+
+test('ISSUE-024: payeeTotals — empty / unknown payee returns all zeros', () => {
+  const state = makeIssue024State();
+  const out = Selectors.payeeTotals(state, 'No Such Payee');
+  if (out.thisMonth !== 0 || out.thisYear !== 0 || out.count !== 0 || out.percentOfExpenses !== 0) {
+    throw new Error(`empty payee should be all zeros, got ${JSON.stringify(out)}`);
+  }
+});
+
+test('ISSUE-024: payeeMonthlyTrend — returns 12 entries oldest first, fills 0 for empty months', () => {
+  const today = new Date('2026-06-15T12:00:00Z');
+  const state = makeIssue024State();
+  const out = Selectors.payeeMonthlyTrend(state, 'Delhaize', 12, today);
+  if (out.length !== 12) throw new Error(`length: ${out.length}, want 12`);
+  // Out must be oldest first: month[0] = July 2025 (12 months back).
+  if (out[0].month !== '2025-07') throw new Error(`oldest: ${out[0].month}, want 2025-07`);
+  if (out[out.length - 1].month !== '2026-06') throw new Error(`newest: ${out[out.length-1].month}, want 2026-06`);
+  // Specific months: April = 60, June = 130, every other month = 0.
+  const byMonth = Object.fromEntries(out.map(p => [p.month, p.amount]));
+  if (byMonth['2026-04'] !== 60) throw new Error(`2026-04: ${byMonth['2026-04']}, want 60`);
+  if (byMonth['2026-06'] !== 130) throw new Error(`2026-06: ${byMonth['2026-06']}, want 130`);
+  if (byMonth['2025-07'] !== 0)  throw new Error(`2025-07 should be 0, got ${byMonth['2025-07']}`);
+});
+
+test('ISSUE-024: topCategoriesForPayee — returns categories sorted by total desc', () => {
+  const state = makeIssue024State();
+  const out = Selectors.topCategoriesForPayee(state, 'Delhaize');
+  if (out.length !== 1) throw new Error(`expected 1 category for Delhaize, got ${out.length}`);
+  if (out[0].category.id !== 'c_groceries') throw new Error(`cat: ${out[0].category.id}, want c_groceries`);
+  if (out[0].total !== 190) throw new Error(`total: ${out[0].total}, want 190`);
+  if (out[0].count !== 3)   throw new Error(`count: ${out[0].count}, want 3`);
+});
+
+test('ISSUE-024: topCategoriesForPayee — multiple categories sorted desc by total', () => {
+  const state = makeIssue024State();
+  const out = Selectors.topCategoriesForPayee(state, 'Café Bombala');
+  if (out.length !== 1) throw new Error(`Café Bombala should have 1 cat (c_eating), got ${out.length}`);
+  if (out[0].total !== 55) throw new Error(`Café Bombala total: ${out[0].total}, want 55 (25+30)`);
+});
+
+test('ISSUE-024: recentTransactionsForPayee — returns in-scope txns sorted desc, capped at limit', () => {
+  const state = makeIssue024State();
+  const out = Selectors.recentTransactionsForPayee(state, 'Delhaize');
+  if (out.length !== 3) throw new Error(`len: ${out.length}, want 3`);
+  // Sort: 2026-06-12 > 2026-06-10 > 2026-04-08.
+  if (out[0].id !== 'p2') throw new Error(`out[0]: ${out[0].id}, want p2 (most recent)`);
+  if (out[1].id !== 'p1') throw new Error(`out[1]: ${out[1].id}, want p1`);
+  if (out[2].id !== 'p4') throw new Error(`out[2]: ${out[2].id}, want p4 (oldest)`);
+});
+
+test('ISSUE-024: payeeList — one row per payee with positive this-month total, sorted desc', () => {
+  const today = new Date('2026-06-15T12:00:00Z');
+  const state = makeIssue024State();
+  const out = Selectors.payeeList(state, today);
+  // 3 payees with positive this-month totals: Delhaize (130), Colruyt (40), Café Bombala (25).
+  if (out.length !== 3) throw new Error(`len: ${out.length}, want 3`);
+  if (out[0].name !== 'Delhaize') throw new Error(`top: ${out[0].name}, want Delhaize`);
+  if (out[0].thisMonth !== 130)   throw new Error(`Delhaize thisMonth: ${out[0].thisMonth}`);
+  if (out[2].name !== 'Café Bombala') throw new Error(`bottom: ${out[2].name}, want Café Bombala`);
+});
+
+// =====================================================================
+// ISSUE-025 — entityTransactionStats (transactions stats strip selector)
+// =====================================================================
+
+console.log('\n— ISSUE-025: entityTransactionStats —');
+
+test('ISSUE-025: entityTransactionStats — aggregates total/count/avg/minDate/maxDate', () => {
+  const txns = [
+    { id: 'a', amount: 100, date: '2026-01-15' },
+    { id: 'b', amount: 200, date: '2026-06-20' },
+    { id: 'c', amount:  50, date: '2026-03-10' },
+    { id: 'd', amount:  90, date: '2026-06-25' },
+  ];
+  const out = Selectors.entityTransactionStats(txns);
+  if (out.total !== 440)       throw new Error(`total: ${out.total}, want 440`);
+  if (out.count !== 4)         throw new Error(`count: ${out.count}, want 4`);
+  if (out.avg !== 110)         throw new Error(`avg: ${out.avg}, want 110`);
+  if (out.minDate !== '2026-01-15') throw new Error(`minDate: ${out.minDate}`);
+  if (out.maxDate !== '2026-06-25') throw new Error(`maxDate: ${out.maxDate}`);
+});
+
+test('ISSUE-025: entityTransactionStats — empty input returns zeros + null dates', () => {
+  const out = Selectors.entityTransactionStats([]);
+  if (out.total !== 0)      throw new Error(`total: ${out.total}, want 0`);
+  if (out.count !== 0)      throw new Error(`count: ${out.count}, want 0`);
+  if (out.avg !== 0)        throw new Error(`avg: ${out.avg}, want 0 (not NaN)`);
+  if (out.minDate !== null) throw new Error(`minDate: ${out.minDate}, want null`);
+  if (out.maxDate !== null) throw new Error(`maxDate: ${out.maxDate}, want null`);
+});
+
+test('ISSUE-025: entityTransactionStats — ignores malformed rows without throwing', () => {
+  // Defensive: the view's filter pipeline can leave `null` rows in
+  // when a join misses. The selector must not crash.
+  const txns = [
+    null,
+    { id: 'a', amount: 50, date: '2026-06-10' },
+    { id: 'b', amount: 'not a number', date: '2026-06-15' },
+    { id: 'c', amount: 30, date: null },
+  ];
+  const out = Selectors.entityTransactionStats(txns);
+  // 'not a number' falls back to 0; null date is skipped; null row is skipped.
+  if (out.count !== 4)  throw new Error(`count should include all rows: ${out.count}, want 4`);
+  if (out.total !== 80) throw new Error(`total: ${out.total}, want 80 (50 + 0 + 30)`);
+  if (out.avg !== 20)   throw new Error(`avg: ${out.avg}, want 20`);
+  if (out.minDate !== '2026-06-10') throw new Error(`minDate: ${out.minDate}, want 2026-06-10`);
+  if (out.maxDate !== '2026-06-15') throw new Error(`maxDate: ${out.maxDate}, want 2026-06-15`);
 });
 
 console.log('\n— Summary —');

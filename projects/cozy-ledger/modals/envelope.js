@@ -61,10 +61,18 @@
     };
   }
 
-  function open(id) {
+  function open(id, initialOverride) {
     const s = App._state;
     const editing = id ? (s.envelopes || []).find(e => e.id === id) : null;
-    const initial = editing || { name: '', cap: '', period: 'monthly', categoryIds: [], payeeIds: [], notes: '' };
+    // ISSUE-021: category detail's "Set envelope for this category"
+    // CTA passes a partial pre-fill (e.g. { categoryIds: ['c_eat'] })
+    // so the new-envelope modal opens with that category already
+    // selected. We only honour the keys the override actually
+    // carries — anything else falls back to the editing envelope or
+    // empty defaults — so future CTAs can layer more pre-fills
+    // (payeeIds, name) without us having to special-case them.
+    const baseInitial = editing || { name: '', cap: '', period: 'monthly', categoryIds: [], payeeIds: [], notes: '' };
+    const initial = initialOverride ? { ...baseInitial, ...initialOverride } : baseInitial;
 
     // Build option lists for both multi-selects. Categories come
     // straight from state (we don't filter on group/type — any

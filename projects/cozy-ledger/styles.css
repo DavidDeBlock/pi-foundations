@@ -799,6 +799,104 @@ body::before {
 /* --- Category breakdown --- */
 .cat-list { display: flex; flex-direction: column; gap: 12px; }
 .cat-row { display: flex; align-items: center; gap: 12px; }
+
+/* ISSUE-022: dashboard top-categories rows are clickable drill-downs
+   into the category detail view (ISSUE-021). The row is a <button>
+   for keyboard semantics; we reset its native styling so it visually
+   matches the plain .cat-row, then layer a hover + focus highlight
+   on top. */
+button.cat-row {
+  width: 100%;
+  padding: 6px 8px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 10px;
+  transition: background-color .12s ease-out;
+}
+button.cat-row.clickable:hover { background: var(--cream-deep); }
+button.cat-row.clickable:focus { outline: none; }
+button.cat-row.clickable:focus-visible {
+  outline: 2px solid var(--sage-light);
+  outline-offset: 2px;
+}
+button.cat-row.clickable:active { background: var(--cream-deep); }
+
+/* --- Categories list page (ISSUE-023) ---------------------------
+   5-column table-like layout: name + swatch, this-month, this-year,
+   count, percent. Header row sits flush against the data rows so the
+   table reads as one continuous list. Rows are <button>s for keyboard
+   semantics; CSS resets native button styling.
+   ----------------------------------------------------------------- */
+.categories-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.categories-list-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) 1fr 1fr 0.6fr 0.8fr;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.categories-list-row--head {
+  font-size: .78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--ink-soft, #6b6256);
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+button.categories-list-row {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color .12s ease-out;
+}
+button.categories-list-row.clickable:hover { background: var(--cream-deep); }
+button.categories-list-row.clickable:focus { outline: none; }
+button.categories-list-row.clickable:focus-visible {
+  outline: 2px solid var(--sage-light);
+  outline-offset: 2px;
+}
+button.categories-list-row.clickable:active { background: var(--cream-deep); }
+
+.categories-col { min-width: 0; }
+.categories-col.col-name { display: flex; align-items: center; gap: 10px; }
+.categories-col.col-pct,
+.categories-col.col-count { text-align: right; }
+.categories-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+.categories-sort-indicator {
+  margin-left: 4px;
+  font-size: .9em;
+  opacity: .8;
+}
+@media (max-width: 720px) {
+  .categories-list-row {
+    grid-template-columns: minmax(140px, 2fr) 1fr 0.7fr;
+  }
+  .categories-list-row .col-year,
+  .categories-list-row .col-pct { display: none; }
+}
+
 .cat-swatch {
   width: 30px; height: 30px;
   border-radius: 10px;
@@ -1238,6 +1336,27 @@ body::before {
 .txn-table tr:hover td { background: var(--cream-soft); }
 .txn-table tr.clickable { cursor: pointer; }
 .txn-desc { font-weight: 500; }
+/* ISSUE-024: payee name in the transactions table is a clickable
+   button that drills into the payee detail view. Reset native
+   button styling, underline on hover so it reads as a link without
+   screaming "click me". */
+.payee-cell-link {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 4px;
+  transition: background-color .12s ease-out, color .12s ease-out;
+}
+.payee-cell-link:hover { color: var(--sage, #6b8e6f); text-decoration: underline; }
+.payee-cell-link:focus { outline: none; }
+.payee-cell-link:focus-visible {
+  outline: 2px solid var(--sage-light);
+  outline-offset: 2px;
+}
 .txn-date { color: var(--ink-soft); font-size: .82rem; white-space: nowrap; }
 .txn-amount { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; white-space: nowrap; }
 .txn-amount.pos { color: var(--pos); }
@@ -1301,6 +1420,40 @@ body::before {
   background: var(--cream-soft);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
+}
+/* ISSUE-025: stats strip above the transactions table. Smaller
+   variant of the dashboard .summary cards — same paper background,
+   tighter padding, 4 cells in a flex row that wraps on mobile. */
+.txn-stats-strip {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.txn-stats-cell {
+  flex: 1 1 140px;
+  min-width: 120px;
+  padding: 12px 14px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
+}
+.txn-stats-cell .tss-label {
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--ink-mute);
+  font-weight: 600;
+}
+.txn-stats-cell .tss-value {
+  font-family: 'Fraunces', serif;
+  font-size: 1.2rem;
+  font-weight: 500;
+  letter-spacing: -.01em;
+  margin-top: 4px;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
 }
 .filters .field { display: flex; flex-direction: column; gap: 4px; }
 .filters .field label {
@@ -1964,3 +2117,202 @@ body::before {
   margin-left: auto;
 }
 .period-reset:hover { color: var(--ink); }
+
+/* --- Entity detail (ISSUE-021) ----------------------------------- */
+/* Shared chrome for category and payee detail pages. Layout: header
+   card on top (swatch + name + 4 stats + this-month bar), then a row
+   of cards (trend chart, top related list, recent transactions),
+   then an actions row at the bottom (back + extra CTAs). */
+
+.entity-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-top: 4px;
+}
+
+.entity-detail-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 18px 20px;
+}
+.entity-swatch {
+  width: 56px; height: 56px;
+  border-radius: var(--r-md);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+  font-size: 1.6rem;
+  flex-shrink: 0;
+}
+.entity-swatch--payee {
+  background: var(--cream-deep);
+  color: var(--ink);
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+}
+.edh-text { min-width: 0; }
+.edh-name {
+  font-family: 'Fraunces', serif;
+  font-size: 1.4rem;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.edh-tag {
+  display: inline-block;
+  font-size: .72rem;
+  color: var(--ink-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+.edh-totals {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.edh-stat { text-align: right; min-width: 88px; }
+.edh-stat-lbl { font-size: .72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.edh-stat-val { font-size: 1.15rem; font-weight: 600; color: var(--ink); }
+.edh-month-bar {
+  flex: 1 1 140px;
+  min-width: 120px;
+  max-width: 220px;
+}
+.edh-month-bar-fill-host {
+  background: var(--cream-deep);
+  border-radius: 4px;
+  overflow: hidden;
+  height: 6px;
+}
+.edh-month-fill {
+  height: 100%;
+  background: var(--pos);
+  transition: width 200ms ease;
+}
+
+/* Trend chart (12 monthly bars) */
+.entity-detail-trend-card .card-head { margin-bottom: 8px; }
+.entity-trend-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.entity-trend-svg .et-zero { stroke: var(--line); stroke-width: 1; }
+.entity-trend-svg .et-axis { fill: var(--ink-mute); font-size: 10px; }
+.entity-trend-svg .et-bar {
+  fill: var(--pos);
+  transition: opacity 150ms ease;
+}
+.entity-trend-svg .et-bar:hover { opacity: 0.78; }
+.entity-trend-empty {
+  padding: 28px 0;
+  text-align: center;
+  color: var(--ink-mute);
+}
+
+/* Top-related list (top payees for category, top categories for payee) */
+.etl-row {
+  display: grid;
+  grid-template-columns: 24px minmax(80px, 1.4fr) 2fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.etl-row:last-child { border-bottom: 0; }
+/* ISSUE-024: top-list rows become clickable buttons when the caller
+   supplies onRowClick. Same pattern as .cat-row.clickable: reset
+   native button styling, hover/focus affordances stay subtle so the
+   list still reads as a list. */
+button.etl-row {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+  padding-left: 8px;
+  padding-right: 8px;
+  margin-left: -8px;
+  margin-right: -8px;
+  transition: background-color .12s ease-out;
+}
+button.etl-row:last-child { border-bottom: 0; }
+button.etl-row.clickable:hover,
+button.etl-row.etl-row--clickable:hover { background: var(--cream-deep); }
+button.etl-row.etl-row--clickable:focus { outline: none; }
+button.etl-row.etl-row--clickable:focus-visible {
+  outline: 2px solid var(--sage-light);
+  outline-offset: 2px;
+}
+button.etl-row.etl-row--clickable:active { background: var(--cream-deep); }
+.etl-rank {
+  color: var(--ink-mute);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+}
+.etl-name {
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.etl-bar {
+  height: 6px;
+  background: var(--cream-deep);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.etl-bar-fill {
+  height: 100%;
+  background: var(--pos);
+}
+.etl-total {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.etl-count {
+  color: var(--ink-mute);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.entity-top-empty { padding: 16px 0; text-align: center; }
+
+/* Recent transactions card (re-uses .txn-table from the dashboard) */
+.entity-detail-recent .txn-table { margin-top: 6px; }
+
+/* Actions row */
+.entity-detail-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+@media (max-width: 720px) {
+  .entity-detail-header {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    gap: 14px;
+  }
+  .edh-totals { grid-column: 1 / -1; }
+  .etl-row {
+    grid-template-columns: 24px 1fr auto;
+    grid-template-rows: auto auto;
+  }
+  .etl-bar { grid-column: 1 / -1; }
+  .etl-count { display: none; }
+}
