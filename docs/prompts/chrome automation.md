@@ -1,0 +1,1 @@
+I want to have a personal dashboard where I have access to my bookmarks and am able to organize and create bookmarks from Chrome. I also want the websites I visited. I want the same for YouTube so I can save YouTube videos, categorize them, and see the history. 
