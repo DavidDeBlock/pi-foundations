@@ -123,6 +123,32 @@ describe('view-shared: renderHeader (issue #013 slice 5)', () => {
     expect(html).toContain('>Logout</a>')
   })
 
+  it('includes a settings link in the header (issue #017)', () => {
+    const html = renderHeader()
+    expect(html).toContain('href="/settings"')
+    expect(html).toContain('class="settings-link"')
+    expect(html).toContain('title="Settings"')
+    expect(html).toContain('>Settings</a>')
+  })
+
+  it('places the settings link between the theme toggle and the logout link', () => {
+    const html = renderHeader()
+    const themeIdx = html.indexOf('data-theme-toggle')
+    const settingsIdx = html.indexOf('class="settings-link"')
+    const logoutIdx = html.indexOf('class="logout-link"')
+    expect(themeIdx).toBeGreaterThan(-1)
+    expect(settingsIdx).toBeGreaterThan(-1)
+    expect(logoutIdx).toBeGreaterThan(-1)
+    expect(themeIdx).toBeLessThan(settingsIdx)
+    expect(settingsIdx).toBeLessThan(logoutIdx)
+  })
+
+  it('keeps the settings link when showSearch: false', () => {
+    const html = renderHeader({ showSearch: false })
+    expect(html).toContain('class="settings-link"')
+    expect(html).toContain('href="/settings"')
+  })
+
   it('renders the search form by default', () => {
     const html = renderHeader()
     expect(html).toContain('class="search-form"')

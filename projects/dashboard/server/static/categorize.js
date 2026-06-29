@@ -335,6 +335,29 @@ function wireSidebar(aside) {
   // A double-click (rename) sets `suppressNextClick = true` so the
   // page does NOT navigate away mid-rename.
   aside.addEventListener('click', (e) => {
+    // Slice #016: chevron button collapses the folder subtree. We
+    // intercept it BEFORE the folder-label handler below so we don't
+    // accidentally navigate. The handler is registered first because
+    // the chevron click also bubbles up to `aside`, and we want to
+    // handle it without ever reaching the link-navigation branch.
+    const chevron = e.target.closest('[data-toggle-folder]')
+    if (chevron) {
+      e.preventDefault()
+      e.stopPropagation()
+      const li = chevron.closest('li.sidebar-item')
+      if (!li) return
+      const collapsed = li.getAttribute('data-collapsed') === 'true'
+      if (collapsed) {
+        li.removeAttribute('data-collapsed')
+        chevron.setAttribute('aria-expanded', 'true')
+        chevron.setAttribute('aria-label', 'Collapse')
+      } else {
+        li.setAttribute('data-collapsed', 'true')
+        chevron.setAttribute('aria-expanded', 'false')
+        chevron.setAttribute('aria-label', 'Expand')
+      }
+      return
+    }
     const link = e.target.closest('a.folder-label')
     if (!link) return
     if (suppressNextClick) {

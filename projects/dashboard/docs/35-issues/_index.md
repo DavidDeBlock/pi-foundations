@@ -29,6 +29,17 @@ From plan: [30-plans/styling-pass.md](../30-plans/styling-pass.md)
 | [014](./014-thumbnails.md) | Favicons + YouTube thumbnails | AFK | 012 |
 | [015](./015-empty-states-mobile-and-polish.md) | Empty states + mobile responsive + hover/transitions polish | AFK | 011, 012, 013, 014 |
 
+## Post-v1 UI adjustments
+
+Small visual / layout adjustments after v1 was used in anger. Each is independently grabbable.
+
+| # | Title | Type | Blocked by |
+|---|-------|------|------------|
+| [016](./016-sidebar-chevron-collapse.md) | Sidebar chevron collapse (client-side folder tree) | AFK | — |
+| [017](./017-settings-link-in-header.md) | Settings link in header (drop bottom nav + JSON link) | AFK | — |
+| [018](./018-activity-feed-grid-view.md) | Activity feed: responsive grid view (1/2/3 cols) | AFK | — |
+| [019](./019-feed-pagination-top-and-bottom.md) | Activity feed: pagination on top AND bottom | AFK | — |
+
 ## v1 dependency graph
 
 ```
@@ -45,6 +56,13 @@ From plan: [30-plans/styling-pass.md](../30-plans/styling-pass.md)
 011 ──┬── 012 ── 014
       └── 013
               └── 015 (waits for 011, 012, 013, 014)
+```
+
+## Post-v1 adjustments dependency graph
+
+```
+016  017  018  019     (all independent; 018 + 019 ideally done in sequence
+                        to avoid minor merge friction in renderFeedMain)
 ```
 
 ## Slicing rationale

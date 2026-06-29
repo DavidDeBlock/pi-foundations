@@ -98,12 +98,12 @@ export interface HeaderOptions {
  * Render the sticky site header. Slice 5 of the styling pass.
  *
  *   ┌──────────────────────────────────────────────────────────────────┐
- *   │ ⊞ Dashboard     [search…] [Search]  [☀]  Logout                │
+ *   │ ⊞ Dashboard     [search…] [Search]  [☀]  Settings  Logout      │
  *   └──────────────────────────────────────────────────────────────────┘
  *
  * Layout (56px tall, sticky to viewport top):
  *   - Left: brand (icon + wordmark, links to `/`)
- *   - Right: search form, theme toggle, logout link
+ *   - Right: search form, theme toggle, settings link, logout link
  *
  * The header is rendered into every page (feed, detail, search,
  * settings) so all surfaces share one frame and the theme toggle is
@@ -127,6 +127,7 @@ export function renderHeader(opts: HeaderOptions = {}): string {
     <div class="header-right">
       ${searchForm}
       ${renderThemeToggle()}
+      <a class="settings-link" href="/settings" title="Settings">Settings</a>
       <a class="logout-link" href="/api/logout" title="Sign out">Logout</a>
     </div>
   </header>`

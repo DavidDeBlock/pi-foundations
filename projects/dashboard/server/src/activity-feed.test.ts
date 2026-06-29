@@ -411,6 +411,28 @@ describe('renderFeedPage', () => {
     expect(html).toContain('href="/settings"')
   })
 
+  it('does not render a bottom <nav> with Settings/JSON links (issue #017)', () => {
+    // Settings moved to the shared header; JSON was a debug affordance
+    // and never belonged in user-facing HTML. /api/folders the route
+    // still exists and is tested in folders.test.ts.
+    const html = renderFeedPage('david', [], {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    })
+    expect(html).not.toContain('/api/folders')
+    expect(html).not.toContain('>JSON</a>')
+    // The settings link that USED to live in this bottom nav is now
+    // expected in the header instead — assert both halves of the move:
+    expect(html).toContain('class="settings-link"')
+    // and it lives in the .header-right cluster, not in <main>.
+    const headerRightStart = html.indexOf('class="header-right"')
+    const settingsIdx = html.indexOf('class="settings-link"')
+    const mainIdx = html.indexOf('<main>')
+    expect(headerRightStart).toBeGreaterThan(-1)
+    expect(settingsIdx).toBeGreaterThan(-1)
+    expect(mainIdx).toBeGreaterThan(-1)
+    expect(settingsIdx).toBeLessThan(mainIdx)
+  })
+
   it('renders an empty-folder state when the active folder has no items', () => {
     const html = renderFeedPage('david', [{
       id: 'f1', name: 'Empty', parentId: null, chromeId: 'f1', children: [],
@@ -458,6 +480,9 @@ describe('renderFeedPage', () => {
     expect(html).toContain('href="?page=1"')  // ← Newer
     expect(html).toContain('href="?page=3"')  // Older →
     expect(html).toContain('Page 2 of 10')
+    // Issue #019: pagination renders on BOTH top and bottom of the
+    // feed list. Assert via count of the wrapper class.
+    expect(html.match(/<div class="pagination">/g)).toHaveLength(2)
   })
 
   it('disables pagination links on the first/last page', () => {
@@ -466,12 +491,16 @@ describe('renderFeedPage', () => {
     })
     expect(htmlFirst).toContain('<span class="disabled">← Newer</span>')
     expect(htmlFirst).toContain('href="?page=2"')
+    // Issue #019: the disabled state appears on BOTH the top and
+    // bottom pagination bars (since they share the same render fn).
+    expect(htmlFirst.match(/<span class="disabled">← Newer<\/span>/g)).toHaveLength(2)
 
     const htmlLast = renderFeedPage('david', [], {
       items: [], page: 10, perPage: 10, totalItems: 100, totalPages: 10,
     })
     expect(htmlLast).toContain('<span class="disabled">Older →</span>')
     expect(htmlLast).toContain('href="?page=9"')
+    expect(htmlLast.match(/<span class="disabled">Older →<\/span>/g)).toHaveLength(2)
   })
 
   it('escapes HTML in titles, URLs, and folder names', () => {
@@ -576,6 +605,28 @@ describe('renderFeedPage', () => {
     }, undefined, 'f1')
     expect(html).toContain('href="?page=1&folder=f1"')
     expect(html).toContain('href="?page=3&folder=f1"')
+    // Issue #019: the folder-filtered link appears in BOTH top and
+    // bottom pagination bars.
+    expect(html.match(/href="\?page=1&folder=f1"/g)).toHaveLength(2)
+    expect(html.match(/href="\?page=3&folder=f1"/g)).toHaveLength(2)
+  })
+
+  it('hides both pagination bars when there is only one page (issue #019)', () => {
+    // totalPages === 1 (e.g. 5 items at perPage=50) — no nav needed.
+    // The bars must NOT render at all: no "Page 1 of 1" placeholder,
+    // no disabled prev/next. Both top AND bottom positions are empty.
+    const html = renderFeedPage('david', [], {
+      items: [{
+        id: 'b1', url: 'https://a.com', title: 'A', folderPath: 'Bar',
+        createdAt: '2024-01-15T10:30:00.000Z', tags: [],
+      }],
+      page: 1, perPage: 50, totalItems: 5, totalPages: 1,
+    })
+    expect(html).not.toContain('<div class="pagination">')
+    expect(html).not.toContain('Page 1 of 1')
+    expect(html).not.toContain('← Newer')
+    expect(html).not.toContain('Older →')
+    expect(html).not.toContain('class="disabled"')
   })
 
   it('keeps the folder label as a clickable anchor (cursor:pointer via styles.css)', () => {
@@ -630,10 +681,63 @@ describe('renderFolderSidebar (issue #013 slice 4)', () => {
     const html = renderFeedPage('david', sampleTree, {
       items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
     })
-    // "Top" has children — its <li> should carry the chevron span.
-    expect(html).toMatch(/data-folder-id="f1"[^>]*data-has-children="true"[\s\S]*?<span class="sidebar-chevron"[^>]*>\u203a<\/span>/)
-    // "Nested" has no children — no chevron.
+    // Slice #016: the chevron is now a sibling <button> (not a <span>
+    // inside the <a>). "Top" has children — its <li> should carry the
+    // button right after the folder label.
+    expect(html).toMatch(/data-folder-id="f1"[^>]*data-has-children="true"[\s\S]*?<button type="button" class="sidebar-chevron"[^>]*data-toggle-folder[^>]*aria-expanded="true"[^>]*aria-label="Collapse"[^>]*>\u203a<\/button>/)
+    // "Nested" has no children — no chevron button.
     expect(html).not.toMatch(/data-folder-id="f2"[^>]*data-has-children="true"/)
+    expect(html).not.toMatch(/data-folder-id="f2"[\s\S]*?sidebar-chevron/)
+  })
+
+  it('slice #016: chevron is a sibling of the <a>, not a child', () => {
+    // The chevron must live outside the folder-label anchor so clicking
+    // it does NOT navigate to the filtered feed. It's also outside the
+    // rename-target span so the inline rename doesn't swallow it.
+    const html = renderFeedPage('david', sampleTree, {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    }, {
+      folderOptions: [], allTags: [],
+    })
+    // Drill into the "Top" <li> and assert the order: <a> … </a> then
+    // <button class="sidebar-chevron"> then <ul>. Anchoring to the <li>
+    // avoids matching earlier <a> tags in the page (nav links, header).
+    const liMatch = html.match(
+      /<li[^>]*data-folder-id="f1"[^>]*data-has-children="true"[\s\S]*?<\/li>/,
+    )
+    expect(liMatch).not.toBeNull()
+    const liHtml = liMatch![0]
+    // No <span class="sidebar-chevron"> anywhere in the <li> — the
+    // chevron must be a <button>, not the old inline span.
+    expect(liHtml).not.toMatch(/<span class="sidebar-chevron"/)
+    const aCloseIdx = liHtml.indexOf('</a>')
+    const buttonIdx = liHtml.indexOf('<button type="button" class="sidebar-chevron"')
+    const ulIdx = liHtml.indexOf('<ul>')
+    expect(aCloseIdx).toBeGreaterThan(-1)
+    expect(buttonIdx).toBeGreaterThan(aCloseIdx)
+    expect(ulIdx).toBeGreaterThan(buttonIdx)
+  })
+
+  it('slice #016: chevron has ARIA attributes for accessibility', () => {
+    const html = renderFeedPage('david', sampleTree, {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    })
+    // The chevron announces its current state to screen readers via
+    // aria-expanded + aria-label. Initial state is always expanded
+    // (server-side rendering, no client state yet).
+    expect(html).toMatch(/<button type="button" class="sidebar-chevron"[^>]*aria-expanded="true"[^>]*aria-label="Collapse"/)
+  })
+
+  it('slice #016: chevron is rendered in non-categorize mode too', () => {
+    // The chevron toggle is a pure DOM interaction owned by
+    // categorize.js, but the markup must be present regardless of
+    // categorize context so non-categorize mode also gets collapse.
+    const html = renderFeedPage('david', sampleTree, {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    })
+    // Without categorize context, the chevron button still emits on
+    // folders with children.
+    expect(html).toMatch(/data-folder-id="f1"[\s\S]*?<button type="button" class="sidebar-chevron" data-toggle-folder aria-expanded="true" aria-label="Collapse">\u203a<\/button>/)
   })
 
   it('emits data-depth on every sidebar item for CSS indentation', () => {

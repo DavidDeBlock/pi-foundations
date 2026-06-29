@@ -492,6 +492,21 @@ describe('HTTP /search (HTML page)', () => {
     const html = await res.text()
     expect(html).toContain('fuzzy match')
   })
+
+  it('does not render a bottom <nav> with Activity/Settings links (issue #017)', async () => {
+    // The Activity + Settings bottom nav was removed; both are now in
+    // the shared header. The Activity link was redundant with the brand
+    // link to / in the header, and Settings moved into the header.
+    const { request } = makeApp(); const res = await request('/search?q=postgres', {
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    const html = await res.text()
+    // No bottom-nav markup. We assert this by looking for the literal
+    // link text patterns that only ever appeared inside the old <nav>.
+    expect(html).not.toMatch(/<nav>[\s\S]*?Activity[\s\S]*?Settings[\s\S]*?<\/nav>/)
+    // Settings should still appear once — in the header.
+    expect(html).toContain('class="settings-link"')
+  })
 })
 
 function basicHeader(user: string, password: string): string {

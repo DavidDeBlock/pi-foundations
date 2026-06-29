@@ -507,7 +507,6 @@ ${COMMON_HEAD}
       ${statusHtml}
       ${resultsHtml}
       ${paginationHtml}
-      <nav><a href="/">Activity</a> &middot; <a href="/settings">Settings</a></nav>
     </main>
     <script src="/static/search.js" defer></script>
     ${CLIPBOARD_SCRIPT_TAG}

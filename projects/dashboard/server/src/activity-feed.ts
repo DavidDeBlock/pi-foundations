@@ -423,7 +423,6 @@ ${COMMON_HEAD}
       ${sidebarHtml}
       <main>
         ${renderFeedMain(feed, itemsHtml, activeFolderId ?? undefined, activeFolderPath ?? undefined)}
-        <nav><a href="/settings">Settings</a> &middot; <a href="/api/folders">JSON</a></nav>
       </main>
     </div>
     ${categorize ? renderCategorizeDatalists(feed.items, categorize.allTags) : ''}
@@ -485,6 +484,7 @@ function renderFeedMain(feed: FeedPage, itemsHtml: string, activeFolderId?: stri
     : ` <span class="heading-suffix heading-suffix-muted">(${range} of ${feed.totalItems})</span>`
   return `
     <h2>Activity${headingSuffix}</h2>
+    ${renderPagination(feed, activeFolderId)}
     <div class="feed-list">${itemsHtml}</div>
     ${renderPagination(feed, activeFolderId)}
   `
@@ -624,6 +624,11 @@ function categorizeScriptTag(): string {
 }
 
 function renderPagination(feed: FeedPage, folderId?: string | null): string {
+  // When the entire feed fits on one page, no nav is needed. The
+  // "Page 1 of 1" + disabled prev/next state is suppressed entirely
+  // — both the top and bottom bars get this for free since they share
+  // this function call (issue #019).
+  if (feed.totalPages <= 1) return ''
   const prevPage = feed.page > 1 ? feed.page - 1 : null
   const nextPage = feed.page < feed.totalPages ? feed.page + 1 : null
   // Preserve the folder filter when paginating so the user doesn't
@@ -791,8 +796,14 @@ function renderFolderSidebar(
  *   - a folder icon (`📁`) — purely visual
  *   - the folder name (`.sidebar-name.folder-name` so rename hook
  *     targets it without needing a new selector)
- *   - a chevron (`›`) when the folder has children, rotated 90°
- *     via CSS to point down (the tree is always server-expanded)
+ *
+ * When the folder has children, a SIBLING `<button class="sidebar-chevron">`
+ * is emitted after the `<a>` (slice #016). It is a `<button>` (not an
+ * `<a>` or `<span>`) so its click doesn't navigate to the filtered feed;
+ * `categorize.js` toggles `data-collapsed` on the parent `<li>` and
+ * updates `aria-expanded` / `aria-label`. The chevron is always rendered
+ * at server-side, with `aria-expanded="true"` to match the always-expanded
+ * initial state.
  */
 function renderFolderTree(
   nodes: readonly FolderNode[],
@@ -809,21 +820,25 @@ function renderFolderTree(
       const isActive = node.id === activeFolderId
       const activeAttr = isActive ? ' data-active="true"' : ''
       const labelClass = isActive ? 'folder-label sidebar-link-active' : 'folder-label'
+      // Sibling chevron button — kept outside the <a> so its click
+      // toggles collapse instead of navigating. Emitted only when the
+      // folder has children; leaf folders show no button.
       const chevronHtml = hasChildren
-        ? '<span class="sidebar-chevron" aria-hidden="true">›</span>'
+        ? '<button type="button" class="sidebar-chevron" data-toggle-folder aria-expanded="true" aria-label="Collapse">›</button>'
         : ''
       const href = `/?folder=${encodeURIComponent(node.id)}`
       if (categorize) {
         // Categorize-mode folders keep the data attributes the inline
-        // rename hook depends on. The chevron and icon live OUTSIDE
-        // the `.folder-name` span so they survive the rename
-        // swap (categorize.js only replaces the inner span with an
-        // <input>).
-        const nameHtml = `<a class="${labelClass}" href="${href}"${activeAttr}><span class="sidebar-icon" aria-hidden="true">\ud83d\udcc1</span><span class="sidebar-name folder-name" data-folder-name data-folder-id="${escapeHtml(node.id)}" title="Click to filter, double-click to rename">${escapeHtml(node.name)}</span>${chevronHtml}</a>`
-        return `<li class="sidebar-item" data-folder-id="${escapeHtml(node.id)}" data-depth="${depth}"${hasChildren ? ' data-has-children="true"' : ''}>${nameHtml}${childHtml}</li>`
+        // rename hook depends on. The icon lives OUTSIDE the
+        // `.folder-name` span so it survives the rename swap
+        // (categorize.js only replaces the inner span with an
+        // <input>). The chevron is now a sibling of the <a> entirely,
+        // so it lives outside the link and the rename swap.
+        const nameHtml = `<a class="${labelClass}" href="${href}"${activeAttr}><span class="sidebar-icon" aria-hidden="true">\ud83d\udcc1</span><span class="sidebar-name folder-name" data-folder-name data-folder-id="${escapeHtml(node.id)}" title="Click to filter, double-click to rename">${escapeHtml(node.name)}</span></a>`
+        return `<li class="sidebar-item" data-folder-id="${escapeHtml(node.id)}" data-depth="${depth}"${hasChildren ? ' data-has-children="true"' : ''}>${nameHtml}${chevronHtml}${childHtml}</li>`
       }
-      const nameHtml = `<a class="${labelClass}" href="${href}"${activeAttr}><span class="sidebar-icon" aria-hidden="true">\ud83d\udcc1</span><span class="sidebar-name">${escapeHtml(node.name)}</span>${chevronHtml}</a>`
-      return `<li class="sidebar-item" data-folder-id="${escapeHtml(node.id)}" data-depth="${depth}"${hasChildren ? ' data-has-children="true"' : ''}>${nameHtml}${childHtml}</li>`
+      const nameHtml = `<a class="${labelClass}" href="${href}"${activeAttr}><span class="sidebar-icon" aria-hidden="true">\ud83d\udcc1</span><span class="sidebar-name">${escapeHtml(node.name)}</span></a>`
+      return `<li class="sidebar-item" data-folder-id="${escapeHtml(node.id)}" data-depth="${depth}"${hasChildren ? ' data-has-children="true"' : ''}>${nameHtml}${chevronHtml}${childHtml}</li>`
     })
     .join('')
 }
