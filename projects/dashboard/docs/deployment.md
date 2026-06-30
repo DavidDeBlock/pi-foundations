@@ -6,7 +6,7 @@ unit, where logs live, how to back up, and how to upgrade.
 
 The server is deliberately small — one process, one SQLite file, one
 token-store file. There is no queue, no cache, no reverse proxy
-required (but you can add one if you want TLS — see [§6](#6-tls-optional)).
+required (but you can add one if you want TLS — see [§7](#7-tls-optional)).
 
 ---
 
@@ -42,9 +42,16 @@ is no config file by design.
 | `HOSTNAME` | `0.0.0.0` | Bind address. `0.0.0.0` is fine for a LAN box; switch to `127.0.0.1` if fronted by a reverse proxy on the same host. |
 | `DASHBOARD_DATA_DIR` | `./data` | Holds the JSON token store + the SQLite file. Override this in production to keep state out of the project tree. |
 | `DASHBOARD_DB_PATH` | `./data/dashboard.db` | SQLite file path. Lives under `DASHBOARD_DATA_DIR` by default. |
+| `EMAIL_TOKEN_ENCRYPTION_KEY` | _(required)_ | 64-char hex (32 bytes). AES-256-GCM key for at-rest encryption of OAuth tokens. Generate with `openssl rand -hex 32`. Missing → boot fails. |
+| `GOOGLE_OAUTH_CLIENT_ID` | _(required)_ | OAuth client id from the Google Cloud Console. Missing → boot fails. |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | _(required)_ | OAuth client secret from the Google Cloud Console. Missing → boot fails. |
+| `EMAIL_OAUTH_REDIRECT_URI` | _(required)_ | Full callback URL. **Two rules from Google's Web-app client:** the host must be loopback (`localhost`/`127.0.0.1`) or a publicly resolvable domain (no bare private IPs), and the scheme must be `https://` unless the host is loopback. So same-machine testing uses `http://localhost:8080/api/email/oauth/callback`; LAN testing needs `https://192.168.0.136.nip.io:8080/...` (HTTPS required). See the redirect-URI-rules section below for tunnel (`ngrok` / `cloudflared`) and `trustme`/`mkcert` options. Must match the value registered in the Cloud Console byte-for-byte. |
+| `DASHBOARD_TLS_CERT` | _(optional)_ | Absolute path to a PEM-encoded TLS certificate. Required for non-loopback redirect URIs (HTTPS). Pairs with `DASHBOARD_TLS_KEY`. Both vars must be set together; setting only one is a startup error. Generate cert + key with `trustme` (Python) or `mkcert` (Go binary). |
+| `DASHBOARD_TLS_KEY` | _(optional)_ | Absolute path to a PEM-encoded TLS private key. Pairs with `DASHBOARD_TLS_CERT`. |
 
-**Never commit the password** to source control. Pass it via systemd's
-`EnvironmentFile=` directive (see §3) or your secret manager.
+**Never commit the password** or the encryption key to source control.
+Pass them via systemd's `EnvironmentFile=` directive (see §3) or your
+secret manager.
 
 ### Minimal environment file
 
@@ -55,6 +62,18 @@ PORT=8080
 HOSTNAME=0.0.0.0
 DASHBOARD_DATA_DIR=/var/lib/dashboard
 DASHBOARD_DB_PATH=/var/lib/dashboard/dashboard.db
+
+# Email (issue #020) — required for OAuth/Gmail to work. The encryption
+# key encrypts OAuth tokens at rest; losing it locks you out of stored
+# credentials. Treat it like the password.
+EMAIL_TOKEN_ENCRYPTION_KEY=$(openssl rand -hex 32)
+GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret
+EMAIL_OAUTH_REDIRECT_URI=http://localhost:8080/api/email/oauth/callback
+
+# Optional: enable HTTPS for non-loopback redirect URIs (LAN testing, etc.)
+# DASHBOARD_TLS_CERT=/etc/dashboard/certs/server.pem
+# DASHBOARD_TLS_KEY=/etc/dashboard/certs/server.key
 ```
 
 ```bash
@@ -149,7 +168,156 @@ journal once it's ready. `curl http://<host>:8080/health` returns
 
 ---
 
-## 4. Logs
+## 4. Gmail setup (one-time)
+
+If you plan to mirror Gmail into the dashboard (issue #020), complete
+this once per dashboard host before users can click "Connect Gmail" at
+`/settings/email`. The setup steps are also documented inline on the
+page itself.
+
+1. **Create or pick a Google Cloud project.** Open the
+   [Google Cloud Console](https://console.cloud.google.com/).
+
+2. **Enable the Gmail API.** Navigate to
+   *APIs & Services → Library*, search for **Gmail API**, and click
+   *Enable*.
+
+3. **Configure the OAuth consent screen.** Navigate to
+   *APIs & Services → OAuth consent screen*. Choose *External* (or
+   *Internal* if you're on a Google Workspace org). For *Scopes*, add
+   exactly `https://www.googleapis.com/auth/gmail.readonly` — do NOT
+   add `gmail.modify`, `gmail.send`, or `gmail.compose`. The dashboard
+   is read-only by design.
+
+4. **Create OAuth credentials.** Navigate to
+   *APIs & Services → Credentials → Create credentials → OAuth client
+   ID*. Choose **Web application**. Under *Authorized redirect URIs*,
+   add the URL the dashboard serves. **Pick the right one:**
+
+   * **Same-machine testing (no TLS, no extra tools):** use
+     `http://localhost:8080/api/email/oauth/callback` (or
+     `http://127.0.0.1:8080/...`). Google still allows `http` for
+     loopback. Limitation: can't test from a phone or another laptop.
+
+   * **Tunnel (one line, no cert management):** run a public HTTPS
+     tunnel in front of the dashboard. Free options:
+     ```bash
+     ngrok http 8080
+     # or
+     cloudflared tunnel --url http://localhost:8080
+     ```
+     Copy the resulting `https://<random>.ngrok-free.app` /
+     `https://<random>.trycloudflare.com` URL into both the Cloud
+     Console and `EMAIL_OAUTH_REDIRECT_URI`. URL changes every
+     restart on free tiers, so update the env var accordingly.
+
+   * **LAN with TLS (no external dependency):** if you want
+     `https://192.168.0.136.nip.io:8080/...` without a tunnel, run
+     the dashboard over HTTPS directly. You need a cert trusted
+     by your browser. Pick whichever generator fits your tooling:
+
+   * **`pnpm certgen` (recommended)** — pure Node, no Python, no
+     separate installs, single command:
+     ```bash
+     pnpm certgen 192.168.0.136.nip.io 192.168.0.136
+
+     # Trust the CA on this machine (pick the one for your OS)
+     # Debian/Ubuntu (no p11-kit needed):
+     sudo cp ca.pem /usr/local/share/ca-certificates/dashboard-ca.crt
+     sudo update-ca-certificates
+     # Fedora / Arch (p11-kit):
+     # sudo trust anchor ca.pem
+     # macOS:
+     # sudo security add-trusted-cert -d -r trustRoot \
+     #   -k /Library/Keychains/System.keychain ca.pem
+     # Windows (admin PowerShell):
+     # certutil -addstore -f "Root" ca.pem
+     ```
+
+   * **[`mkcert`](https://github.com/FiloSottile/mkcert) (no Python):**
+     single Go binary. `brew install mkcert && mkcert -install && mkcert 192.168.0.136.nip.io`
+     produces equivalent `cert.pem` + `key.pem` files.
+
+   * **`pip install trustme` (Python fallback)** — only if (a) and (b)
+     don't work for you:
+     ```bash
+     pip install trustme
+     python3 scripts/gencert.py 192.168.0.136.nip.io 192.168.0.136
+     ```
+
+   Then point the dashboard at the cert + key (no reverse proxy needed):
+   ```bash
+   echo "DASHBOARD_TLS_CERT=$(pwd)/server.pem" >> .env
+   echo "DASHBOARD_TLS_KEY=$(pwd)/server.key"  >> .env
+   pnpm start
+   # → Dashboard listening on https://192.168.0.136:8080
+   ```
+   Register `https://192.168.0.136.nip.io:8080/api/email/oauth/callback`
+   in the Cloud Console once the server is up.
+
+   * **Production:** any real domain, e.g.
+     `https://mail.example.com/api/email/oauth/callback`.
+
+   The value MUST match the `EMAIL_OAUTH_REDIRECT_URI` env var
+   byte-for-byte — host, port, scheme, trailing slash all count.
+   Google rejects mismatches silently at consent time.
+
+5. **Copy the client id + secret** into `GOOGLE_OAUTH_CLIENT_ID` and
+   `GOOGLE_OAUTH_CLIENT_SECRET`. If you lost the secret, click the
+   *Reset secret* button on the credentials page to issue a new one.
+
+6. **Generate an encryption key** for OAuth tokens at rest:
+
+   ```bash
+   openssl rand -hex 32
+   ```
+
+   Paste the result into `EMAIL_TOKEN_ENCRYPTION_KEY` (64 hex characters,
+   no spaces). Treat this key like the dashboard password — losing it
+   locks you out of stored OAuth credentials; rotating it requires
+   reconnecting every Gmail account.
+
+7. **Set `EMAIL_OAUTH_REDIRECT_URI`** to the *exact* URL from step 4
+   (including scheme + port + path).
+
+8. **Restart the dashboard.** The server refuses to start if any of
+   the four email env vars is missing or malformed; the boot error
+   message names the missing variable.
+
+```ini
+# /etc/dashboard/dashboard.env (append)
+EMAIL_TOKEN_ENCRYPTION_KEY=<64 hex chars from step 6>
+GOOGLE_OAUTH_CLIENT_ID=<from step 5>
+GOOGLE_OAUTH_CLIENT_SECRET=<from step 5>
+EMAIL_OAUTH_REDIRECT_URI=<exact URL from step 4>
+```
+
+After restart, visit `/settings/email` and click **Connect Gmail** —
+the consent screen will list exactly one scope (`gmail.readonly`).
+After consent, your email address appears in the connected account
+list and the dashboard is ready to run the initial sync (issue #021,
+separate PR).
+
+### Manual smoke test for the OAuth round-trip
+
+The acceptance criteria for issue #020 include "manual smoke test
+(documented in slice): OAuth round-trip against a real Gmail account
+works end-to-end." After the setup above, run:
+
+1. Open `http://<host>:8080/settings/email` in a browser.
+2. Click **Connect Gmail**. Confirm the consent screen lists *only*
+   `gmail.readonly`. (If it lists more, your OAuth client's scope
+   config drifted — re-check step 3.)
+3. Grant access. You should land back on `/settings/email?status=connected`
+   with your Gmail address visible.
+4. Click **Disconnect**. Confirm the row disappears.
+
+If any step fails, check `journalctl -u dashboard.service` for the
+server-side error. Token exchange failures usually mean the redirect
+URI mismatch; profile failures usually mean the Gmail API isn't enabled
+on the project.
+
+## 5. Logs
 
 `StandardOutput=journal` and `StandardError=journal` route everything
 to systemd's journal.
@@ -181,7 +349,7 @@ The server itself does not write to any file inside `DASHBOARD_DATA_DIR`.
 
 ---
 
-## 5. Backups
+## 6. Backups
 
 **The SQLite file is the source of truth.** Back it up; the rest is
 cheap to regenerate.
@@ -255,7 +423,7 @@ dashboard.
 
 ---
 
-## 6. TLS (optional)
+## 7. TLS (optional)
 
 The dashboard is LAN-only in our setup (ADR-001), so HTTP is fine for
 `192.168.0.0/24`. If you want TLS:
@@ -275,7 +443,7 @@ without complaint.
 
 ---
 
-## 7. Upgrading
+## 8. Upgrading
 
 There is no installer — the deployment is just `git pull && pnpm
 install --prod`. The server reads the code at boot, so a clean
@@ -300,7 +468,7 @@ records each applied migration by name in the `migrations` table).
 
 ---
 
-## 8. Firewall (UFW)
+## 9. Firewall (UFW)
 
 ```bash
 # Allow LAN access to the dashboard
@@ -317,7 +485,7 @@ reach port 8080.
 
 ---
 
-## 9. Health checks
+## 10. Health checks
 
 The server exposes `/health` (auth required) returning
 `{"status":"ok"}`. Wire it to your monitoring:
@@ -334,7 +502,7 @@ already run).
 
 ---
 
-## 10. Common pitfalls
+## 11. Common pitfalls
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
@@ -346,7 +514,7 @@ already run).
 
 ---
 
-## 11. Quick reference
+## 12. Quick reference
 
 ```bash
 # Status

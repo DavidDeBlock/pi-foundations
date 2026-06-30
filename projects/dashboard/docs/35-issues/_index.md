@@ -1,6 +1,6 @@
 # 35-issues Index
 
-Independently-grabbable issues for **Dashboard v1**, sliced vertically from [PRD-001](../35-prds/PRD-001-v1-chrome-bookmarks.md).
+Independently-grabbable issues for the **Dashboard** project, sliced vertically from [PRD-001](../35-prds/PRD-001-v1-chrome-bookmarks.md) and [PRD-002](../35-prds/PRD-002-email-mirror.md).
 
 ## v1 — Initial build (shipped)
 
@@ -40,6 +40,23 @@ Small visual / layout adjustments after v1 was used in anger. Each is independen
 | [018](./018-activity-feed-grid-view.md) | Activity feed: responsive grid view (1/2/3 cols) | AFK | — |
 | [019](./019-feed-pagination-top-and-bottom.md) | Activity feed: pagination on top AND bottom | AFK | — |
 
+## v4 — Email mirror (PRD-002)
+
+From PRD: [PRD-002](../35-prds/PRD-002-email-mirror.md)
+
+| # | Title | Type | Blocked by |
+|---|-------|------|------------|
+| [020](./020-email-schema-oauth-gmail-client.md) | Email schema + Gmail OAuth + GmailClient + /settings/email | AFK | — |
+| [021](./021-email-sync-worker-differ-initial-sync.md) | EmailSyncWorker + Differ + manual refresh + 90-day initial sync | AFK | 020 |
+| [022](./022-email-read-api-querybuilder-searcher-retriever.md) | EmailQueryBuilder + Searcher + Retriever + read API | AFK | 021 |
+| [023](./023-email-ui-inbox-detail-thread-sidebar.md) | Email UI: /email inbox + /email/:id detail + /email/thread + filters + sidebar | AFK | 022 |
+| [024](./024-email-soft-delete-hide-unhide-hidden-view.md) | Soft-delete: hidden_at + hide/unhide endpoints + /email/hidden view | AFK | 023 |
+| [025](./025-email-dashboard-tags-crud-autocomplete-filter.md) | Dashboard tags: tag CRUD + autocomplete + filter + chips | AFK | 023 |
+| [026](./026-email-background-poll-sync-observability.md) | Background poll scheduler + sync state observability | AFK | 022 |
+| [027](./027-llm-client-tool-registry-summarize-button.md) | LlmClient + ToolRegistry + "Summarize this thread" button | AFK | 024, 025, 026 |
+| [028](./028-llm-chat-box-multi-turn-memory.md) | LLM chat box + multi-turn conversation memory | AFK | 027 |
+| [029](./029-outlook-client-multi-provider.md) | Outlook (Microsoft Graph) client + multi-provider UI | AFK | 027 |
+
 ## v1 dependency graph
 
 ```
@@ -65,8 +82,22 @@ Small visual / layout adjustments after v1 was used in anger. Each is independen
                         to avoid minor merge friction in renderFeedMain)
 ```
 
+## v4 (email mirror) dependency graph
+
+```
+020 ── 021 ── 022 ── 023 ──┬── 024 ──┐
+                           ├── 025 ──┼── 027 ──┬── 028
+                           └── 026 ──┘         └── 029
+```
+
+Notes on parallelism:
+- 024, 025, 026 all branch from 023 and can run in any order. They modify different files (no merge conflicts expected) and don't depend on each other.
+- 028 and 029 both branch from 027 and are independent of each other.
+
 ## Slicing rationale
 
 Each issue is a **tracer bullet** — a thin vertical slice that cuts through every layer end-to-end (schema, API, UI, tests). A completed slice is demoable or verifiable on its own. This makes issues independently grabbable: a builder can pick up 005 without first touching 007.
 
 For the styling pass, the same principle applies: each issue delivers CSS + HTML + JS together so the visual change is verifiable in isolation before the next layer lands.
+
+For the email mirror, the same principle applies with one refinement: 024/025/026 are intentionally designed to be **parallelizable** because each touches a different surface (visibility state, tag metadata, background scheduler) and none depend on each other. A builder with capacity can pick up two of them in parallel without merge friction.

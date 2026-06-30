@@ -83,7 +83,12 @@ describe('Migrations runner', () => {
     const applied = db.all<{ name: string }>(
       'SELECT name FROM migrations ORDER BY name',
     )
-    expect(applied.map((r) => r.name)).toEqual(['001_initial', '002_search_trigram'])
+    expect(applied.map((r) => r.name)).toEqual([
+      '001_initial',
+      '002_search_trigram',
+      '003_email_accounts',
+      '004_emails_sync_state',
+    ])
 
     // Spot-check that every table from the PRD schema now exists.
     const tables = db.all<{ name: string }>(
@@ -100,16 +105,21 @@ describe('Migrations runner', () => {
     expect(names).toContain('bookmark_fts')
     // Trigram index table from issue #009.
     expect(names).toContain('bookmark_trigrams')
+    // Email accounts table from issue #020.
+    expect(names).toContain('email_accounts')
+    // Email mirror + sync state from issue #021.
+    expect(names).toContain('emails')
+    expect(names).toContain('sync_state')
   })
 
   it('is idempotent — running twice does NOT re-apply', async () => {
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const firstApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(firstApplied).toHaveLength(2)
+    expect(firstApplied).toHaveLength(4)
 
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const secondApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(secondApplied).toHaveLength(2)
+    expect(secondApplied).toHaveLength(4)
     // applied_at should be unchanged on re-run (still the original timestamps).
     expect(secondApplied.map((r) => r.name).sort()).toEqual(
       firstApplied.map((r) => r.name).sort(),

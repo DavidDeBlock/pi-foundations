@@ -21,6 +21,14 @@ const MIGRATIONS = [
     name: '002_search_trigram',
     filename: '002_search_trigram.sql',
   },
+  {
+    name: '003_email_accounts',
+    filename: '003_email_accounts.sql',
+  },
+  {
+    name: '004_emails_sync_state',
+    filename: '004_emails_sync_state.sql',
+  },
 ] as const
 
 export interface RunMigrationsOptions {

@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs'
+import { parseEncryptionKey } from './token-encryption.js'
 
 /**
  * Runtime config derived from environment variables.
@@ -9,13 +10,76 @@ import bcrypt from 'bcryptjs'
  * `dataDir` holds the JSON token store from #002 (still active until #004+
  * moves token storage to SQL). `dbPath` holds the SQLite file used by the
  * schema/migrations landed in #003. They live side by side for now.
+ *
+ * Email (issue #020) requires four additional env vars:
+ *   * `emailTokenEncryptionKey` — hex-encoded 32-byte key for AES-256-GCM
+ *     at-rest encryption of OAuth tokens.
+ *   * `googleOauthClientId` / `googleOauthClientSecret` — created in the
+ *     Google Cloud Console.
+ *   * `emailOauthRedirectUri` — full callback URL the dashboard serves.
+ *
+ * These are OPTIONAL at boot. The server starts without them and logs a
+ * clear banner listing what's missing so the operator can visit
+ * `/settings/email` for the one-time Google Cloud Console setup steps.
+ * Email routes return 503 until the deps are present. Failing fast at
+ * boot was the v1 choice, but it created a chicken-and-egg: the page
+ * that documents the env vars was unreachable without those env vars.
  */
+export interface EmailConfig {
+  readonly emailTokenEncryptionKey: Buffer
+  readonly googleOauthClientId: string
+  readonly googleOauthClientSecret: string
+  readonly emailOauthRedirectUri: string
+}
+
+/**
+ * The set of email env vars that were missing at boot. Captured so the
+ * `/settings/email` page can highlight exactly what's needed; an empty
+ * array means email is fully configured.
+ */
+export type MissingEmailEnv = ReadonlyArray<EmailEnvName>
+
+export type EmailEnvName =
+  | 'EMAIL_TOKEN_ENCRYPTION_KEY'
+  | 'GOOGLE_OAUTH_CLIENT_ID'
+  | 'GOOGLE_OAUTH_CLIENT_SECRET'
+  | 'EMAIL_OAUTH_REDIRECT_URI'
+
 export interface Config {
   readonly port: number
   readonly hostname: string
   readonly passwordHash: string
   readonly dataDir: string
   readonly dbPath: string
+  /**
+   * TLS material for serving the dashboard over HTTPS. When both
+   * `cert` and `key` are present, the server binds via
+   * `node:https.createServer`; otherwise plain HTTP. The HTTPS mode
+   * is required for any redirect URI that isn't loopback — Google's
+   * Web-app client now refuses `http://` for non-loopback hosts.
+   *
+   * Typical local setup: `mkcert 192.168.0.136.nip.io` (or the
+   * Python `trustme` library) produces a cert + key pair; point the
+   * env vars at those files. The CA needs to be installed in your
+   * OS/browser trust store for the browser to accept the cert.
+   */
+  readonly tls: { readonly cert: Buffer; readonly key: Buffer } | null
+  /**
+   * Email slice deps, or null when one or more required env vars are
+   * missing. When null, no `/api/email/*` route is mounted and the
+   * `/settings/email` page renders a setup-instructions-only mode
+   * with the missing var list highlighted.
+   */
+  readonly email: EmailConfig | null
+  readonly missingEmailEnv: MissingEmailEnv
+  /**
+   * Initial-sync lookback window in days. When a Gmail account is
+   * synced for the first time, the worker fetches messages newer than
+   * now − `emailSyncHistoryDays`. Defaults to 90 (issue spec).
+   * Configurable for users with lighter/heavier inboxes. Must be a
+   * positive integer; values <1 or non-numeric fall back to 90.
+   */
+  readonly emailSyncHistoryDays: number
 }
 
 /**
@@ -24,11 +88,33 @@ export interface Config {
  * Throws with a clear, actionable message if a required variable is missing.
  */
 export async function loadConfig(): Promise<Config> {
+  // Auto-load a `.env` file from the cwd if one exists. Shell
+  // env vars already set win over `.env` values — the `.env` is
+  // treated as a fallback, not an override. This dodges the common
+  // gotcha where an inline env-var prefix (`FOO=bar pnpm start`)
+  // silently gets dropped when a copy-paste introduces a newline
+  // before the command.
+  const envFilePath = process.env.DASHBOARD_ENV_FILE ?? '.env'
+  try {
+    await loadDotenv(await resolveAbsolute(envFilePath))
+  } catch (err: unknown) {
+    throw new Error(
+      `Failed to load ${envFilePath}: ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+
   const password = process.env.DASHBOARD_PASSWORD
   if (!password) {
     throw new Error(
       'DASHBOARD_PASSWORD is not set. ' +
-        'Set it before starting the server, e.g. `DASHBOARD_PASSWORD=yourpassword pnpm start`.',
+        'Set it before starting the server in one of three ways:\n' +
+        '  1. Inline (must be on the SAME line as `pnpm start`):\n' +
+        '       DASHBOARD_PASSWORD=secret pnpm start\n' +
+        '  2. Export (survives newlines):\n' +
+        '       export DASHBOARD_PASSWORD=secret\n' +
+        '       pnpm start\n' +
+        '  3. `.env` file in the cwd (simplest for multi-var setups):\n' +
+        '       cp env.example .env  # then edit + fill in',
     )
   }
 
@@ -54,10 +140,157 @@ export async function loadConfig(): Promise<Config> {
   // bcrypt.compare, which is constant-time.
   const passwordHash = await bcrypt.hash(password, 10)
 
-  return { port, hostname, passwordHash, dataDir, dbPath }
+  // ─── Email OAuth setup ───────────────────────────────────────────────
+  // Optional at boot. When one or more of the four email env vars are
+  // missing, we return `email: null` and list the names so the boot
+  // banner can show the operator exactly what to set. /settings/email
+  // renders in setup-only mode and lists the missing vars in red.
+  //
+  // Why not fail fast? Because the page that documents the env vars
+  // (/settings/email) is gated behind the same env vars. A new operator
+  // could not reach the instructions without first knowing the
+  // commands — which is exactly the loop we kept hitting.
+  const emailTokenEncryptionKeyRaw = process.env.EMAIL_TOKEN_ENCRYPTION_KEY
+  const googleOauthClientId = process.env.GOOGLE_OAUTH_CLIENT_ID
+  const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
+  const emailOauthRedirectUri = process.env.EMAIL_OAUTH_REDIRECT_URI
+
+  const missingEmailEnv: EmailEnvName[] = []
+  let email: EmailConfig | null = null
+
+  // Validate the encryption key in isolation: a malformed key is a
+  // startup failure, since it's almost certainly a copy/paste mistake.
+  // The other three "missing" cases (unset vars) just downgrade.
+  let emailTokenEncryptionKey: Buffer | null = null
+  if (emailTokenEncryptionKeyRaw) {
+    try {
+      emailTokenEncryptionKey = parseEncryptionKey(emailTokenEncryptionKeyRaw)
+    } catch (err: unknown) {
+      throw new Error(
+        `EMAIL_TOKEN_ENCRYPTION_KEY is invalid: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  } else {
+    missingEmailEnv.push('EMAIL_TOKEN_ENCRYPTION_KEY')
+  }
+
+  if (!googleOauthClientId) missingEmailEnv.push('GOOGLE_OAUTH_CLIENT_ID')
+  if (!googleOauthClientSecret) missingEmailEnv.push('GOOGLE_OAUTH_CLIENT_SECRET')
+  if (!emailOauthRedirectUri) missingEmailEnv.push('EMAIL_OAUTH_REDIRECT_URI')
+
+  // Only assemble `email` when ALL four are present.
+  if (
+    emailTokenEncryptionKey !== null &&
+    googleOauthClientId !== undefined &&
+    googleOauthClientSecret !== undefined &&
+    emailOauthRedirectUri !== undefined
+  ) {
+    email = {
+      emailTokenEncryptionKey,
+      googleOauthClientId,
+      googleOauthClientSecret,
+      emailOauthRedirectUri,
+    }
+  }
+
+  // Initial-sync lookback window (issue #021). Optional — defaults
+  // to 90 days when missing or malformed. Negative / zero / non-
+  // numeric values fall back to 90 so a stale `0` doesn't crash a
+  // long-running install.
+  const rawHistoryDays = process.env.EMAIL_SYNC_HISTORY_DAYS
+  let emailSyncHistoryDays = 90
+  if (rawHistoryDays !== undefined && rawHistoryDays !== '') {
+    const parsed = Number.parseInt(rawHistoryDays, 10)
+    if (Number.isFinite(parsed) && parsed >= 1) {
+      emailSyncHistoryDays = parsed
+    }
+  }
+
+  // ─── Optional TLS (issue #021 follow-up) ──────────────────────────────────────
+  // Load cert + key from disk when both env vars point at readable
+  // files. A typo (e.g. wrong path, partial pair) is a startup error
+  // — silently downgrading to plain HTTP would make the dashboard
+  // reachable only on `http://`, which is the exact failure mode
+  // the operator was trying to escape.
+  const tlsCertPath = process.env.DASHBOARD_TLS_CERT
+  const tlsKeyPath = process.env.DASHBOARD_TLS_KEY
+  let tls: Config['tls'] = null
+  if (tlsCertPath || tlsKeyPath) {
+    if (!tlsCertPath || !tlsKeyPath) {
+      throw new Error(
+        'Both DASHBOARD_TLS_CERT and DASHBOARD_TLS_KEY must be set together. ' +
+          'Set both to enable HTTPS, or neither for plain HTTP.',
+      )
+    }
+    const { readFileSync } = await import('node:fs')
+    let cert: Buffer
+    let key: Buffer
+    try {
+      cert = readFileSync(tlsCertPath)
+    } catch (err: unknown) {
+      throw new Error(
+        `DASHBOARD_TLS_CERT could not be read (${tlsCertPath}): ` +
+          (err instanceof Error ? err.message : String(err)),
+      )
+    }
+    try {
+      key = readFileSync(tlsKeyPath)
+    } catch (err: unknown) {
+      throw new Error(
+        `DASHBOARD_TLS_KEY could not be read (${tlsKeyPath}): ` +
+          (err instanceof Error ? err.message : String(err)),
+      )
+    }
+    tls = { cert, key }
+  }
+
+  return {
+    port,
+    hostname,
+    passwordHash,
+    dataDir,
+    dbPath,
+    tls,
+    email,
+    missingEmailEnv,
+    emailSyncHistoryDays,
+  }
 }
 
 async function resolveAbsolute(path: string): Promise<string> {
   const { resolve, isAbsolute } = await import('node:path')
   return isAbsolute(path) ? path : resolve(process.cwd(), path)
+}
+
+/**
+ * Minimal `.env` loader. Reads `KEY=value` pairs from a file and
+ * sets them into `process.env` ONLY for keys that aren't already
+ * present — the shell wins, the file is a fallback. Lines that are
+ * blank or start with `#` are ignored. Quoted values (`"x"` or `'x'`)
+ * have the quotes stripped.
+ *
+ * Deliberately tiny: no variable expansion, no `export` keyword, no
+ * multi-line values. The dashboard's env vars are all single-token,
+ * so anything fancier would be premature.
+ */
+async function loadDotenv(filePath: string): Promise<void> {
+  const { existsSync, readFileSync } = await import('node:fs')
+  if (!existsSync(filePath)) return
+  const content = readFileSync(filePath, 'utf8')
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim()
+    if (line === '' || line.startsWith('#')) continue
+    const eq = line.indexOf('=')
+    if (eq === -1) continue
+    const key = line.slice(0, eq).trim()
+    let value = line.slice(eq + 1).trim()
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1)
+    }
+    if (key === '' || process.env[key] !== undefined) continue
+    process.env[key] = value
+  }
 }

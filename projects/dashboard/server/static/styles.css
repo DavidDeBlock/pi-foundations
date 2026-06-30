@@ -914,3 +914,709 @@ h4 { font-size: 1rem; }
     font-size: 0.85rem;
   }
 }
+
+/* ─── v2 preview (/preview/v2) ───────────────────────────────────────── */
+
+/* The sidebar gets two stacked sections: compartments (top) and
+   folders (bottom). When a non-folder compartment is active, the
+   folders section is hidden via inline style + the data-folder-tree
+   attribute. The visual language matches the existing sidebar. */
+.sidebar-section {
+  margin-bottom: 1rem;
+}
+.sidebar-section .sidebar-title {
+  padding: 0 0.6rem;
+  margin-bottom: 0.4rem;
+}
+.sidebar-folder-section {
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+/* Compartment navigation list — four buttons stacked. Each has an
+   icon + label, matching the daily.dev visual rhythm. */
+.compartment-nav {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.compartment-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  text-align: left;
+  transition: color 150ms ease, background-color 150ms ease,
+              border-left-color 150ms ease;
+}
+.compartment-button:hover {
+  color: var(--text);
+  background-color: var(--surface-hover);
+}
+.compartment-button-active {
+  color: var(--accent);
+  background-color: var(--accent-dim);
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+.compartment-icon {
+  flex-shrink: 0;
+  font-size: 1rem;
+  line-height: 1;
+  width: 1.25rem;
+  text-align: center;
+}
+.compartment-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Sidebar folder tree — extend the existing sidebar-item styles with
+   a count badge that lives on the right. (Built on top of the
+   existing .sidebar-item / .folder-label rules above.) */
+.sidebar-count {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Top-of-page banner — unmistakable "this is a preview" marker. */
+.preview-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background-color: var(--accent-dim);
+  border: 1px solid var(--accent);
+  border-radius: 0.5rem;
+  color: var(--accent);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.preview-banner-icon {
+  font-size: 1.05rem;
+}
+
+/* Tab strip — alternative way to switch compartments in the preview.
+   Functional copy of the sidebar buttons. Hidden on narrow viewports
+   where the sidebar is the primary control. */
+.preview-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.preview-tab {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease,
+              border-color 150ms ease;
+}
+.preview-tab:hover {
+  color: var(--text);
+  background-color: var(--surface-hover);
+}
+.preview-tab-active {
+  color: var(--accent);
+  background-color: var(--accent-dim);
+  border-color: var(--accent);
+  font-weight: 500;
+}
+
+/* Panel header — title + meta line, matches the activity-feed heading
+   style. */
+.preview-panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.preview-panel-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+.preview-panel-meta {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* YouTube card extension — channel name in the meta line. */
+.feed-item-meta .meta-channel {
+  color: var(--muted);
+  font-size: 12px;
+}
+/* YouTube thumbnail placeholder — same dimensions as a real thumb so
+   the card layout doesn't jump when the actual image loads. The
+   placeholder uses the surface-hover colour as a "loading" state. */
+.feed-item-thumb-placeholder {
+  background-color: var(--surface-hover);
+  background-image: linear-gradient(135deg, transparent 50%, var(--border) 50%);
+}
+
+/* Project card — extends feed-item with status pill + description. */
+.project-item .feed-item-header {
+  margin-bottom: -0.25rem;
+}
+.project-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background-color: var(--bg);
+  line-height: 1;
+}
+.project-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--muted);
+}
+.project-status-running {
+  color: var(--success);
+  border-color: var(--success);
+}
+.project-status-running .project-status-dot {
+  background-color: var(--success);
+  box-shadow: 0 0 0 0 var(--success);
+  animation: pulse 2s infinite;
+}
+.project-status-stopped {
+  color: var(--muted);
+}
+.project-status-starting {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.project-status-starting .project-status-dot {
+  background-color: var(--accent);
+  animation: pulse 1s infinite;
+}
+.project-status-errored {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.project-status-errored .project-status-dot {
+  background-color: var(--danger);
+}
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 currentColor; }
+  70%  { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.project-description {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin: 0.25rem 0;
+}
+.project-uptime {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* YouTube history rows — chronological list, not a card grid. */
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.history-row:last-child {
+  border-bottom: none;
+}
+.history-row:hover {
+  background-color: var(--surface-hover);
+}
+.history-main {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+.history-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.history-title {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-title:hover {
+  color: var(--accent);
+}
+.history-channel {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+.history-time {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.history-saved-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* Email rows — inbox-style list. */
+.email-filters {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+.email-filter {
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  background-color: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease,
+              border-color 150ms ease;
+}
+.email-filter:hover {
+  color: var(--text);
+  background-color: var(--surface-hover);
+}
+.email-filter-active {
+  color: var(--bg);
+  background-color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 500;
+}
+
+.email-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+.email-row {
+  display: grid;
+  grid-template-columns: 12px 180px 1fr auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.email-row:last-child {
+  border-bottom: none;
+}
+.email-row:hover {
+  background-color: var(--surface-hover);
+}
+.email-unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: transparent;
+}
+.email-row-unread .email-unread-dot {
+  background-color: var(--accent);
+}
+.email-sender {
+  font-size: 0.875rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.email-row-unread .email-sender {
+  font-weight: 600;
+}
+.email-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.email-subject {
+  font-size: 0.875rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.email-row-unread .email-subject {
+  font-weight: 600;
+}
+.email-snippet {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.email-time {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.email-provider-gmail {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.email-provider-outlook {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Floating "PREVIEW" watermark — fixed in the bottom-right corner. */
+.preview-watermark {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 30;
+}
+
+/* Tab strip hides on narrow viewports — the sidebar compartment
+   buttons become the primary switcher there. */
+@media (max-width: 720px) {
+  .preview-tabs {
+    display: none;
+  }
+  .email-row {
+    grid-template-columns: 12px 1fr auto;
+    grid-template-areas: "dot content time" "sender content provider";
+    row-gap: 0.25rem;
+  }
+  .email-unread-dot { grid-area: dot; }
+  .email-sender { grid-area: sender; }
+  .email-content { grid-area: content; }
+  .email-time { grid-area: time; }
+  .email-row .source-badge { grid-area: provider; justify-self: end; }
+}
+
+/* ─── Today compartment (/preview/v2) ─────────────────────────────────────── */
+
+/* Inner sub-tab strip — sits inside the Today panel, used to switch
+   between Today / This week / All tasks. Visually similar to the
+   outer .preview-tabs but smaller and indented to read as a
+   secondary control. */
+.today-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.today-subtab {
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease,
+              border-color 150ms ease;
+}
+.today-subtab:hover {
+  color: var(--text);
+  background-color: var(--surface-hover);
+}
+.today-subtab-active {
+  color: var(--accent);
+  background-color: var(--accent-dim);
+  border-color: var(--accent);
+  font-weight: 500;
+}
+
+/* Section heading inside a Today sub-view — small uppercase title
+   plus an inline meta label (e.g. "5 for today", "daily — auto-reset"). */
+.today-section {
+  margin-bottom: 1.5rem;
+}
+.today-section:last-child {
+  margin-bottom: 0;
+}
+.today-section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.today-section-meta {
+  font-size: 0.7rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+/* The list of rows in a section. Surface-on-surface so each section
+   reads as its own block. */
+.today-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+.today-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9375rem;
+  color: var(--text);
+}
+.today-row:last-child {
+  border-bottom: none;
+}
+.today-row:hover {
+  background-color: var(--surface-hover);
+}
+.today-checkbox {
+  flex-shrink: 0;
+  width: 1.1rem;
+  text-align: center;
+  font-size: 1rem;
+  color: var(--muted);
+}
+.today-row-done .today-checkbox {
+  color: var(--success);
+}
+.today-row-done .today-row-text {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.today-row-text {
+  flex: 1;
+  min-width: 0;
+}
+.today-row-event {
+  font-variant-numeric: tabular-nums;
+}
+.today-event-time {
+  flex-shrink: 0;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.85rem;
+  color: var(--accent);
+  font-weight: 600;
+  min-width: 3.5rem;
+}
+
+/* Task hint chip — small pill on the right of a task row that says
+   when the user plans to do it ("before work", "evening", "anytime"). */
+.today-task-hint {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--muted);
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+}
+.today-task-hint-before-work {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.today-task-hint-evening {
+  color: #c084fc;            /* soft purple — fits the calm-evening vibe */
+  border-color: #c084fc;
+}
+
+/* Due-date chip on the all-tasks list. */
+.today-task-due {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--muted);
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+}
+
+/* ─── Week grid (This week sub-view) ─────────────────────────────────── */
+
+/* 7-column grid for Mon-Sun. Each column is itself a vertical stack:
+   day header, morning events, [work block on weekdays], evening events. */
+.week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.5rem;
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.week-day {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.week-day-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-align: center;
+  padding: 0.35rem 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.week-day-today {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.week-day-events {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-height: 8rem;       /* keeps empty columns visually balanced */
+}
+
+.week-event {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.45rem 0.5rem;
+  background-color: var(--accent-dim);
+  border: 1px solid var(--accent);
+  border-radius: 0.375rem;
+  color: var(--accent);
+}
+.week-event-time {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.week-event-title {
+  font-size: 0.8rem;
+  color: var(--text);
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+/* Work block — the dimmed non-schedulable band that sits between
+   morning and evening events on weekdays. Dashed border + muted
+   background signal "you can see this time but you can't put events
+   here". */
+.week-work-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding: 0.5rem 0.25rem;
+  margin: 0.15rem 0;
+  background-color: var(--surface-hover);
+  border: 1px dashed var(--border);
+  border-radius: 0.375rem;
+  color: var(--muted);
+}
+.week-work-time {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.7rem;
+}
+.week-work-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Week view collapses to a list on narrow viewports — a 7-col grid
+   is unreadable on a phone. */
+@media (max-width: 900px) {
+  .week-grid {
+    grid-template-columns: 1fr;
+  }
+}

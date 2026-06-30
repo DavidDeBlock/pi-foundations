@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "smoke": "bash scripts/smoke.sh"
+    "smoke": "bash scripts/smoke.sh",
+    "keygen": "tsx scripts/keygen.ts",
+    "certgen": "tsx scripts/certgen.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
@@ -22,6 +24,8 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.5",
+    "@types/node-forge": "^1.3.14",
+    "node-forge": "^1.4.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"

@@ -259,3 +259,37 @@ http://192.168.0.136:8080
 
 9925abfc-79c5-4d2b-8b2d-4ed5d416f933
 Zl9e2uxIsAlcUBo9XQ9xPgjPm7MR9VkUu1alNiqMxrU
+
+
+
+Okay, that preview is looking good. 
+
+
+
+The sidebar. 
+
+
+pipx run --spec trustme python3 -c "                                                                  import trustme                                                                                     
+   ca = trustme.CA()                                                                                  
+   cert = ca.issue_cert('192.168.0.136.nip.io', '192.168.0.136')                                      
+   ca.cert_pem.write_to_path('ca.pem')                                                                
+   cert.cert_chain_pems[0].write_to_path('server.pem')                                                
+   cert.private_key_pem.write_to_path('server.key')                                                   
+   "          
+
+
+
+  ❯ pipx run --spec trustme python3 -c "                                                                  import trustme                                                                                        ca = trustme.CA()
+   cert = ca.issue_cert('192.168.0.136.nip.io', '192.168.0.136')                                       
+   ca.cert_pem.write_to_path('ca.pem')                                                                 
+   cert.cert_chain_pems[0].write_to_path('server.pem')                                                 
+   cert.private_key_pem.write_to_path('server.key')                                                    
+   "
+⚠️   python3 is already on your PATH and installed at /usr/bin/python3. Downloading and running
+    anyway.
+  File "<string>", line 1
+    import trustme                                                                                        ca = trustme.CA()                                                                                
+IndentationError: unexpected indent
+
+
+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
