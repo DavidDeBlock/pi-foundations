@@ -40,10 +40,12 @@ export interface EmailListFilters {
   /** ISO 8601 upper bound on `received_at`. Inclusive. */
   readonly until?: string
   /**
-   * Reserved for slice #025 (dashboard email_tags). The `email_tags`
-   * table does not exist yet, so this filter is a no-op today. We
-   * keep it in the type so callers can wire the route param now and
-   * the filter activates when #025 ships.
+   * Restrict to emails carrying this tag (dashboard-only tag,
+   * normalized via `normalizeTag` before reaching the builder).
+   * Joins `email_tags` and filters by the (already-normalized)
+   * `tag` value. Hidden emails are still excluded by the global
+   * `hidden_at IS NULL` filter — a tag on a hidden email doesn't
+   * surface in the list.
    */
   readonly tag?: string
   /** Page size. Clamped to [1, MAX_LIMIT]. Defaults to DEFAULT_LIMIT. */
@@ -127,7 +129,16 @@ export function buildListQuery(filters: EmailListFilters): ListQuery {
     where.push('received_at <= ?')
     params.push(filters.until)
   }
-  // tag filter intentionally omitted — see EmailListFilters.tag note.
+
+  // Tag filter: an INNER JOIN against `email_tags` would change the
+  // result shape (one row per tag, not per email), so we use an
+  // EXISTS subquery. Matches the existing label pattern above.
+  if (typeof filters.tag === 'string' && filters.tag !== '') {
+    where.push(`EXISTS (
+      SELECT 1 FROM email_tags et WHERE et.email_id = emails.id AND et.tag = ?
+    )`)
+    params.push(filters.tag)
+  }
 
   // Keyset pagination: cursor encodes the (received_at, id) of the
   // last row from the previous page. We want rows that are

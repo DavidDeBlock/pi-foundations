@@ -7,6 +7,7 @@ import { Database } from './db.js'
 import { runMigrations } from './migrations.js'
 import { createStateSigner, createTokenCipher } from './token-encryption.js'
 import { EmailSyncWorker } from './email-sync-worker.js'
+import { EmailSyncScheduler } from './email-sync-scheduler.js'
 import { GmailClient } from './gmail-client.js'
 
 async function main(): Promise<void> {
@@ -28,6 +29,35 @@ async function main(): Promise<void> {
   const email = config.email
     ? buildEmailDeps(config.email.emailTokenEncryptionKey, config.email.googleOauthClientId, config.email.googleOauthClientSecret, config.email.emailOauthRedirectUri, db, config.emailSyncHistoryDays)
     : undefined
+
+  // Background poll scheduler (issue #026). Runs `EmailSyncWorker.sync`
+  // for every connected account at `config.emailSyncIntervalMin`
+  // intervals. Started before `serve()` so the first tick can fire as
+  // soon as the HTTP socket is bound. When the operator sets the
+  // interval to `0` the scheduler is constructed but inert (manual-
+  // only mode — `POST /api/email/sync` is the only path). When email
+  // isn't configured at all (`config.email === null`) there's no
+  // worker to schedule against, so we skip construction entirely.
+  const syncScheduler = email
+    ? new EmailSyncScheduler({
+        db,
+        worker: email.syncWorker,
+        intervalMin: config.emailSyncIntervalMin,
+      })
+    : null
+  if (syncScheduler) syncScheduler.start()
+
+  // Graceful shutdown. Best-effort cleanup of the timer so a
+  // deployed dashboard doesn't keep ticking after `pm2 stop`.
+  const shutdown = (signal: NodeJS.Signals): void => {
+    // eslint-disable-next-line no-console
+    console.log(`[dashboard] ${signal} received; stopping scheduler and exiting`)
+    if (syncScheduler) syncScheduler.stop()
+    db.close()
+    process.exit(0)
+  }
+  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', shutdown)
 
   const app = createApp({
     passwordHash: config.passwordHash,
@@ -97,7 +127,8 @@ function buildEmailDeps(
 
   // Sync worker (issue #021) — orchestrator for the Gmail mirror.
   // Builds a GmailClient per sync so OAuth tokens live only as long
-  // as the sync does.
+  // as the sync does. Returned so `main()` can pass it to the
+  // scheduler constructor below.
   const syncWorker = new EmailSyncWorker({
     db,
     cipher: tokenCipher,

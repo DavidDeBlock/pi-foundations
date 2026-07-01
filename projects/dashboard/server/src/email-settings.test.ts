@@ -138,6 +138,32 @@ describe('GET /settings/email — connected state', () => {
     })
   })
 
+  it('renders the live "Syncing now (running for Xm Ys)" hint when an account is inProgress (#026)', async () => {
+    // Seed an in-progress sync_state so the page renders the
+    // running indicator. The exact "running for Xm Ys" suffix is
+    // time-relative — match the prefix + the spinner class.
+    const account = env.db.get<{ id: string }>(
+      `SELECT id FROM email_accounts LIMIT 1`,
+    )
+    expect(account).toBeDefined()
+    env.db.run(
+      `INSERT INTO sync_state (account_id, provider, in_progress, started_at, last_sync_at, last_messages_synced)
+       VALUES (?, 'gmail', 1, ?, ?, 100)`,
+      [account!.id, '2024-06-01T11:55:00.000Z', '2024-06-01T11:50:00.000Z'],
+    )
+    const res = await env.app.request('/settings/email', {
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    const html = await res.text()
+    // The running indicator replaces the lastSync counts line.
+    expect(html).toContain('Syncing now')
+    expect(html).toContain('running for')
+    // The refresh button is disabled while a sync is running.
+    expect(html).toMatch(/<button[^>]*disabled[^>]*title="Sync already in progress[^"]+"/)
+    // The row carries the running class.
+    expect(html).toContain('account-row-running')
+  })
+
   it('lists the connected account email + Disconnect form', async () => {
     const res = await env.app.request('/settings/email', {
       headers: { authorization: basicHeader('david', PASSWORD) },

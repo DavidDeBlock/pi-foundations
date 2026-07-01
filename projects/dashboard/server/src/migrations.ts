@@ -33,6 +33,14 @@ const MIGRATIONS = [
     name: '005_email_search',
     filename: '005_email_search.sql',
   },
+  {
+    name: '006_email_tags',
+    filename: '006_email_tags.sql',
+  },
+  {
+    name: '007_email_sync_debounce',
+    filename: '007_email_sync_debounce.sql',
+  },
 ] as const
 
 export interface RunMigrationsOptions {

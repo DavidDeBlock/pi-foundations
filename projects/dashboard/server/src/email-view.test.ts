@@ -255,6 +255,89 @@ describe('GET /email (inbox page)', () => {
   })
 })
 
+// ─── Sync summary indicator (#026) ───────────────────────────────────
+
+describe('GET /email — sync summary indicator (#026)', () => {
+  let env: TestEnv
+  beforeEach(async () => {
+    env = await buildEnv()
+    accountCache.clear()
+  })
+  afterEach(() => {
+    env.cleanup()
+    env.db.close()
+  })
+
+  it('omits the indicator when the worker is not injected (setup-only mode)', async () => {
+    // The default buildEnv creates the app without passing a sync
+    // worker (matches the "email deps not configured" path).
+    seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'msg',
+      sender: 'a@b.com', senderEmail: 'a@b.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    const res = await authed(env, '/email')
+    const html = await res.text()
+    // No data-email-sync-indicator element rendered (or it's the
+    // empty no-accounts variant), and no script tag for it.
+    expect(html).not.toContain('EMAIL_SYNC_SCRIPT')
+    expect(html).not.toContain('Syncing now')
+  })
+
+  it('renders the indicator + JS updater when the worker is injected', async () => {
+    // Build a fresh app WITH the worker injected. We import the
+    // helpers in-line so the rest of the file doesn't have to
+    // know about the optional param.
+    const { createApp } = await import('./app.js')
+    const { mkdtempSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { JsonTokenStore } = await import('./token-store.js')
+    const { Database } = await import('./db.js')
+    const { runMigrations } = await import('./migrations.js')
+    const { emailViewApi } = await import('./email-view.js')
+    const { Hono } = await import('hono')
+    const { auth } = await import('./auth.js')
+    const { EmailSyncWorker } = await import('./email-sync-worker.js')
+    const { createTokenCipher } = await import('./token-encryption.js')
+    const { randomBytes } = await import('node:crypto')
+
+    const db = new Database(':memory:')
+    await runMigrations(db, { dir: MIGRATIONS_DIR })
+    const cipher = createTokenCipher(randomBytes(32))
+    const stubWorker = new EmailSyncWorker({
+      db,
+      cipher,
+      buildGmailClient: () => ({
+        listMessages: async () => ({ messages: [], nextPageToken: null }),
+        getMessage: async () => { throw new Error('no msgs') },
+      } as unknown as import('./gmail-client.js').GmailClient),
+    })
+    const subApp = emailViewApi(db, stubWorker)
+    const tmp = mkdtempSync(join(tmpdir(), 'email-view-sync-test-'))
+    const app = createApp({ passwordHash: HASH, tokenStore: new JsonTokenStore({ dataDir: tmp }), db })
+    app.route('/email-sync', subApp)
+    void new Hono()
+    void auth
+
+    seedEmail(db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'msg',
+      sender: 'a@b.com', senderEmail: 'a@b.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    const res = await app.request('/email-sync', {
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    const html = await res.text()
+    expect(html).toContain('data-email-sync-indicator')
+    expect(html).toContain('Never synced')
+    // The JS updater pings /api/email/sync/status every 30s — the
+    // literal URL is the easiest rendered-HTML fingerprint for it.
+    expect(html).toContain('/api/email/sync/status')
+    rmSync(tmp, { recursive: true, force: true })
+  })
+})
+
 // ─── Filter wiring ────────────────────────────────────────────────────────
 
 describe('GET /email — filter wiring', () => {
@@ -449,6 +532,96 @@ describe('GET /email — sidebar nav', () => {
   })
 })
 
+// ─── GET /email — tag filter (#025) ───────────────────────────────────
+
+describe('GET /email — tag filter (#025)', () => {
+  let env: TestEnv
+  beforeEach(async () => {
+    env = await buildEnv()
+    accountCache.clear()
+  })
+  afterEach(() => {
+    env.cleanup()
+    env.db.close()
+  })
+
+  it('narrows the inbox to emails carrying the given tag', async () => {
+    const tagged = seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'tagged',
+      sender: 'a@b.com', senderEmail: 'a@b.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-2', subject: 'untagged',
+      sender: 'a@b.com', senderEmail: 'a@b.com',
+      receivedAt: '2024-06-02T10:00:00.000Z',
+    })
+    env.db.run('INSERT INTO email_tags (email_id, tag) VALUES (?, ?)', [tagged, 'launch'])
+
+    const res = await authed(env, '/email?tag=launch')
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    expect(html).toContain('>tagged</')
+    expect(html).not.toContain('>untagged</')
+  })
+
+  it('renders an "active tag" chip in the filter bar with a clear link', async () => {
+    seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'msg',
+      sender: 'a@b.com', senderEmail: 'a@b.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    const res = await authed(env, '/email?tag=launch')
+    const html = await res.text()
+    expect(html).toContain('data-email-active-tag')
+    expect(html).toContain('Tagged')
+    expect(html).toContain('#launch')
+    // Clear link drops the tag param.
+    expect(html).toMatch(/<a[^>]+href="\/email"[^>]*>\u00d7<\/a>/)
+  })
+
+  it('does not render the active-tag chip when no tag filter is set', async () => {
+    seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'msg',
+      sender: 'a@b.com', senderEmail: 'a@b.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    const res = await authed(env, '/email')
+    const html = await res.text()
+    expect(html).not.toContain('data-email-active-tag')
+  })
+
+  it('combines tag filter with sender filter (AND)', async () => {
+    const a = seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'alice launch',
+      sender: 'alice@example.com', senderEmail: 'alice@example.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-2', subject: 'bob launch',
+      sender: 'bob@example.com', senderEmail: 'bob@example.com',
+      receivedAt: '2024-06-02T10:00:00.000Z',
+    })
+    env.db.run('INSERT INTO email_tags (email_id, tag) VALUES (?, ?)', [a, 'launch'])
+
+    const res = await authed(env, '/email?tag=launch&from=alice@example.com')
+    const html = await res.text()
+    expect(html).toContain('>alice launch</')
+    expect(html).not.toContain('>bob launch</')
+  })
+
+  it('shows an empty state when the tag filter matches nothing', async () => {
+    seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'msg',
+      sender: 'a@b.com', senderEmail: 'a@b.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    const res = await authed(env, '/email?tag=nope')
+    const html = await res.text()
+    expect(html).toContain('No messages match your filters.')
+  })
+})
+
 // ─── GET /email/:id (detail) ──────────────────────────────────────────────
 
 describe('GET /email/:id (detail page)', () => {
@@ -472,7 +645,9 @@ describe('GET /email/:id (detail page)', () => {
     expect(res.status).toBe(404)
   })
 
-  it('renders 404 when the row is hidden', async () => {
+  it('renders the detail page (with Unhide) when the row is hidden (#024)', async () => {
+    // As of #024, hidden emails still render on the detail page so
+    // the user can unhide directly without going through /email/hidden.
     const id = seedEmail(env.db, {
       accountId: 'acc-1', threadId: 't-1', subject: 'Hidden',
       sender: 'Alice <alice@example.com>', senderEmail: 'alice@example.com',
@@ -480,7 +655,12 @@ describe('GET /email/:id (detail page)', () => {
       hidden: true,
     })
     const res = await authed(env, `/email/${id}`)
-    expect(res.status).toBe(404)
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    expect(html).toContain('Hidden')
+    expect(html).toContain('data-email-action="unhide"')
+    // data-email-hidden="true" tells the script this is the hidden state.
+    expect(html).toContain('data-email-hidden="true"')
   })
 
   it('shows subject, sender, recipients, date, and body', async () => {
@@ -517,7 +697,12 @@ describe('GET /email/:id (detail page)', () => {
     expect(html).toContain('href="/email/thread/thread-42"')
   })
 
-  it('renders the Hide / Tag / Summarize action placeholders (disabled)', async () => {
+  it('renders the Summarize placeholder (disabled) and a working Hide button; tags render as chips (#024+#025)', async () => {
+    // Hide is wired up in #024; tags are wired up in #025 (chips +
+    // add-tag input); Summarize remains a placeholder for #027.
+    // The Hide button's label and endpoint flip based on hidden_at
+    // so a reload always lands on the right toggle. The tag chips
+    // and add-tag input render from the canonical server state.
     const id = seedEmail(env.db, {
       accountId: 'acc-1', threadId: 't-1', subject: 'Hello',
       sender: 'Alice <alice@example.com>', senderEmail: 'alice@example.com',
@@ -526,12 +711,60 @@ describe('GET /email/:id (detail page)', () => {
     const res = await authed(env, `/email/${id}`)
     const html = await res.text()
     expect(html).toContain('data-email-action="hide"')
-    expect(html).toContain('data-email-action="tag"')
+    // Tag button is GONE in #025 — tags are chips + input, not a
+    // single button. Confirm the chips + input surface is present.
+    expect(html).toContain('data-email-tag-form')
+    expect(html).toContain('data-email-tag-input')
     expect(html).toContain('data-email-action="summarize"')
-    // All three buttons are disabled until #024/#025/#027.
-    expect(html).toMatch(/<button[^>]*data-email-action="hide"[^>]*disabled/)
-    expect(html).toMatch(/<button[^>]*data-email-action="tag"[^>]*disabled/)
+    // Hide is NOT disabled and renders "Hide" label.
+    expect(html).toMatch(/<button[^>]*data-email-action="hide"(?![^>]*disabled)[^>]*>Hide</)
+    // Summarize stays disabled (placeholder for #027).
     expect(html).toMatch(/<button[^>]*data-email-action="summarize"[^>]*disabled/)
+    // data-email-id is present so the JS handler can POST to the right URL.
+    expect(html).toContain(`data-email-id="${id}"`)
+  })
+
+  it('flips the button label to "Unhide" when the email is hidden, and stays that way after a reload (#024 AC)', async () => {
+    // The AC: "Detail view 'Hide' button toggles to 'Unhide' (and
+    // stays that way after page reload) when an email is hidden".
+    // Persistence across reloads is the server-rendered truth: the
+    // page re-reads hidden_at on every load.
+    const id = seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'Soft-deleted',
+      sender: 'Alice <alice@example.com>', senderEmail: 'alice@example.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+      hidden: true,
+    })
+    // Render #1
+    const res1 = await authed(env, `/email/${id}`)
+    expect(res1.status).toBe(200)
+    const html1 = await res1.text()
+    expect(html1).toMatch(/<button[^>]*data-email-action="unhide"(?![^>]*disabled)[^>]*>Unhide</)
+    expect(html1).not.toMatch(/<button[^>]*data-email-action="hide"(?![^>]*disabled)[^>]*>Hide</)
+
+    // Render #2 (simulate reload). Server state hasn't changed →
+    // server still renders Unhide + same data-email-hidden="true".
+    const res2 = await authed(env, `/email/${id}`)
+    const html2 = await res2.text()
+    expect(html2).toMatch(/<button[^>]*data-email-action="unhide"(?![^>]*disabled)[^>]*>Unhide</)
+    expect(html2).toContain('data-email-hidden="true"')
+  })
+
+  it('includes the EMAIL_HIDE_SCRIPT on the detail page so the button fires fetch + reload', async () => {
+    // The script picks up `[data-email-hide-button]` and POSTs + reloads.
+    // We don't drive the browser, but we check the script is inlined
+    // and references the binding we rely on.
+    const id = seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'Hello',
+      sender: 'Alice <alice@example.com>', senderEmail: 'alice@example.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    const res = await authed(env, `/email/${id}`)
+    const html = await res.text()
+    expect(html).toContain('data-email-hide-button')
+    // The script uses fetch('/api/email/' + emailId + '/' + action).
+    expect(html).toMatch(/'\/api\/email\/'/)
+    expect(html).toContain('window.location.reload()')
   })
 
   it('includes a back-to-inbox breadcrumb', async () => {
@@ -544,6 +777,109 @@ describe('GET /email/:id (detail page)', () => {
     const html = await res.text()
     expect(html).toContain('email-breadcrumb')
     expect(html).toContain('href="/email"')
+  })
+
+  // ─── Tag chips + Add-tag input (#025) ────────────────────────────
+
+  it('renders "No tags yet" placeholder when the email has no tags', async () => {
+    const id = seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'Hello',
+      sender: 'Alice <alice@example.com>', senderEmail: 'alice@example.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    const res = await authed(env, `/email/${id}`)
+    const html = await res.text()
+    expect(html).toContain('data-email-tags-empty')
+    expect(html).toContain('No tags yet.')
+  })
+
+  it('renders existing tags as chips with × remove buttons', async () => {
+    const id = seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'Hello',
+      sender: 'Alice <alice@example.com>', senderEmail: 'alice@example.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    env.db.run('INSERT INTO email_tags (email_id, tag) VALUES (?, ?)', [id, 'launch'])
+    env.db.run('INSERT INTO email_tags (email_id, tag) VALUES (?, ?)', [id, 'waiting-on-sarah'])
+    const res = await authed(env, `/email/${id}`)
+    const html = await res.text()
+    expect(html).toContain('data-email-tag-chips')
+    expect(html).toContain('#launch')
+    expect(html).toContain('#waiting-on-sarah')
+    // Each chip has a × button with data-email-tag-remove.
+    const removeMatches = html.match(/data-email-tag-remove[^>]+data-tag="[^"]+"/g) ?? []
+    expect(removeMatches.length).toBe(2)
+    // The × buttons carry the email id so the JS can DELETE.
+    expect(html).toMatch(/data-email-tag-remove[^>]+data-email-id="[^"]+"/)
+  })
+
+  it('renders an Add-tag input with autocomplete (datalist sourced from /api/email/tags)', async () => {
+    const id = seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'Hello',
+      sender: 'Alice <alice@example.com>', senderEmail: 'alice@example.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    // Some existing tags the user has created (none attached to this email).
+    const other = seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-2', subject: 'Other',
+      sender: 'Bob <b@b.com>', senderEmail: 'b@b.com',
+      receivedAt: '2024-06-02T10:00:00.000Z',
+    })
+    env.db.run('INSERT INTO email_tags (email_id, tag) VALUES (?, ?)', [other, 'launch'])
+    env.db.run('INSERT INTO email_tags (email_id, tag) VALUES (?, ?)', [other, 'urgent'])
+
+    const res = await authed(env, `/email/${id}`)
+    const html = await res.text()
+    // The input + button are present.
+    expect(html).toContain('data-email-tag-input')
+    expect(html).toContain('data-email-tag-add')
+    expect(html).toContain('data-email-tag-form')
+    // The datalist + JSON block provide autocomplete.
+    expect(html).toContain('id="email-all-tags-list"')
+    expect(html).toContain('id="email-all-tags"')
+    // JSON-encoded payload (HTML-escaped quotes).
+    expect(html).toMatch(/email-all-tags[^>]*>\[(?:&quot;|")launch(?:&quot;|")/)
+    expect(html).toMatch(/email-all-tags[^>]*>(?:.*)(?:&quot;|")urgent(?:&quot;|")/)
+    // The script wires fetch + reload.
+    expect(html).toMatch(/data-email-tag-remove/) // the script binds × buttons
+  })
+
+  it('tag chip links to /email?tag=... (inbox filter)', async () => {
+    const id = seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'Hello',
+      sender: 'Alice <alice@example.com>', senderEmail: 'alice@example.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    env.db.run('INSERT INTO email_tags (email_id, tag) VALUES (?, ?)', [id, 'launch'])
+    const res = await authed(env, `/email/${id}`)
+    const html = await res.text()
+    // The chip is a link to the inbox with the tag filter set.
+    expect(html).toMatch(/href="\/email\?tag=launch"/)
+  })
+
+  it('persists existing tag chips across reloads (server-rendered source of truth)', async () => {
+    // The AC for tag chips: chips reflect the canonical state.
+    // The server re-reads email_tags on every page load — no
+    // local JS state to go stale.
+    const id = seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'Hello',
+      sender: 'Alice <alice@example.com>', senderEmail: 'alice@example.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    env.db.run('INSERT INTO email_tags (email_id, tag) VALUES (?, ?)', [id, 'launch'])
+    env.db.run('INSERT INTO email_tags (email_id, tag) VALUES (?, ?)', [id, 'urgent'])
+
+    const res1 = await authed(env, `/email/${id}`)
+    expect(res1.status).toBe(200)
+    const html1 = await res1.text()
+    expect(html1).toContain('#launch')
+    expect(html1).toContain('#urgent')
+
+    // Second load returns the same chips — server-rendered truth.
+    const res2 = await authed(env, `/email/${id}`)
+    const html2 = await res2.text()
+    expect(html2).toContain('#launch')
+    expect(html2).toContain('#urgent')
   })
 })
 
@@ -706,4 +1042,93 @@ describe('GET /email — performance smoke (AC)', () => {
     expect(res.status).toBe(200)
     expect(elapsed).toBeLessThan(500)
   }, 10_000)
+})
+
+// ─── GET /email/hidden (#024) ──────────────────────────────────────────────
+
+describe('GET /email/hidden (#024)', () => {
+  let env: TestEnv
+  beforeEach(async () => {
+    env = await buildEnv()
+    accountCache.clear()
+  })
+  afterEach(() => {
+    env.cleanup()
+    env.db.close()
+  })
+
+  it('requires auth', async () => {
+    const res = await env.request('/email/hidden')
+    expect(res.status).toBe(401)
+  })
+
+  it('renders an empty-state message when no emails are hidden', async () => {
+    seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'Visible',
+      sender: 'Alice <alice@example.com>', senderEmail: 'alice@example.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    const res = await authed(env, '/email/hidden')
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    expect(html).toContain('No hidden messages')
+  })
+
+  it('renders hidden emails sorted by hidden_at DESC with an Unhide button per row', async () => {
+    const older = seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1',
+      subject: 'Older hidden', sender: 'a@b.com', senderEmail: 'a@b.com',
+      receivedAt: '2024-06-01T10:00:00.000Z', hidden: true,
+    })
+    seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-2',
+      subject: 'Visible (should not appear)', sender: 'a@b.com', senderEmail: 'a@b.com',
+      receivedAt: '2024-06-02T10:00:00.000Z',
+    })
+    const newer = seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-3',
+      subject: 'Newer hidden', sender: 'a@b.com', senderEmail: 'a@b.com',
+      receivedAt: '2024-06-03T10:00:00.000Z', hidden: true,
+    })
+    const res = await authed(env, '/email/hidden')
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    // Subject order: newer first.
+    const newerIdx = html.indexOf('Newer hidden')
+    const olderIdx = html.indexOf('Older hidden')
+    expect(newerIdx).toBeGreaterThan(0)
+    expect(olderIdx).toBeGreaterThan(newerIdx)
+    // The visible row must not appear.
+    expect(html).not.toContain('Visible (should not appear)')
+    // Each row has an Unhide button with the row's id and the email-action wiring.
+    expect(html).toMatch(new RegExp(`data-email-id="${older}"`))
+    expect(html).toMatch(new RegExp(`data-email-id="${newer}"`))
+    expect(html).toContain('data-email-action="unhide"')
+    expect(html).toContain('data-email-hide-button')
+  })
+
+  it('does not collide with the /:id route (literal /hidden is matched, not captured as id="hidden")', async () => {
+    // No hidden emails needed — we just verify the route lands on
+    // the hidden-list renderer (showing the empty state), NOT the
+    // detail route's 404.
+    const res = await authed(env, '/email/hidden')
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    expect(html).toContain('Hidden emails') // page title
+  })
+
+  it('sidebar shows the "Hidden" link pointing to /email/hidden', async () => {
+    seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'Visible',
+      sender: 'a@b.com', senderEmail: 'a@b.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    const res = await authed(env, '/email/hidden')
+    const html = await res.text()
+    // The Hidden link exists and points at /email/hidden.
+    expect(html).toMatch(/<a[^>]*class="compartment-button[^"]*"[^>]*href="\/email\/hidden"/)
+    // The Hidden link is marked active on /email/hidden (active class added).
+    expect(html).toMatch(/<a[^>]*class="compartment-button compartment-button-active"[^>]*href="\/email\/hidden"/)
+    expect(html).toContain('>Hidden</span>')
+  })
 })

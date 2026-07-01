@@ -44,6 +44,8 @@ import {
   NoAccountsError,
   SyncInProgressError,
   defaultAccountId,
+  listConnectableAccounts,
+  markManualTrigger,
 } from './email-sync-worker.js'
 
 // ─── Hono sub-app ─────────────────────────────────────────────────────────
@@ -84,6 +86,13 @@ export function emailSyncApi(
     // can show a clean error rather than spinning forever on a
     // status that won't change.
     const statusBefore = deps.worker.status(accountId)
+
+    // Record the manual trigger timestamp BEFORE deciding whether
+    // to fire (#026). The user clicked Refresh — whether the
+    // worker ends up running or not, that's a recent user action
+    // and the background scheduler should give it space.
+    markManualTrigger(deps.db, accountId, nowMs)
+
     if (statusBefore.inProgress) {
       // Idempotent: just tell the caller it's already running, and
       // let the existing poll loop pick up the result.
@@ -147,6 +156,32 @@ export function emailSyncApi(
       lastUpdated: status.lastUpdated,
       lastRemoved: status.lastRemoved,
       startedAt: status.startedAt,
+    })
+  })
+
+  // ─── GET /sync/status (#026) ─────────────────────────────────────────────
+  // Aggregate status across ALL connected accounts. The /email inbox
+  // polls this every 30 seconds to update "Last synced X ago" and the
+  // "Syncing now..." indicator. Cheaper than N individual
+  // /accounts/:id/status calls and avoids leaking the per-account
+  // shape (clients only need lastSyncAt + inProgress to render the
+  // header).
+  api.get('/sync/status', (c) => {
+    const accounts = listConnectableAccounts(deps.db)
+    const rows = accounts.map((a) => {
+      const s = deps.worker.status(a.id)
+      return {
+        accountId: a.id,
+        emailAddress: a.emailAddress,
+        lastSyncAt: s.lastSyncAt,
+        inProgress: s.inProgress,
+        startedAt: s.startedAt,
+        messagesSynced: s.lastMessagesSynced,
+      }
+    })
+    return c.json({
+      accounts: rows,
+      nowMs: nowMs(),
     })
   })
 

@@ -659,3 +659,82 @@ function sinceForDays(days: number, nowMs: () => number): string {
   const ms = days * 24 * 60 * 60 * 1000
   return new Date(nowMs() - ms).toISOString()
 }
+
+// ─── Manual-trigger debounce (#026) ─────────────────────────────────────
+//
+// The background scheduler reads `last_manual_trigger_at` before
+// firing each run and short-circuits if the user clicked Refresh
+// within the last 60 seconds. The HTTP manual-refresh route calls
+// `markManualTrigger` after deciding to fire (or even if it
+// observed `already_in_progress` — the user still clicked, so
+// the next scheduled run should give them space).
+
+/**
+ * Set `sync_state.last_manual_trigger_at` to a millisecond
+ * timestamp. Idempotent — an UPSERT ensures the row exists for
+ * accounts that haven't synced yet (no `sync_state` row yet).
+ *
+ * `nowMs` is the injected clock so tests can pin time. Pass
+ * `Date.now` in production.
+ */
+export function markManualTrigger(
+  db: Database,
+  accountId: string,
+  nowMs: number | (() => number) = Date.now,
+): void {
+  const ms = typeof nowMs === 'function' ? nowMs() : nowMs
+  db.run(
+    `INSERT INTO sync_state (account_id, provider, last_manual_trigger_at)
+     VALUES (?, 'gmail', ?)
+     ON CONFLICT(account_id) DO UPDATE SET
+       last_manual_trigger_at = excluded.last_manual_trigger_at`,
+    [accountId, String(ms)],
+  )
+}
+
+/**
+ * Return `true` if the user manually triggered a sync within the
+ * last `windowMs` milliseconds (per the `last_manual_trigger_at`
+ * column populated by `markManualTrigger`). Used by the
+ * background scheduler to short-circuit a scheduled run after a
+ * recent user action.
+ *
+ * If the column is `NULL` (account never manually triggered, or
+ * the row doesn't exist yet), the predicate returns `false` so
+ * a fresh setup still gets a background sync on schedule.
+ */
+export function wasManualTriggerWithinMs(
+  db: Database,
+  accountId: string,
+  windowMs: number,
+  nowMs: number | (() => number) = Date.now,
+): boolean {
+  const now = typeof nowMs === 'function' ? nowMs() : nowMs
+  const row = db.get<{ last_manual_trigger_at: string | null }>(
+    `SELECT last_manual_trigger_at FROM sync_state WHERE account_id = ?`,
+    [accountId],
+  )
+  if (!row?.last_manual_trigger_at) return false
+  const last = Number.parseInt(row.last_manual_trigger_at, 10)
+  if (!Number.isFinite(last)) return false
+  return now - last < windowMs
+}
+
+/**
+ * List every `email_accounts` row regardless of whether it has a
+ * `sync_state` row yet. The scheduler needs the full set so a
+ * brand-new account (no sync_state row) still gets polled.
+ *
+ * Decryption isn't needed — the scheduler only needs the id (and
+ * a human-readable emailAddress for log lines).
+ */
+export interface AccountSummary {
+  readonly id: string
+  readonly emailAddress: string
+}
+
+export function listConnectableAccounts(db: Database): AccountSummary[] {
+  return db.all<AccountSummary>(
+    `SELECT id, email_address AS emailAddress FROM email_accounts ORDER BY connected_at DESC, id ASC`,
+  )
+}

@@ -80,6 +80,17 @@ export interface Config {
    * positive integer; values <1 or non-numeric fall back to 90.
    */
   readonly emailSyncHistoryDays: number
+  /**
+   * Background sync poll interval, in minutes. The scheduler in
+   * `email-sync-scheduler.ts` runs `EmailSyncWorker.sync` for every
+   * connected account at this interval. Defaults to 10 (issue
+   * spec). Set to `0` to disable automatic syncing — manual
+   * `POST /api/email/sync` is the only way new mail arrives in that
+   * mode. Negative / non-numeric values fall back to 10; `0` is
+   * honored literally so operators can opt out without editing
+   * config.
+   */
+  readonly emailSyncIntervalMin: number
 }
 
 /**
@@ -206,6 +217,22 @@ export async function loadConfig(): Promise<Config> {
     }
   }
 
+  // Background poll interval (issue #026). Optional — defaults to
+  // 10 minutes when missing or malformed. `0` is honored literally:
+  // operators can run the server in manual-only mode by exporting
+  // `EMAIL_SYNC_INTERVAL_MIN=0` (no automatic syncs). Negative or
+  // non-numeric values fall back to 10. The two-decimal-style
+  // floor on `0` is intentional — `parseInt('0', 10) === 0` is
+  // truthy-as-a-number and we WANT it to disable the scheduler.
+  const rawIntervalMin = process.env.EMAIL_SYNC_INTERVAL_MIN
+  let emailSyncIntervalMin = 10
+  if (rawIntervalMin !== undefined && rawIntervalMin !== '') {
+    const parsed = Number.parseInt(rawIntervalMin, 10)
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      emailSyncIntervalMin = parsed
+    }
+  }
+
   // ─── Optional TLS (issue #021 follow-up) ──────────────────────────────────────
   // Load cert + key from disk when both env vars point at readable
   // files. A typo (e.g. wrong path, partial pair) is a startup error
@@ -254,6 +281,7 @@ export async function loadConfig(): Promise<Config> {
     email,
     missingEmailEnv,
     emailSyncHistoryDays,
+    emailSyncIntervalMin,
   }
 }
 

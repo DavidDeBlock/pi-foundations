@@ -103,8 +103,15 @@ export function createApp({
   // Email UI (issue #023): server-rendered inbox + detail + thread.
   // Lives at `/email` (NOT `/api/email`) so the Hono path match is
   // unambiguous. The view layer reads from the same DB rows the
-  // JSON API serves — no duplicate data path.
-  app.route('/email', emailViewApi(db))
+  // JSON API serves — no duplicate data path. The optional
+  // `syncWorker` (issue #026) powers the "Last synced X ago" /
+  // "Syncing now..." indicator at the top of the inbox. When email
+  // deps are absent (setup-only mode) the worker is omitted and
+  // the indicator is hidden by `computeSyncSummary`.
+  app.route(
+    '/email',
+    emailViewApi(db, email ? email.syncWorker : undefined),
+  )
 
   // Static assets (categorize.js for the categorize UI). Hand-rolled
   // tiny handler — see static-handler.ts for why we don't use Hono's

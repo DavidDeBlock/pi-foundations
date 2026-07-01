@@ -1,0 +1,23 @@
+-- 007_email_sync_debounce.sql — issue #026
+--
+-- Records the last time a USER manually triggered a sync (via
+-- `POST /api/email/sync` or the per-account Refresh button on
+-- `/settings/email`). The background scheduler (#026) reads this
+-- column before each scheduled run and short-circuits the run if
+-- the user's last click was within the last 60 seconds — saving
+-- Gmail API quota when the user already has live progress showing
+-- in the UI (a fresh manual sync is still in flight or just
+-- completed seconds ago).
+--
+-- Type: TEXT holding a millisecond timestamp. We chose `INTEGER`
+-- initially but went with `TEXT` because other timestamp columns
+-- in this schema (e.g. `last_sync_at`, `started_at`) are ISO-8601
+-- strings, and storing one as a bare number would force the
+-- caller to special-case the format. Pure integer ms is also
+-- more efficient than ISO for the diff math (`nowMs - lastMs`),
+-- so callers convert to ms on read.
+--
+-- Column dropped via `email_accounts` CASCADE on disconnect,
+-- matching the existing `sync_state` lifecycle (issue #021).
+
+ALTER TABLE sync_state ADD COLUMN last_manual_trigger_at TEXT;

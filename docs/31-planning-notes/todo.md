@@ -302,3 +302,20 @@ No test suite yet. First, get an understanding of the Maestro project.
 I currently have one problem when I run a flow. For example, an RCP client will be launched, but if I rerun the flow, another RCP client will launch. Without separate other scripts, we don't have any clue how many RCP clients are running. 
 
 Just make sure if you are running something, you don't use the actual LLM. 
+
+Can you take a look at the image in the sprites folder? 
+
+What would it take to use those images instead of the pixel ones I've got currently? 
+
+
+You can surprise me. 
+
+Okay, that's nice. Let's enhance it a bit. When the box where the sprites are moving is clipping the left and right side, that box needs to be bigger, or the placeholder of the sprite should be on top. That's one thing.
+
+Since you can generate images, I want a small scenery created for the cat to stand in. Currently the cat is always moving from left to right. Some movement is nice, but for most of the time the cat should be steady and just blinking with the eyes, or have some other parts moving instead of going left to right all the time.
+
+Also, check the implementation of hungry, happiness, energy, and such, since now they don't lower by itself. That needs to be checked as well. 
+
+
+From the moment I click on the sleep button, the cat falls asleep, but when I hit clean up or play or feed, then the cat keeps sleeping. So adjust the images so they work together with the buttons And these are showing the correct ones. 
+

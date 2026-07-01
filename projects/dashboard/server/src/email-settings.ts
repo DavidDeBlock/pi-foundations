@@ -59,6 +59,14 @@ export function emailSettingsView(
     const reason = c.req.query('reason') ?? ''
     const accountId = c.req.query('account') ?? ''
     const statusInfo = accountId !== '' ? deps.syncWorker.status(accountId) : null
+    // Per-account sync status (#026) — the background scheduler
+    // can tick any account independently, so each row needs its
+    // own "Syncing now…" indicator rather than the old
+    // single-account-at-a-time shape.
+    const perAccountStatus: Record<string, ReturnType<EmailSyncWorker['status']>> = {}
+    for (const a of accounts) {
+      perAccountStatus[a.id] = deps.syncWorker.status(a.id)
+    }
     const html = renderPage({
       accounts,
       flash: readFlash(status, reason),
@@ -74,6 +82,7 @@ export function emailSettingsView(
         accountId,
         statusInfo,
       },
+      perAccountStatus,
       setupMissing: null,
     })
     return c.html(html)
@@ -215,6 +224,22 @@ function formatCount(
   return `${n} ${key}`
 }
 
+/** "Xm Ys" / "Xh Ym" / "just started" format used in the
+ *  per-account "running for …" indicator (#026). Negative
+ *  durations (clock skew — sync started in the future) render
+ *  "just started". */
+function formatDuration(ms: number): string {
+  if (ms < 0 || !Number.isFinite(ms)) return 'just started'
+  const sec = Math.floor(ms / 1000)
+  if (sec < 5) return 'just started'
+  const min = Math.floor(sec / 60)
+  const remSec = sec % 60
+  if (min < 60) return remSec > 0 ? `${min}m ${remSec}s` : `${min}m`
+  const hr = Math.floor(min / 60)
+  const remMin = min % 60
+  return remMin > 0 ? `${hr}h ${remMin}m` : `${hr}h`
+}
+
 function humaniseReason(reason: string): string {
   switch (reason) {
     case 'missing_params':
@@ -263,6 +288,7 @@ export function emailSettingsSetupOnly(): Hono<{ Variables: AuthVariables }> {
       accounts: [],
       flash: null,
       sync: { showProgress: false, accountId: '', statusInfo: null },
+      perAccountStatus: {},
       setupMissing: missing,
     })
     return c.html(html)
@@ -288,6 +314,22 @@ interface RenderArgs {
       readonly startedAt: string | null
     } | null
   }
+  /** Per-account sync status map (#026). The background scheduler
+   *  can tick accounts independently, so each row needs its own
+   *  "Syncing now…" indicator rather than the old
+   *  single-account-at-a-time shape. */
+  readonly perAccountStatus: Record<
+    string,
+    {
+      readonly inProgress: boolean
+      readonly lastSyncAt: string | null
+      readonly startedAt: string | null
+      readonly lastMessagesSynced: number
+      readonly lastAdded: number
+      readonly lastUpdated: number
+      readonly lastRemoved: number
+    }
+  >
   /** When non-null, the page renders a setup-required banner
    *  listing these env vars as the missing ones. Empty array means
    *  "we're here but no live data". */
@@ -318,7 +360,7 @@ ${COMMON_HEAD}
         ? renderSetupModePrompt()
         : args.accounts.length === 0
           ? renderConnectPrompt()
-          : renderAccountList(args.accounts, args.sync.statusInfo)}
+          : renderAccountList(args.accounts, args.perAccountStatus)}
 
       <section class="setup-docs">
         <h2>One-time Google Cloud Console setup</h2>
@@ -596,19 +638,26 @@ function renderSetupModePrompt(): string {
 
 function renderAccountList(
   accounts: ReturnType<typeof listEmailAccounts>,
-  statusInfo: RenderArgs['sync']['statusInfo'],
+  perAccountStatus: RenderArgs['perAccountStatus'],
 ): string {
+  const now = Date.now()
   const rows = accounts
     .map((a) => {
-      const isThisAccountRunning =
-        statusInfo !== null &&
-        statusInfo.inProgress &&
-        statusInfo.startedAt !== null
-      const counts = isThisAccountRunning
-        ? null
-        : (statusInfo !== null && statusInfo.lastMessagesSynced > 0
-            ? statusInfo
-            : null)
+      // Per-account status (#026): the background scheduler ticks
+      // each account independently, so each row needs its own live
+      // indicator. When `inProgress` is true and `startedAt` is
+      // present, render a "Syncing now… (running for Xm Ys)" hint
+      // and disable the Refresh button (a second POST would no-op
+      // either way, but disabling tells the user why).
+      const st = perAccountStatus[a.id]
+      const isRunning = st !== undefined && st.inProgress && st.startedAt !== null
+      const runningFor = isRunning
+        ? formatDuration(now - new Date(st!.startedAt!).valueOf())
+        : ''
+      const counts =
+        !isRunning && st !== undefined && st.lastMessagesSynced > 0
+          ? st
+          : null
       const lastSyncLine = a.lastSyncAt
         ? `Last sync ${escapeHtml(formatDate(a.lastSyncAt))}`
         : 'Never synced'
@@ -616,21 +665,24 @@ function renderAccountList(
         counts !== null
           ? ` \u00b7 Added ${counts.lastAdded}, updated ${counts.lastUpdated}, removed ${counts.lastRemoved}`
           : ''
+      const runningLine = isRunning
+        ? ` <span class="account-running">\u00b7 Syncing now\u2026 (running for ${escapeHtml(runningFor)})</span>`
+        : ''
       return `
-        <li class="account-row">
+        <li class="account-row${isRunning ? ' account-row-running' : ''}" data-account-row-id="${escapeHtml(a.id)}">
           <div class="account-info">
             <span class="gmail-icon" aria-hidden="true">\u2709</span>
             <div>
               <div class="account-email">${escapeHtml(a.emailAddress)}</div>
               <div class="account-meta">
                 Connected ${escapeHtml(formatDate(a.connectedAt))}
-                \u00b7 ${lastSyncLine}${countsLine}
+                \u00b7 ${lastSyncLine}${countsLine}${runningLine}
               </div>
             </div>
           </div>
           <div class="account-actions">
             <form method="post" action="/settings/email/accounts/${escapeHtml(a.id)}/sync" class="refresh-form">
-              <button type="submit" class="secondary-button">Refresh</button>
+              <button type="submit" class="secondary-button"${isRunning ? ' disabled title="Sync already in progress for this account"' : ''}>Refresh</button>
             </form>
             <form method="post" action="/settings/email/accounts/${escapeHtml(a.id)}/disconnect" class="disconnect-form">
               <button type="submit" class="danger-button">Disconnect</button>
@@ -782,6 +834,8 @@ const STYLES = `
   .account-info { display: flex; align-items: center; gap: 0.75rem; }
   .account-email { font-weight: 600; color: var(--text); }
   .account-meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.2rem; }
+  .account-row-running { border-left: 3px solid var(--accent); }
+  .account-running { color: var(--accent); }
   .disconnect-form { margin: 0; }
   .account-actions { display: flex; gap: 0.5rem; align-items: center; }
   .refresh-form { margin: 0; }

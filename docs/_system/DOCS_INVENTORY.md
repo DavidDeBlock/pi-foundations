@@ -2,7 +2,7 @@
 
 **Purpose:** Central state file containing YAML blocks per file with stable IDs. Source of truth for all reorganization state.
 **Updated By:** Phase 1 scan script, then agent during classification
-**Last Scan:** 2026-06-30T23:49:02.508Z
+**Last Scan:** 2026-07-01T16:48:11.891Z
 
 ---
 
@@ -13,7 +13,7 @@
 | docs/20-architecture | 1 | 0.14 |
 | docs/25-system-specs | 3 | 6.61 |
 | docs/30-vertical-flows | 1 | 0.22 |
-| docs/31-planning-notes | 3 | 28.51 |
+| docs/31-planning-notes | 3 | 28.93 |
 | docs/35-prds | 12 | 248.09 |
 | docs/40-decisions | 3 | 12.38 |
 | docs/50-agent-workflows | 1 | 0.16 |
@@ -46,7 +46,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ### docs/25-system-specs
@@ -69,7 +69,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -90,7 +90,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -111,7 +111,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ### docs/30-vertical-flows
@@ -134,7 +134,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ### docs/31-planning-notes
@@ -157,7 +157,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -178,15 +178,15 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
 id: F0008
 path: docs/31-planning-notes/todo.md
 folder: docs/31-planning-notes
-size_kb: 19.13
-lines: 295
+size_kb: 19.55
+lines: 304
 status: scanned
 class: null
 confidence: null
@@ -199,7 +199,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ### docs/35-prds
@@ -222,7 +222,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -243,7 +243,7 @@ related_files: []
 target_path: null
 current_step: classified
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -264,7 +264,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -285,7 +285,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -306,7 +306,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -327,7 +327,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -348,7 +348,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -369,7 +369,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -390,7 +390,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -411,7 +411,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -432,7 +432,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -453,7 +453,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ### docs/40-decisions
@@ -476,7 +476,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -497,7 +497,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -518,7 +518,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ### docs/50-agent-workflows
@@ -541,7 +541,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ### docs/90-archive
@@ -564,7 +564,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ### docs/90-archive/04-operations
@@ -587,7 +587,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -608,7 +608,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -629,7 +629,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ### docs/90-archive/react-guides
@@ -652,7 +652,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ### docs/90-archive/react-router-tutorials
@@ -675,7 +675,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -696,7 +696,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -717,7 +717,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ### docs/agents
@@ -740,7 +740,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -761,7 +761,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -782,7 +782,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -803,7 +803,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ### docs/prompts
@@ -826,7 +826,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 
 ```yaml
@@ -847,6 +847,6 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-06-30T23:49:02.508Z
+last_updated: 2026-07-01T16:48:11.890Z
 ```
 

@@ -148,16 +148,29 @@ describe('buildListQuery', () => {
     expect(q.params).toEqual([50])
   })
 
-  it('tag filter is reserved for #025 and is silently ignored today', () => {
-    // The tag filter is in the type so callers can wire the route
-    // param now, but the email_tags table doesn't exist yet (#025).
-    // No WHERE clause is emitted; the value is not even pushed to
-    // params. The route returns the same rows whether or not `tag`
-    // is supplied.
+  it('tag filter emits an EXISTS subquery against email_tags (#025)', () => {
+    // The tag filter restricts to emails carrying the given
+    // (already-normalized) tag. Uses an EXISTS subquery so the
+    // join does not multiply rows. The tag value flows through a
+    // bound parameter; no string interpolation.
     const q = buildListQuery({ tag: 'launch' })
+    expect(q.sql).toContain('email_tags')
+    expect(q.sql).toMatch(/EXISTS[\s\S]*et\.tag\s*=\s*\?/)
+    expect(q.params).toContain('launch')
+  })
+
+  it('tag filter combines with other filters (AND)', () => {
+    const q = buildListQuery({ tag: 'launch', from: 'alice@example.com' })
+    expect(q.sql).toMatch(/email_tags/)
+    expect(q.sql).toMatch(/sender_email/)
+    expect(q.params).toContain('launch')
+    expect(q.params).toContain('alice@example.com')
+  })
+
+  it('empty / whitespace tag is ignored (treated as "no filter")', () => {
+    const q = buildListQuery({ tag: '' })
     expect(q.sql).not.toContain('email_tags')
-    expect(q.sql).not.toContain('launch')
-    expect(q.params).not.toContain('launch')
+    expect(q.params).not.toContain('')
   })
 })
 

@@ -524,6 +524,245 @@ describe('sync — UPSERT preserves protected columns', () => {
     expect(row2?.hidden_at).toBe('2024-05-15T10:00:00.000Z')
     expect(row2?.body_plain).toBe('updated body')
   })
+
+  it('preserves hidden_at when the subject changes (#024 AC: subject changes, hidden_at unchanged)', async () => {
+    // Mirrors the AC wording: "seed hidden_at on a row, run a
+    // sync that re-imports the same message with different subject,
+    // assert subject updated but hidden_at unchanged".
+    const env = await buildTestEnv()
+    ensureHiddenAtColumn(env.db)
+
+    const m1 = buildEmail({ id: 'm-keep', subject: 'Old subject' })
+    seedEmail(env.db, env.accountId, m1)
+    env.db.run(
+      'UPDATE emails SET hidden_at = ? WHERE id = ?',
+      ['2024-05-15T10:00:00.000Z', 'm-keep'],
+    )
+
+    const stub = buildStubClient({
+      fetchPage: pageFetch([{ id: 'm-keep', threadId: m1.threadId }]),
+      fetchMessage: messageFetch(
+        new Map([['m-keep', buildEmail({ id: 'm-keep', subject: 'New subject' })]]),
+      ),
+    })
+    const worker = new EmailSyncWorker({
+      db: env.db,
+      cipher: env.cipher,
+      buildGmailClient: () => stub,
+      nowMs: env.nowMsFn,
+    })
+    const result = await worker.sync({ accountId: env.accountId })
+    expect(result.updated).toBe(1)
+    const row = env.db.get<{ hidden_at: string | null; subject: string }>(
+      'SELECT hidden_at, subject FROM emails WHERE id = ?',
+      ['m-keep'],
+    )
+    expect(row?.subject).toBe('New subject')        // subject changed
+    expect(row?.hidden_at).toBe('2024-05-15T10:00:00.000Z') // hidden_at preserved
+  })
+
+  it('source-side deletion removes a hidden row (#024 AC: nothing left to mirror)', async () => {
+    // If a Gmail message is deleted at the source, sync removes the
+    // row entirely — INCLUDING any hidden_at — because there is
+    // nothing left to mirror. The DELETE in email-sync-worker.ts
+    // has no hidden_at filter, so this is intrinsic to the worker.
+    const env = await buildTestEnv()
+    ensureHiddenAtColumn(env.db)
+
+    const mKeep = buildEmail({ id: 'm-keep' })
+    const mGone = buildEmail({ id: 'm-gone' })
+    seedEmail(env.db, env.accountId, mKeep)
+    seedEmail(env.db, env.accountId, mGone)
+
+    // The user hid m-gone before the sync that removes it.
+    env.db.run(
+      'UPDATE emails SET hidden_at = ? WHERE id = ?',
+      ['2024-06-20T10:00:00.000Z', 'm-gone'],
+    )
+
+    // First-window scan: Gmail only returns m-keep (m-gone was
+    // deleted at the source).
+    const stub = buildStubClient({
+      fetchPage: pageFetch([{ id: 'm-keep', threadId: mKeep.threadId }]),
+      fetchMessage: messageFetch(new Map([['m-keep', mKeep]])),
+    })
+    const worker = new EmailSyncWorker({
+      db: env.db,
+      cipher: env.cipher,
+      buildGmailClient: () => stub,
+      nowMs: env.nowMsFn,
+    })
+    const result = await worker.sync({ accountId: env.accountId })
+    expect(result.matched).toBe(1) // m-keep matched (unchanged)
+    expect(result.removed).toBe(1) // m-gone deleted in Gmail → gone from DB
+
+    // m-gone is gone entirely from the DB.
+    const row = env.db.get<{ id: string }>(
+      'SELECT id FROM emails WHERE id = ?',
+      ['m-gone'],
+    )
+    expect(row).toBeUndefined()
+    const ids = env.db
+      .all<{ id: string }>('SELECT id FROM emails WHERE account_id = ? ORDER BY id', [env.accountId])
+      .map((r) => r.id)
+    expect(ids).toEqual(['m-keep'])
+  })
+})
+
+// ─── sync — email_tags untouched (#025) ──────────────────────────────────
+//
+// Issue #025 AC: "Sync never touches the `email_tags` table —
+// verified by integration test: add a tag, run sync, assert tag
+// still present." The sync worker only writes to `emails` (and
+// to `sync_state` for the cursor). It has no awareness of
+// `email_tags` at all; tags survive re-syncs by the structure
+// of the UPSERT (no reference to email_tags).
+
+describe('sync — email_tags untouched (#025)', () => {
+  // Helper: ensure the email_tags table exists (some pre-#025 test
+  // envs run without it). Mirrors ensureHiddenAtColumn.
+  function ensureEmailTagsTable(db: Database): void {
+    const names = db
+      .all<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type IN ('table') AND name = 'email_tags'",
+      )
+      .map((r) => r.name)
+    if (!names.includes('email_tags')) {
+      db.exec(`
+        CREATE TABLE email_tags (
+          email_id TEXT NOT NULL REFERENCES emails(id) ON DELETE CASCADE,
+          tag      TEXT NOT NULL,
+          PRIMARY KEY (email_id, tag)
+        )
+      `)
+    }
+  }
+
+  it('preserves dashboard tags through a re-sync of the same message (#025 AC)', async () => {
+    const env = await buildTestEnv()
+    ensureEmailTagsTable(env.db)
+
+    // Seed an email AND a tag for it.
+    const m1 = buildEmail({ id: 'm-tagged' })
+    seedEmail(env.db, env.accountId, m1)
+    env.db.run(
+      'INSERT INTO email_tags (email_id, tag) VALUES (?, ?)',
+      ['m-tagged', 'launch'],
+    )
+    env.db.run(
+      'INSERT INTO email_tags (email_id, tag) VALUES (?, ?)',
+      ['m-tagged', 'waiting-on-sarah'],
+    )
+
+    // Re-sync the exact same message. The differ's matched path
+    // skips the UPSERT, but even if the body changes (forcing an
+    // UPSERT), the email_tags table is structurally outside the
+    // worker's write set.
+    const stub = buildStubClient({
+      fetchPage: pageFetch([{ id: 'm-tagged', threadId: m1.threadId }]),
+      fetchMessage: messageFetch(
+        new Map([['m-tagged', buildEmail({ id: 'm-tagged', bodyPlain: 'updated' })]]),
+      ),
+    })
+    const worker = new EmailSyncWorker({
+      db: env.db,
+      cipher: env.cipher,
+      buildGmailClient: () => stub,
+      nowMs: env.nowMsFn,
+    })
+    const result = await worker.sync({ accountId: env.accountId })
+    expect(result.updated).toBe(1)
+
+    // Tags are untouched.
+    const tags = env.db
+      .all<{ tag: string }>(
+        'SELECT tag FROM email_tags WHERE email_id = ? ORDER BY tag ASC',
+        ['m-tagged'],
+      )
+      .map((r) => r.tag)
+    expect(tags).toEqual(['launch', 'waiting-on-sarah'])
+
+    // Body did change (proves the UPSERT ran, not a no-op).
+    const row = env.db.get<{ body_plain: string }>(
+      'SELECT body_plain FROM emails WHERE id = ?',
+      ['m-tagged'],
+    )
+    expect(row?.body_plain).toBe('updated')
+  })
+
+  it('source-side deletion removes tags along with the email (FK CASCADE)', async () => {
+    // If Gmail removes the message, sync removes the row.
+    // ON DELETE CASCADE on email_tags.email_id removes the tag
+    // rows too. This is by design — there is nothing left to
+    // tag once the message is gone from the mirror.
+    const env = await buildTestEnv()
+    ensureEmailTagsTable(env.db)
+
+    const mGone = buildEmail({ id: 'm-gone' })
+    seedEmail(env.db, env.accountId, mGone)
+    env.db.run(
+      'INSERT INTO email_tags (email_id, tag) VALUES (?, ?)',
+      ['m-gone', 'launch'],
+    )
+
+    const stub = buildStubClient({
+      fetchPage: pageFetch([]), // Gmail returns nothing for m-gone
+      fetchMessage: messageFetch(new Map()),
+    })
+    const worker = new EmailSyncWorker({
+      db: env.db,
+      cipher: env.cipher,
+      buildGmailClient: () => stub,
+      nowMs: env.nowMsFn,
+    })
+    const result = await worker.sync({ accountId: env.accountId })
+    expect(result.removed).toBe(1)
+
+    // Email row gone.
+    const email = env.db.get<{ id: string }>(
+      'SELECT id FROM emails WHERE id = ?',
+      ['m-gone'],
+    )
+    expect(email).toBeUndefined()
+    // Tag row gone (FK CASCADE).
+    const tags = env.db.all<{ tag: string }>(
+      'SELECT tag FROM email_tags WHERE email_id = ?',
+      ['m-gone'],
+    )
+    expect(tags).toEqual([])
+  })
+
+  it('does NOT add new email_tags rows during sync (worker never writes to email_tags)', async () => {
+    // Even if Gmail labeled a message with something, the sync
+    // worker never writes that to email_tags. Tags are purely
+    // dashboard-private.
+    const env = await buildTestEnv()
+    ensureEmailTagsTable(env.db)
+
+    const m1 = buildEmail({ id: 'm-fresh' })
+    // m1 has no tags seeded.
+    const before = env.db.all<{ count: number }>(
+      'SELECT COUNT(*) AS count FROM email_tags',
+    )
+    expect(before[0]?.count).toBe(0)
+
+    const stub = buildStubClient({
+      fetchPage: pageFetch([{ id: 'm-fresh', threadId: m1.threadId }]),
+      fetchMessage: messageFetch(new Map([['m-fresh', m1]])),
+    })
+    const worker = new EmailSyncWorker({
+      db: env.db,
+      cipher: env.cipher,
+      buildGmailClient: () => stub,
+      nowMs: env.nowMsFn,
+    })
+    await worker.sync({ accountId: env.accountId })
+
+    const after = env.db.all<{ count: number }>(
+      'SELECT COUNT(*) AS count FROM email_tags',
+    )
+    expect(after[0]?.count).toBe(0)
+  })
 })
 
 describe('sync — pagination + resume from cursor', () => {
