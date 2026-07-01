@@ -390,6 +390,18 @@ const CATEGORIZE_STYLES = `
   .detail-edit button { font-size: 0.85rem; padding: 0.2rem 0.6rem; border: 1px solid #ccc; background: #f6f6f6; border-radius: 0.25rem; cursor: pointer; }
   .detail-edit .tag-remove { margin-left: 0.3rem; color: #900; background: none; border: none; cursor: pointer; font-size: 1rem; padding: 0; }
   .detail-edit .actions { margin-top: 0.4rem; }
+
+  /* Inbox teaser line above the feed list. The link is the primary
+     affordance — muted grey sync note is secondary. */
+  .inbox-teaser { margin: 0.5rem 0 1rem; font-size: 0.95rem; color: var(--muted); }
+  .inbox-teaser-link { color: var(--accent); text-decoration: none; font-weight: 500; }
+  .inbox-teaser-link:hover { text-decoration: underline; }
+  .inbox-teaser-sync { margin-left: 0.5rem; color: var(--muted); font-size: 0.85rem; }
+
+  /* Sidebar Account sub-line (renders under the Email compartment
+     when a Gmail account is connected). Matches the muted footer
+     rhythm of the folder tree. */
+  .sidebar-account-note { font-size: 0.8rem; color: var(--muted); padding: 0.25rem 0.6rem; margin: 0; }
   nav.back { margin-top: 2rem; }
   nav.back a { color: #06c; text-decoration: none; }
   nav.back a:hover { text-decoration: underline; }
@@ -401,11 +413,12 @@ export function renderFeedPage(
   feed: FeedPage,
   categorize?: CategorizeContext,
   activeFolderId?: string | null,
+  inboxTeaser?: InboxTeaser,
 ): string {
   const styles = categorize ? BASE_STYLES + CATEGORIZE_STYLES : BASE_STYLES
   const sidebarHtml = categorize
-    ? renderFolderSidebarCategorize(tree, activeFolderId)
-    : renderFolderSidebar(tree, activeFolderId)
+    ? renderFolderSidebarCategorize(tree, activeFolderId, inboxTeaser)
+    : renderFolderSidebar(tree, activeFolderId, inboxTeaser)
   const itemsHtml = feed.items
     .map((item) => renderFeedItem(item, categorize))
     .join('')
@@ -422,7 +435,7 @@ ${COMMON_HEAD}
     <div class="layout">
       ${sidebarHtml}
       <main>
-        ${renderFeedMain(feed, itemsHtml, activeFolderId ?? undefined, activeFolderPath ?? undefined)}
+        ${renderFeedMain(feed, itemsHtml, activeFolderId ?? undefined, activeFolderPath ?? undefined, inboxTeaser)}
       </main>
     </div>
     ${categorize ? renderCategorizeDatalists(feed.items, categorize.allTags) : ''}
@@ -466,13 +479,21 @@ function findFolderNodeId(
   return null
 }
 
-function renderFeedMain(feed: FeedPage, itemsHtml: string, activeFolderId?: string, activeFolderPath?: string): string {
+function renderFeedMain(
+  feed: FeedPage,
+  itemsHtml: string,
+  activeFolderId?: string,
+  activeFolderPath?: string,
+  inboxTeaser?: InboxTeaser,
+): string {
+  const teaserHtml = renderInboxTeaserLine(inboxTeaser)
   if (feed.totalItems === 0) {
     const emptyState = activeFolderPath
       ? { kind: 'empty-folder' as const, folderPath: activeFolderPath }
       : { kind: 'no-bookmarks' as const }
     return `
       <h2>Activity${activeFolderPath ? ` <span class="heading-suffix">in ${escapeHtml(activeFolderPath)}</span>` : ''}</h2>
+      ${teaserHtml}
       ${renderEmptyState(emptyState)}
     `
   }
@@ -484,10 +505,33 @@ function renderFeedMain(feed: FeedPage, itemsHtml: string, activeFolderId?: stri
     : ` <span class="heading-suffix heading-suffix-muted">(${range} of ${feed.totalItems})</span>`
   return `
     <h2>Activity${headingSuffix}</h2>
+    ${teaserHtml}
     ${renderPagination(feed, activeFolderId)}
     <div class="feed-list">${itemsHtml}</div>
     ${renderPagination(feed, activeFolderId)}
   `
+}
+
+/** Render the inbox teaser line above the feed list. Shown when at
+ *  least one Gmail account is connected AND we're on the unfiltered
+ *  feed (no active folder — once the user has drilled into a folder,
+ *  the inbox teaser is out of context). The line links to `/email`
+ *  so the user has a one-click path from the activity feed to the
+ *  inbox. The unread count comes from `queryInboxTeaser` so it stays
+ *  in sync with what the email sidebar shows. */
+function renderInboxTeaserLine(teaser: InboxTeaser | undefined): string {
+  if (!teaser || !teaser.connected) return ''
+  const label = teaser.unreadCount === 0
+    ? '📬 Inbox — no unread'
+    : teaser.unreadCount === 1
+      ? '📬 1 unread email'
+      : `📬 ${teaser.unreadCount} unread emails`
+  const lastSyncNote = teaser.lastSyncAt
+    ? ` <span class="inbox-teaser-sync">last sync ${escapeHtml(formatRelativeTime(teaser.lastSyncAt))}</span>`
+    : ''
+  return `<p class="inbox-teaser" data-inbox-teaser>
+    <a class="inbox-teaser-link" href="/email">${label}</a>${lastSyncNote}
+  </p>`
 }
 
 function renderFeedItem(item: FeedItem, categorize?: CategorizeContext): string {
@@ -743,13 +787,105 @@ ${COMMON_HEAD}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
+/** Snapshot of the email slice for the dashboard sidebar + feed-header
+ *  teaser. Cheap to compute (single COUNT + a couple of point reads);
+ *  the activity-feed API runs it on every page load. The shape lets
+ *  the caller decide what to render: when no account is connected,
+ *  the Email section is suppressed entirely. */
+export interface InboxTeaser {
+  readonly connected: boolean
+  /** Count of un-hidden, un-read messages across all connected
+   *  accounts. Zero when nothing is connected. */
+  readonly unreadCount: number
+  /** Connected email address (most-recent). Null when nothing is
+   *  connected. The home feed renders this under the Email section
+   *  as an "Account" sub-line. */
+  readonly accountEmail: string | null
+  /** Most-recent last_sync_at across all accounts. Null when
+   *  nothing has ever synced. */
+  readonly lastSyncAt: string | null
+}
+
+/** Read the teaser data directly from the DB. No cipher required —
+ *  the `email_accounts.email_address` column is plaintext, and the
+ *  `emails` table doesn't store tokens. The `is_unread` flag is a
+ *  denormalised column populated by the sync worker (#021). */
+function queryInboxTeaser(db: Database): InboxTeaser {
+  // Most-recently-connected account: drives both the Account sub-line
+  // and the "is anything connected?" gate.
+  const account = db.get<{ email_address: string; last_sync_at: string | null }>(
+    `SELECT email_address, last_sync_at FROM email_accounts
+       ORDER BY connected_at DESC, id ASC LIMIT 1`,
+  )
+  if (!account) {
+    return { connected: false, unreadCount: 0, accountEmail: null, lastSyncAt: null }
+  }
+  // Unread count: hidden rows are excluded at the DB layer (the
+  // hidden action #024 sets hidden_at; #022 added the column).
+  // `is_unread` mirrors Gmail's UNREAD label state at sync time.
+  const unreadRow = db.get<{ n: number | bigint }>(
+    `SELECT COUNT(*) AS n FROM emails
+       WHERE hidden_at IS NULL AND is_unread = 1`,
+  )
+  return {
+    connected: true,
+    unreadCount: Number(unreadRow?.n ?? 0),
+    accountEmail: account.email_address,
+    lastSyncAt: account.last_sync_at,
+  }
+}
+
+/** Render the top sections of the dashboard sidebar: Bookmarks
+ *  (active here) + Email + Account info. Sits above the folder
+ *  tree in both the plain and categorize sidebars. When `teaser`
+ *  is missing or `connected: false`, the Email and Account
+ *  sections are suppressed — Bookmarks is the only entry. */
+function renderSidebarTopSections(teaser: InboxTeaser | undefined): string {
+  const bookmarksActive = ' compartment-button-active'
+  const emailActive = ''
+  const dashboard = `
+    <div class="sidebar-section">
+      <h2 class="sidebar-title">Dashboard</h2>
+      <ul class="compartment-nav">
+        <li>
+          <a class="compartment-button${bookmarksActive}" href="/" data-sidebar-nav="bookmarks">
+            <span class="compartment-icon" aria-hidden="true">\u25a3</span>
+            <span class="compartment-label">Bookmarks</span>
+          </a>
+        </li>
+      </ul>
+    </div>`
+  if (!teaser || !teaser.connected) {
+    return dashboard
+  }
+  const emailSection = `
+    <div class="sidebar-section">
+      <h2 class="sidebar-title">Email</h2>
+      <ul class="compartment-nav">
+        <li>
+          <a class="compartment-button${emailActive}" href="/email" data-sidebar-nav="email">
+            <span class="compartment-icon" aria-hidden="true">\u2709\ufe0f</span>
+            <span class="compartment-label">Inbox${teaser.unreadCount > 0 ? ` (${teaser.unreadCount})` : ''}</span>
+          </a>
+        </li>
+      </ul>
+    </div>
+    <div class="sidebar-section sidebar-folder-section">
+      <h2 class="sidebar-title">Account</h2>
+      <p class="sidebar-account-note" data-sidebar-account>${escapeHtml(teaser.accountEmail ?? '')}${teaser.lastSyncAt ? ` \u2014 last sync ${escapeHtml(formatRelativeTime(teaser.lastSyncAt))}` : ' \u2014 never synced'}</p>
+    </div>`
+  return dashboard + emailSection
+}
+
 /** Categorize-mode sidebar: adds the "+ New folder" button + form. */
 function renderFolderSidebarCategorize(
   tree: readonly FolderNode[],
   activeFolderId?: string | null,
+  teaser?: InboxTeaser,
 ): string {
   return `
     <aside class="sidebar">
+      ${renderSidebarTopSections(teaser)}
       <header class="sidebar-header">
         <h2 class="sidebar-title">Folders</h2>
         <button type="button" class="add-folder-btn" data-add-folder title="New folder" aria-label="New folder">＋</button>
@@ -771,9 +907,11 @@ function renderFolderSidebarCategorize(
 function renderFolderSidebar(
   tree: readonly FolderNode[],
   activeFolderId?: string | null,
+  teaser?: InboxTeaser,
 ): string {
   return `
     <aside class="sidebar">
+      ${renderSidebarTopSections(teaser)}
       <header class="sidebar-header">
         <h2 class="sidebar-title">Folders</h2>
       </header>
@@ -1071,7 +1209,13 @@ export function activityFeedApi(db: Database): Hono<{ Variables: AuthVariables }
       folderOptions: queryFolderOptions(db),
       allTags: queryAllTagOptions(db),
     }
-    return c.html(renderFeedPage(who, tree, feed, categorize, knownFolderId))
+    // Email teaser: drives both the sidebar's Email section (slice
+    // #026) and the inbox teaser line above the feed list. Cheap
+    // queries — see queryInboxTeaser. Runs unconditionally; the
+    // `connected: false` branch suppresses the UI when no Gmail
+    // account exists.
+    const teaser = queryInboxTeaser(db)
+    return c.html(renderFeedPage(who, tree, feed, categorize, knownFolderId, teaser))
   })
 
   return api

@@ -816,6 +816,17 @@ function renderEmailSidebar(args: EmailSidebarArgs): string {
   return `
       <aside class="sidebar" data-sidebar>
         <div class="sidebar-section">
+          <h2 class="sidebar-title">Dashboard</h2>
+          <ul class="compartment-nav">
+            <li>
+              <a class="compartment-button" href="/" data-email-nav="bookmarks">
+                <span class="compartment-icon" aria-hidden="true">\u25a3</span>
+                <span class="compartment-label">Bookmarks</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+        <div class="sidebar-section">
           <h2 class="sidebar-title">Email</h2>
           <ul class="compartment-nav">
             <li>

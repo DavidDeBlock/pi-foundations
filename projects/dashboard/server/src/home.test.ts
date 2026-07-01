@@ -511,3 +511,112 @@ describe('GET /?folder=:id — sidebar folder filter', () => {
     expect(html).toContain('Show all bookmarks')
   })
 })
+
+// ─── Slice #026: email cross-link in the home page ───────────────────
+//
+// The activity-feed API queries the email_accounts + emails tables on
+// every request to populate the sidebar's Email section + the inbox
+// teaser line above the feed list. These tests ride the real HTTP
+// route to verify the wiring is intact end-to-end.
+
+describe('GET / — email cross-link (slice #026)', () => {
+  /** Seed a connected Gmail account + a couple of unread emails. */
+  function seedEmailAccount(unreadIds: string[], readIds: string[] = []) {
+    const accountId = 'acc-1'
+    db.run(
+      `INSERT INTO email_accounts (id, provider, email_address, access_token_enc, refresh_token_enc, token_expires_at, last_sync_at)
+       VALUES (?, 'gmail', ?, 'enc-a', 'enc-r', '2026-12-31T00:00:00.000Z', ?)`,
+      [accountId, 'me@gmail.com', new Date().toISOString()],
+    )
+    for (let i = 0; i < unreadIds.length; i++) {
+      db.run(
+        `INSERT INTO emails (id, account_id, thread_id, subject, sender, sender_email, received_at, is_unread, snippet, body_plain)
+         VALUES (?, ?, 't-1', ?, 'a@b.com', 'a@b.com', '2024-06-01T10:00:00.000Z', 1, '', '')`,
+        [unreadIds[i]!, accountId, `unread ${i}`],
+      )
+    }
+    for (let i = 0; i < readIds.length; i++) {
+      db.run(
+        `INSERT INTO emails (id, account_id, thread_id, subject, sender, sender_email, received_at, is_unread, snippet, body_plain)
+         VALUES (?, ?, 't-2', ?, 'a@b.com', 'a@b.com', '2024-06-01T10:00:00.000Z', 0, '', '')`,
+        [readIds[i]!, accountId, `read ${i}`],
+      )
+    }
+  }
+
+  it('renders the sidebar Bookmarks entry with the active class when on /', async () => {
+    const app = createApp({ passwordHash: HASH, tokenStore, db })
+    const res = await app.request('/', {
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    const html = await res.text()
+    // Bookmarks is the active compartment on the activity feed page.
+    expect(html).toMatch(/<a[^>]*class="compartment-button compartment-button-active"[^>]*href="\/"/)
+    expect(html).toContain('>Bookmarks</span>')
+  })
+
+  it('renders the Email section in the sidebar with unread count when an account is connected', async () => {
+    seedEmailAccount(['m-1', 'm-2', 'm-3'])
+    const app = createApp({ passwordHash: HASH, tokenStore, db })
+    const res = await app.request('/', {
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    const html = await res.text()
+    // Sidebar Email link with the unread badge.
+    expect(html).toMatch(/<a[^>]*class="compartment-button"[^>]*href="\/email"/)
+    expect(html).toContain('Inbox (3)')
+    // Account sub-line shows the connected email.
+    expect(html).toContain('me@gmail.com')
+  })
+
+  it('renders the inbox teaser line with the correct unread count', async () => {
+    seedEmailAccount(['m-1', 'm-2'])
+    const app = createApp({ passwordHash: HASH, tokenStore, db })
+    const res = await app.request('/', {
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    const html = await res.text()
+    expect(html).toMatch(/class="inbox-teaser"/)
+    expect(html).toMatch(/<a[^>]*class="inbox-teaser-link"[^>]*href="\/email"/)
+    expect(html).toContain('2 unread emails')
+  })
+
+  it('excludes hidden messages from the unread count', async () => {
+    seedEmailAccount(['m-1', 'm-2'])
+    // Hide one of the two unread messages.
+    db.run('UPDATE emails SET hidden_at = ? WHERE id = ?', [
+      new Date().toISOString(), 'm-1',
+    ])
+    const app = createApp({ passwordHash: HASH, tokenStore, db })
+    const res = await app.request('/', {
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    const html = await res.text()
+    // Hidden row is excluded — count drops to 1.
+    expect(html).toContain('1 unread email')
+    expect(html).not.toContain('2 unread emails')
+  })
+
+  it('omits the Email section + teaser when no account is connected', async () => {
+    const app = createApp({ passwordHash: HASH, tokenStore, db })
+    const res = await app.request('/', {
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    const html = await res.text()
+    expect(html).not.toContain('>Email<')
+    expect(html).not.toContain('data-inbox-teaser')
+    // Bookmarks is always present.
+    expect(html).toContain('>Bookmarks</span>')
+  })
+
+  it('shows the "no unread" state when connected but everything is read or hidden', async () => {
+    seedEmailAccount([], ['m-1'])
+    const app = createApp({ passwordHash: HASH, tokenStore, db })
+    const res = await app.request('/', {
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    const html = await res.text()
+    // Teaser line shows the no-unread copy, not "0 unread emails".
+    expect(html).toContain('Inbox \u2014 no unread')
+  })
+})

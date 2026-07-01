@@ -1163,3 +1163,123 @@ describe('renderFeedItem — card markup (issue #012)', () => {
     expect(html).not.toContain('feed-item-thumb-slot')
   })
 })
+
+// ─── Sidebar cross-links + inbox teaser (#026) ────────────────────────
+//
+// Slice #026 wires the email slice into the main dashboard sidebar
+// and adds an inbox teaser line above the feed list. The tests
+// below pin the new shape so a regression that hides email from
+// the main dashboard gets caught.
+
+describe('renderFeedPage — sidebar cross-links (#026)', () => {
+  /** Helper: build a connected-account teaser for test inputs. The
+   *  function is private to the module, so we construct the same
+   *  shape via a public call signature — but renderFeedPage accepts
+   *  any InboxTeaser-shaped value, so we just feed one in. */
+  function teaser(over: Partial<{ connected: boolean; unreadCount: number; accountEmail: string | null; lastSyncAt: string | null }> = {}) {
+    return {
+      connected: true,
+      unreadCount: 0,
+      accountEmail: 'me@gmail.com',
+      lastSyncAt: null,
+      ...over,
+    }
+  }
+
+  it('renders a Bookmarks entry in the sidebar with the active class', () => {
+    const html = renderFeedPage('david', [], {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    })
+    expect(html).toMatch(/<a[^>]*class="compartment-button compartment-button-active"[^>]*href="\/"/)
+    expect(html).toContain('>Bookmarks</span>')
+    expect(html).toMatch(/data-sidebar-nav="bookmarks"/)
+  })
+
+  it('renders an Email section with an Inbox link when an account is connected', () => {
+    const html = renderFeedPage('david', [], {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    }, undefined, null, teaser({ unreadCount: 3 }))
+    expect(html).toMatch(/<a[^>]*class="compartment-button"[^>]*href="\/email"[^>]*data-sidebar-nav="email"/)
+    // The unread count is rendered inline next to the Inbox label.
+    expect(html).toContain('>Inbox (3)</span>')
+    // The connected email appears under the Account sub-section.
+    expect(html).toContain('me@gmail.com')
+  })
+
+  it('omits the Email section when no account is connected', () => {
+    const html = renderFeedPage('david', [], {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    }, undefined, null, teaser({ connected: false, accountEmail: null }))
+    // No Email section title.
+    expect(html).not.toContain('>Email<')
+    // No Inbox link in the sidebar.
+    expect(html).not.toMatch(/data-sidebar-nav="email"/)
+    // Bookmarks is still rendered (it's always present).
+    expect(html).toContain('>Bookmarks</span>')
+  })
+
+  it('shows the unread count in the sidebar Inbox link', () => {
+    const html = renderFeedPage('david', [], {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    }, undefined, null, teaser({ unreadCount: 12 }))
+    expect(html).toContain('>Inbox (12)</span>')
+  })
+
+  it('omits the count when zero (Inbox is just "Inbox")', () => {
+    const html = renderFeedPage('david', [], {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    }, undefined, null, teaser({ unreadCount: 0 }))
+    expect(html).toContain('>Inbox</span>')
+    expect(html).not.toContain('>Inbox (')
+  })
+
+  it('renders the inbox teaser line above the feed list when connected', () => {
+    const html = renderFeedPage('david', [], {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    }, undefined, null, teaser({ unreadCount: 7 }))
+    expect(html).toMatch(/class="inbox-teaser"/)
+    expect(html).toContain('data-inbox-teaser')
+    expect(html).toMatch(/<a[^>]*class="inbox-teaser-link"[^>]*href="\/email"/)
+    expect(html).toContain('7 unread emails')
+  })
+
+  it('renders singular "1 unread email" (not "1 unread emails")', () => {
+    const html = renderFeedPage('david', [], {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    }, undefined, null, teaser({ unreadCount: 1 }))
+    expect(html).toContain('1 unread email')
+    expect(html).not.toContain('1 unread emails')
+  })
+
+  it('renders the "no unread" state when connected with zero unread', () => {
+    const html = renderFeedPage('david', [], {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    }, undefined, null, teaser({ unreadCount: 0 }))
+    expect(html).toContain('Inbox \u2014 no unread')
+  })
+
+  it('omits the inbox teaser line when no account is connected', () => {
+    const html = renderFeedPage('david', [], {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    }, undefined, null, teaser({ connected: false }))
+    expect(html).not.toContain('data-inbox-teaser')
+    expect(html).not.toContain('inbox-teaser-link')
+  })
+
+  it('shows last sync note when an account has synced', () => {
+    const html = renderFeedPage('david', [], {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    }, undefined, null, teaser({
+      lastSyncAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+    }))
+    expect(html).toContain('last sync')
+    expect(html).toContain('5m ago')
+  })
+
+  it('shows "never synced" when the account exists but no sync has run', () => {
+    const html = renderFeedPage('david', [], {
+      items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
+    }, undefined, null, teaser({ lastSyncAt: null }))
+    expect(html).toContain('never synced')
+  })
+})

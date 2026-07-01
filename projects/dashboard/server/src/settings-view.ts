@@ -78,7 +78,11 @@ ${COMMON_HEAD}
     ${renderHeader({ showSearch: false })}
     <main class="settings-main">
       <h1>Settings</h1>
-    <nav><a href="/">Home</a><a href="/settings">Settings</a></nav>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/settings">Settings</a>
+      <a href="/settings/email">Email</a>
+    </nav>
 
     ${justCreated ? renderPlaintextOnce(justCreated) : ''}
 

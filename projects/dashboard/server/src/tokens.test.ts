@@ -408,4 +408,13 @@ describe('/settings HTML UI', () => {
     expect(res.headers.get('location')).toBe('/settings')
     expect(await store.list()).toHaveLength(0)
   })
+
+  it('GET /settings has a nav link to /settings/email (slice #026 cross-link)', async () => {
+    const res = await app.request('/settings', {
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    const html = await res.text()
+    // The Email link lives in the same <nav> as Home + Settings.
+    expect(html).toMatch(/<a\s+href="\/settings\/email">Email<\/a>/)
+  })
 })

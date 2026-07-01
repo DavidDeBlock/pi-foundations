@@ -530,6 +530,28 @@ describe('GET /email — sidebar nav', () => {
     expect(html).toMatch(/<a[^>]*class="compartment-button compartment-button-active"[^>]*href="\/email"/)
     expect(html).toContain('>Inbox</span>')
   })
+
+  it('sidebar has a "Bookmarks" link pointing to / (dashboard cross-link)', async () => {
+    seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-1', subject: 'Hello',
+      sender: 'Alice <alice@example.com>', senderEmail: 'alice@example.com',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+    const res = await authed(env, '/email')
+    const html = await res.text()
+    // The Bookmarks nav entry is a dashboard cross-link so users on
+    // /email/* pages can navigate back to the activity feed without
+    // typing `/`. It lives in a "Dashboard" section above "Email".
+    expect(html).toContain('>Bookmarks</span>')
+    expect(html).toMatch(/<a[^>]*class="compartment-button"[^>]*href="\/"[^>]*data-email-nav="bookmarks"/)
+    // The "Dashboard" section title appears before the "Email" section
+    // title in the sidebar.
+    const dashboardIdx = html.indexOf('>Dashboard<')
+    const emailIdx = html.indexOf('>Email<')
+    expect(dashboardIdx).toBeGreaterThan(-1)
+    expect(emailIdx).toBeGreaterThan(-1)
+    expect(dashboardIdx).toBeLessThan(emailIdx)
+  })
 })
 
 // ─── GET /email — tag filter (#025) ───────────────────────────────────

@@ -319,3 +319,6 @@ Also, check the implementation of hungry, happiness, energy, and such, since now
 
 From the moment I click on the sleep button, the cat falls asleep, but when I hit clean up or play or feed, then the cat keeps sleeping. So adjust the images so they work together with the buttons And these are showing the correct ones. 
 
+Currently, the dashboard doesn't feel very connected. What do I mean by that? We have a settings button on the top header bar on our app, but this one shows only the regular settings. The email settings don't show up over there. The same goes for the email part and the regular dashboard.
+
+Currently, if we go to the home of our dashboard, we only see the bookmarks. If I want to see the mail, I have to manually add /email to the URL. The email and the account are also not showing on the main dashboard. 
