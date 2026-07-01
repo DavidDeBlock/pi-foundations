@@ -216,7 +216,52 @@ export class EmailSyncWorker {
     )
 
     const client = this.#buildGmailClient(req.accountId)
-    let pageToken: string | null = state.lastPageToken
+    // Resolve `since` and the starting `pageToken` for this run.
+    // The matrix (issue #030) is:
+    //
+    //   1. First sync ever (lastSyncAt IS NULL, lastPageToken IS NULL):
+    //      since = now - defaultHistoryDays (90), pageToken = null.
+    //   2. Resume of interrupted first sync (lastSyncAt IS NULL,
+    //      lastPageToken IS NOT NULL): same `since` as (1), plus we
+    //      keep the saved pageToken so we resume pagination where we
+    //      left off. The 90-day filter still applies; only the
+    //      position inside that result set is restored.
+    //   3. Subsequent sync (lastSyncAt IS NOT NULL): `since` is
+    //      derived from the last successful run (with a safety
+    //      margin — see INCREMENTAL_SINCE_SAFETY_MS), and we
+    //      deliberately DROP any persisted pageToken. The cursor
+    //      was tied to the original 90-day result set and is
+    //      meaningless once we re-filter by `since`; `since` does
+    //      the work, starting a fresh result set.
+    //
+    // Case (3) is the fix from issue #030: before, subsequent syncs
+    // walked the full mailbox from page 1 on every tick, burning
+    // Gmail API quota. Now they only ask Gmail for messages newer
+    // than the last successful sync.
+    let pageToken: string | null
+    let since: string | undefined
+    if (isFirstSync) {
+      pageToken = state.lastPageToken
+      since = sinceForDays(
+        req.historyDays ?? this.#defaultHistoryDays,
+        this.#nowMs,
+      )
+    } else {
+      // Subsequent sync. Drop the stale cursor; `since` does the
+      // filtering. The safety margin prevents missing messages
+      // whose internalDate indexed a moment after lastSyncAt was
+      // stamped — a known Gmail quirk (see the comment on
+      // INCREMENTAL_SINCE_SAFETY_MS).
+      pageToken = null
+      const lastSyncMs = Date.parse(state.lastSyncAt ?? '')
+      // Defensive fallback: if lastSyncAt is somehow unparseable
+      // (corrupt row), fall back to the full history window so the
+      // sync still produces correct data — at the cost of the
+      // pre-#030 behaviour for that one run.
+      since = Number.isFinite(lastSyncMs)
+        ? new Date(lastSyncMs - INCREMENTAL_SINCE_SAFETY_MS).toISOString()
+        : sinceForDays(this.#defaultHistoryDays, this.#nowMs)
+    }
     let pages = 0
     let pagesAdded = 0
     let pagesUpdated = 0
@@ -228,12 +273,6 @@ export class EmailSyncWorker {
     const seenThisRun = new Set<string>()
 
     try {
-      // `since` is the 90-day lookback, only used when there's no
-      // prior cursor. For ongoing syncs we don't pass since — the
-      // cursor is the only filter.
-      const since: string | undefined = isFirstSync
-        ? sinceForDays(req.historyDays ?? this.#defaultHistoryDays, this.#nowMs)
-        : undefined
 
       do {
         pages++
@@ -659,6 +698,25 @@ function sinceForDays(days: number, nowMs: () => number): string {
   const ms = days * 24 * 60 * 60 * 1000
   return new Date(nowMs() - ms).toISOString()
 }
+
+/**
+ * Safety margin (in ms) applied when computing the `since` lower
+ * bound for an INCREMENTAL sync (i.e. when `state.lastSyncAt` is set).
+ *
+ * Why a margin at all: Gmail's `internalDate` indexing can lag the
+ * REST API by a few seconds. If the previous sync stamped
+ * `last_sync_at` at T0 and a message landed at T0 + 1s with an
+ * internalDate of T0 - 1s, using `since = T0` exactly would miss it.
+ * Subtracting a small window guarantees overlap; the differ's
+ * no-op UPSERT path handles duplicates silently.
+ *
+ * 60s matches the manual-trigger debounce (issue #026) — same order
+ * of magnitude, same purpose (don't race the API's clock). Bigger
+ * values waste quota on re-fetches; smaller values risk misses.
+ *
+ * Issue #030: introduced alongside the incremental `since` change.
+ */
+const INCREMENTAL_SINCE_SAFETY_MS = 60_000
 
 // ─── Manual-trigger debounce (#026) ─────────────────────────────────────
 //

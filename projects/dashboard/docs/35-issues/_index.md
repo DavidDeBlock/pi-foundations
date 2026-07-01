@@ -56,6 +56,7 @@ From PRD: [PRD-002](../35-prds/PRD-002-email-mirror.md)
 | [027](./027-llm-client-tool-registry-summarize-button.md) | LlmClient + ToolRegistry + "Summarize this thread" button | AFK | 024, 025, 026 |
 | [028](./028-llm-chat-box-multi-turn-memory.md) | LLM chat box + multi-turn conversation memory | AFK | 027 |
 | [029](./029-outlook-client-multi-provider.md) | Outlook (Microsoft Graph) client + multi-provider UI | AFK | 027 |
+| [030](./030-email-sync-incremental-since.md) | Incremental sync: pick up where we left off (`since = lastSyncAt − 60s`) | AFK | 021, 026 |
 
 ## v1 dependency graph
 
@@ -87,7 +88,8 @@ From PRD: [PRD-002](../35-prds/PRD-002-email-mirror.md)
 ```
 020 ── 021 ── 022 ── 023 ──┬── 024 ──┐
                            ├── 025 ──┼── 027 ──┬── 028
-                           └── 026 ──┘         └── 029
+                           └── 026 ──┤         └── 029
+                                └── 030
 ```
 
 Notes on parallelism:

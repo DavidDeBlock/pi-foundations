@@ -864,6 +864,252 @@ describe('sync — pagination + resume from cursor', () => {
   })
 })
 
+// ─── Issue #030: incremental sync uses `since = lastSyncAt − 60s` ─────────
+//
+// Regression tests for the bug where subsequent syncs (after the
+// first successful one) re-walked the full mailbox from page 1 on
+// every tick, because the old code only passed `since` on first
+// sync and `pageToken` was a dead cursor once `lastSyncAt` was set.
+//
+// The fix:
+//   - On subsequent sync, derive `since` from `state.lastSyncAt`
+//     with a 60s safety margin.
+//   - Drop the stale `pageToken` — `since` does the filtering.
+//
+// First-sync behaviour (cases 1 + 2 in the matrix) is exercised
+// by the tests above; here we cover case 3.
+
+describe('sync — incremental since from lastSyncAt (#030)', () => {
+  /** Seed `sync_state.last_sync_at` so the worker treats this run as
+   *  a SUBSEQUENT sync, not a first sync. The value is set to a known
+   *  instant so we can assert the exact `since` the worker derives. */
+  function seedLastSyncAt(
+    db: Database,
+    accountId: string,
+    iso: string,
+  ): void {
+    // `sync_state` is created lazily by `markInProgress` on the
+    // first sync, but we want to set last_sync_at BEFORE the next
+    // sync starts. Insert a row directly so the sync above sees
+    // `lastSyncAt IS NOT NULL`.
+    db.run(
+      `INSERT INTO sync_state (account_id, provider, last_sync_at)
+       VALUES (?, 'gmail', ?)
+       ON CONFLICT(account_id) DO UPDATE SET
+         last_sync_at = excluded.last_sync_at`,
+      [accountId, iso],
+    )
+  }
+
+  it('subsequent sync uses `since = lastSyncAt − 60s` and drops pageToken', async () => {
+    const env = await buildTestEnv()
+
+    // Pretend the previous sync ran at T-1h. The new sync should
+    // pass `since = T-1h − 60s` and a fresh result set (pageToken
+    // undefined) so Gmail only returns newer messages.
+    const lastSyncAt = '2024-06-01T11:00:00.000Z'
+    const expectedSince = '2024-06-01T10:59:00.000Z' // T-1h − 60s
+    seedLastSyncAt(env.db, env.accountId, lastSyncAt)
+
+    // Also seed a stale pageToken to prove the worker drops it on
+    // the subsequent-sync path. After #030, subsequent syncs MUST
+    // NOT resume from the cursor (it's tied to the old 90-day
+    // result set and would walk everything again).
+    env.db.run(
+      `UPDATE sync_state SET last_page_token = ? WHERE account_id = ?`,
+      ['stale-cursor-from-first-sync', env.accountId],
+    )
+
+    const m1 = buildEmail({ id: 'm-new' })
+    const stub = buildStubClient({
+      fetchPage: pageFetch([{ id: m1.id, threadId: m1.threadId }]),
+      fetchMessage: messageFetch(new Map([[m1.id, m1]])),
+    })
+
+    const worker = new EmailSyncWorker({
+      db: env.db,
+      cipher: env.cipher,
+      buildGmailClient: () => stub,
+      nowMs: env.nowMsFn,
+    })
+    await worker.sync({ accountId: env.accountId })
+
+    // Inspect the args the worker actually passed to listMessages.
+    // This is the AC: `since = state.lastSyncAt − 60s`, no pageToken.
+    const calls = (stub as unknown as {
+      listMessages: ReturnType<typeof vi.fn>
+    }).listMessages.mock.calls
+    expect(calls).toHaveLength(1)
+    const args = calls[0]?.[0] as
+      | { since?: string; pageToken?: string }
+      | undefined
+    expect(args?.since).toBe(expectedSince)
+    expect(args?.pageToken).toBeUndefined() // explicitly dropped
+  })
+
+  it('two consecutive successful syncs: second call uses first sync\'s last_sync_at', async () => {
+    const env = await buildTestEnv()
+
+    // First sync: stub returns one message. After this run,
+    // sync_state.last_sync_at will be `now` (the env's deterministic
+    // 2024-06-01T12:00:00.000Z). The 60s safety margin is
+    // applied relative to THAT value.
+    const m1 = buildEmail({ id: 'm-1' })
+    const stub1 = buildStubClient({
+      fetchPage: pageFetch([{ id: m1.id, threadId: m1.threadId }]),
+      fetchMessage: messageFetch(new Map([[m1.id, m1]])),
+    })
+
+    const worker1 = new EmailSyncWorker({
+      db: env.db,
+      cipher: env.cipher,
+      buildGmailClient: () => stub1,
+      nowMs: env.nowMsFn,
+    })
+    const r1 = await worker1.sync({ accountId: env.accountId })
+    expect(r1.added).toBe(1)
+
+    // Second sync: a new stub, same env.nowMs. The second call
+    // should derive `since` from `now − 60s`.
+    const m2 = buildEmail({ id: 'm-2' })
+    const stub2 = buildStubClient({
+      fetchPage: pageFetch([{ id: m2.id, threadId: m2.threadId }]),
+      fetchMessage: messageFetch(new Map([[m2.id, m2]])),
+    })
+
+    const worker2 = new EmailSyncWorker({
+      db: env.db,
+      cipher: env.cipher,
+      buildGmailClient: () => stub2,
+      nowMs: env.nowMsFn,
+    })
+    await worker2.sync({ accountId: env.accountId })
+
+    const calls = (stub2 as unknown as {
+      listMessages: ReturnType<typeof vi.fn>
+    }).listMessages.mock.calls
+    const args = calls[0]?.[0] as
+      | { since?: string; pageToken?: string }
+      | undefined
+    // nowMs = 2024-06-01T12:00:00.000Z → last_sync_at after first
+    // sync = same value → since = 2024-06-01T11:59:00.000Z.
+    expect(args?.since).toBe('2024-06-01T11:59:00.000Z')
+    expect(args?.pageToken).toBeUndefined()
+  })
+
+  it('subsequent sync with stale pageToken in DB still uses since and starts fresh', async () => {
+    // This is the original bug, captured as a regression test:
+    // pre-#030, every sync walked the full mailbox via the (stale)
+    // cursor even though last_sync_at was set. Now the worker
+    // drops the cursor and lets `since` filter the result set.
+    const env = await buildTestEnv()
+    seedLastSyncAt(env.db, env.accountId, '2024-05-01T00:00:00.000Z')
+    env.db.run(
+      `UPDATE sync_state SET last_page_token = ? WHERE account_id = ?`,
+      ['old-90-day-cursor', env.accountId],
+    )
+
+    const stub = buildStubClient({
+      fetchPage: pageFetch([]),
+      fetchMessage: messageFetch(new Map()),
+    })
+    const worker = new EmailSyncWorker({
+      db: env.db,
+      cipher: env.cipher,
+      buildGmailClient: () => stub,
+      nowMs: env.nowMsFn,
+    })
+    await worker.sync({ accountId: env.accountId })
+
+    const calls = (stub as unknown as {
+      listMessages: ReturnType<typeof vi.fn>
+    }).listMessages.mock.calls
+    const args = calls[0]?.[0] as
+      | { since?: string; pageToken?: string }
+      | undefined
+    // The stale cursor MUST NOT be passed — the worker must start
+    // a fresh result set filtered by `since`.
+    expect(args?.pageToken).toBeUndefined()
+    // And `since` is derived from last_sync_at (2024-05-01T00:00:00
+    // − 60s = 2024-04-30T23:59:00.000Z), NOT the 90-day window.
+    expect(args?.since).toBe('2024-04-30T23:59:00.000Z')
+  })
+
+  it('idempotent UPSERTs handle the 60s overlap window (no duplicate writes)', async () => {
+    // The safety margin pulls in messages whose internalDate is up
+    // to 60s BEFORE last_sync_at — some of those may already be in
+    // the DB. The differ should treat them as `matched` (no write)
+    // so the second sync doesn't churn.
+    const env = await buildTestEnv()
+
+    // Seed last_sync_at to a fixed point.
+    seedLastSyncAt(env.db, env.accountId, '2024-06-01T11:30:00.000Z')
+
+    // Seed a message that already exists in the DB with the same
+    // fields Gmail will return. This is the "already there, just
+    // re-listed because of the 60s overlap" case.
+    const existing = buildEmail({
+      id: 'm-overlap',
+      subject: 'Old subject',
+    })
+    seedEmail(env.db, env.accountId, existing)
+
+    const stub = buildStubClient({
+      fetchPage: pageFetch([{ id: existing.id, threadId: existing.threadId }]),
+      fetchMessage: messageFetch(new Map([[existing.id, existing]])),
+    })
+    const worker = new EmailSyncWorker({
+      db: env.db,
+      cipher: env.cipher,
+      buildGmailClient: () => stub,
+      nowMs: env.nowMsFn,
+    })
+    const result = await worker.sync({ accountId: env.accountId })
+
+    // 0 added, 0 updated, 1 matched (the differ sees the row is
+    // already there and identical, so no UPSERT runs).
+    expect(result.added).toBe(0)
+    expect(result.updated).toBe(0)
+    expect(result.matched).toBe(1)
+  })
+
+  it('subsequent sync never runs the global remove pass (only first sync does)', async () => {
+    // The remove pass is gated on `isFirstSync` — a subsequent
+    // sync must NOT delete DB rows even if Gmail's response is
+    // empty (which could mean "Gmail returned nothing new in the
+    // last 60s" rather than "everything was deleted"). This test
+    // pins that invariant.
+    const env = await buildTestEnv()
+    seedLastSyncAt(env.db, env.accountId, '2024-06-01T11:30:00.000Z')
+
+    // Pre-existing DB row that Gmail will NOT return (the stub
+    // returns an empty page).
+    const orphan = buildEmail({ id: 'orphan-1' })
+    seedEmail(env.db, env.accountId, orphan)
+
+    const stub = buildStubClient({
+      fetchPage: pageFetch([]),
+      fetchMessage: messageFetch(new Map()),
+    })
+    const worker = new EmailSyncWorker({
+      db: env.db,
+      cipher: env.cipher,
+      buildGmailClient: () => stub,
+      nowMs: env.nowMsFn,
+    })
+    const result = await worker.sync({ accountId: env.accountId })
+
+    expect(result.removed).toBe(0)
+
+    // The orphan row is still there — a subsequent sync doesn't
+    // touch it, even though it wasn't seen this run.
+    const ids = env.db
+      .all<{ id: string }>('SELECT id FROM emails WHERE account_id = ?', [env.accountId])
+      .map((r) => r.id)
+    expect(ids).toEqual(['orphan-1'])
+  })
+})
+
 describe('sync — 429 backoff', () => {
   it('eventually succeeds when Gmail returns 429 a few times then a 200', async () => {
     const env = await buildTestEnv()
