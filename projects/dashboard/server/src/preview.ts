@@ -34,7 +34,7 @@ export function previewV2Page(_c: Context): Response {
 
 // ─── Compartments ─────────────────────────────────────────────────────────
 
-type CompartmentId = 'bookmarks' | 'youtube-saves' | 'youtube-history' | 'projects' | 'email' | 'today'
+type CompartmentId = 'bookmarks' | 'youtube-saves' | 'youtube-history' | 'projects' | 'today'
 
 interface CompartmentDef {
   readonly id: CompartmentId
@@ -49,7 +49,6 @@ const COMPARTMENTS: readonly CompartmentDef[] = [
   { id: 'youtube-saves',   icon: '▶', label: 'YouTube — Saves',    showFolderTree: true  },
   { id: 'youtube-history', icon: '◷', label: 'YouTube — History',  showFolderTree: false },
   { id: 'projects',        icon: '▤', label: 'Projects',           showFolderTree: false },
-  { id: 'email',           icon: '✉', label: 'Email',              showFolderTree: false },
   { id: 'today',           icon: '◐', label: 'Today',              showFolderTree: false },
 ]
 
@@ -132,31 +131,6 @@ const PROJECTS: readonly ProjectFixture[] = [
   { name: 'Pi-POS',       description: 'Point-of-sale system',           category: 'services',    status: 'running', port: 3000, uptime: '12d 5h' },
   { name: 'a4-math',      description: 'Math problem-set app',           category: 'experiments', status: 'stopped', port: null,  uptime: null },
   { name: 'Pixel Poesy',  description: 'Generative pixel-art studio',    category: 'experiments', status: 'stopped', port: null,  uptime: null },
-]
-
-interface EmailFixture {
-  readonly sender: string
-  readonly senderEmail: string
-  readonly subject: string
-  readonly snippet: string
-  readonly relativeTime: string
-  readonly provider: 'gmail' | 'outlook'
-  readonly unread: boolean
-}
-
-const EMAILS: readonly EmailFixture[] = [
-  { sender: 'John Smith',     senderEmail: 'john@example.com',         subject: 'Q3 report — please review attached',     snippet: 'Hi David, attached is the Q3 financial report. Please flag any concerns by…', relativeTime: '10:34 AM', provider: 'gmail',   unread: true  },
-  { sender: 'GitHub',         senderEmail: 'noreply@github.com',       subject: 'david/pi-foundations#42 — review requested', snippet: 'A new pull request needs your review: Add TypeScript types to the…',           relativeTime: '9:15 AM',  provider: 'gmail',   unread: true  },
-  { sender: 'Hacker News',    senderEmail: 'reply@news.ycombinator.com', subject: 'Daily digest — top stories',           snippet: 'Today\'s top stories: "Why SQLite won", "The decline of the mid-range…',     relativeTime: '8:00 AM',  provider: 'gmail',   unread: false },
-  { sender: 'Figma',          senderEmail: 'no-reply@figma.com',       subject: 'Your team commented on "Dashboard v2"',   snippet: 'Sarah left 3 comments on the "Dashboard v2" file. Click here to view…',      relativeTime: 'Yesterday', provider: 'gmail',   unread: true  },
-  { sender: 'Stripe',         senderEmail: 'statements@stripe.com',     subject: 'Your October payout is on its way',      snippet: 'We\'ll deposit your October earnings to your bank account ending in…',      relativeTime: 'Yesterday', provider: 'gmail',   unread: false },
-  { sender: 'Stack Overflow', senderEmail: 'do-not-reply@stackoverflow.com', subject: 'You earned a new badge: "Strunk & White"', snippet: 'Congratulations! You\'ve edited 80 posts — earned the badge "Strunk & White".', relativeTime: '2 days ago', provider: 'gmail', unread: false },
-  { sender: 'Mailing list',   senderEmail: 'list@example.org',         subject: '[pi-foundation] Weekly summary',         snippet: 'Highlights from this week: 14 merged PRs, 3 new issues, dashboard v1…',       relativeTime: '3 days ago', provider: 'gmail',   unread: false },
-  { sender: 'Sarah Lee',      senderEmail: 'sarah.lee@contoso.com',    subject: 'RE: Office hours next week',              snippet: '"Tuesday works for me. I\'ll send a calendar invite shortly — also looping…',  relativeTime: '9:48 AM',  provider: 'outlook', unread: true  },
-  { sender: 'Microsoft Teams', senderEmail: 'noreply@teams.microsoft.com', subject: 'Daily digest from your teams',          snippet: 'You have 4 unread mentions across 2 teams. Most active: Engineering…',       relativeTime: '8:30 AM',  provider: 'outlook', unread: true  },
-  { sender: 'Office 365 Admin', senderEmail: 'admin@contoso.com',     subject: 'Monthly security report',                snippet: 'Your organization\'s monthly security report is ready. 12 sign-in events…',  relativeTime: 'Yesterday', provider: 'outlook', unread: false },
-  { sender: 'Outlook Calendar', senderEmail: 'calendar@noreply.com',   subject: 'Reminder: Sprint review tomorrow',        snippet: 'Don\'t forget — the sprint review is scheduled for tomorrow at 10:00 AM…',   relativeTime: '2 days ago', provider: 'outlook', unread: false },
-  { sender: 'Project Lead',   senderEmail: 'lead@contoso.com',         subject: 'Updated timeline for Q4',                 snippet: 'Please find attached the revised timeline. Key change: Pi-POS launch…',      relativeTime: '3 days ago', provider: 'outlook', unread: false },
 ]
 
 // ─── Today compartment fixtures ─────────────────────────────────────────────────────────
@@ -298,7 +272,6 @@ ${COMMON_HEAD}
           ${renderYouTubeSavesPanel()}
           ${renderYouTubeHistoryPanel()}
           ${renderProjectsPanel()}
-          ${renderEmailPanel()}
           ${renderTodayPanel()}
         </div>
       </main>
@@ -563,43 +536,6 @@ function statusFor(s: ProjectStatus): { readonly label: string; readonly tooltip
   }
 }
 
-function renderEmailPanel(): string {
-  const unreadCount = EMAILS.filter((e) => e.unread).length
-  const filterPills = `
-        <div class="email-filters" role="tablist">
-          <button type="button" class="email-filter email-filter-active" data-email-filter="all">All (${EMAILS.length})</button>
-          <button type="button" class="email-filter" data-email-filter="gmail">Gmail (${EMAILS.filter((e) => e.provider === 'gmail').length})</button>
-          <button type="button" class="email-filter" data-email-filter="outlook">Outlook (${EMAILS.filter((e) => e.provider === 'outlook').length})</button>
-        </div>`
-  const rows = EMAILS.map((e) => renderEmailRow(e)).join('')
-  return `
-        <section class="preview-panel preview-panel-hidden" data-panel="email" role="tabpanel" hidden>
-          <div class="preview-panel-header">
-            <h2 class="preview-panel-title">Inbox</h2>
-            <span class="preview-panel-meta">${unreadCount} unread · ${EMAILS.length} total</span>
-          </div>
-          ${filterPills}
-          <ul class="email-list">${rows}</ul>
-        </section>`
-}
-
-function renderEmailRow(e: EmailFixture): string {
-  const unreadClass = e.unread ? ' email-row-unread' : ''
-  const providerClass = `email-provider-${e.provider}`
-  const providerLabel = e.provider === 'gmail' ? 'Gmail' : 'Outlook'
-  return `
-            <li class="email-row${unreadClass}" data-email-provider="${e.provider}">
-              <span class="email-unread-dot" aria-hidden="true"></span>
-              <span class="email-sender">${escapeHtml(e.sender)}</span>
-              <div class="email-content">
-                <span class="email-subject">${escapeHtml(e.subject)}</span>
-                <span class="email-snippet">${escapeHtml(e.snippet)}</span>
-              </div>
-              <span class="email-time">${escapeHtml(e.relativeTime)}</span>
-              <span class="source-badge ${providerClass}">${providerLabel}</span>
-            </li>`
-}
-
 // ─── Today compartment renderers ─────────────────────────────────────────────────────────
 
 function renderTodayPanel(): string {
@@ -846,16 +782,6 @@ const PREVIEW_SCRIPT = `(function(){
     });
   }
 
-  function setEmailFilter(filter) {
-    Array.from(document.querySelectorAll('[data-email-filter]')).forEach(function (pill) {
-      pill.classList.toggle('email-filter-active', pill.getAttribute('data-email-filter') === filter);
-    });
-    Array.from(document.querySelectorAll('[data-email-provider]')).forEach(function (row) {
-      var visible = filter === 'all' || row.getAttribute('data-email-provider') === filter;
-      row.style.display = visible ? '' : 'none';
-    });
-  }
-
   document.addEventListener('click', function (e) {
     var t = e.target;
     if (!t || !t.closest) return;
@@ -869,12 +795,6 @@ const PREVIEW_SCRIPT = `(function(){
     if (navBtn) {
       e.preventDefault();
       showCompartment(navBtn.getAttribute('data-compartment'));
-      return;
-    }
-    var filterBtn = t.closest('[data-email-filter]');
-    if (filterBtn) {
-      e.preventDefault();
-      setEmailFilter(filterBtn.getAttribute('data-email-filter'));
       return;
     }
     var subtabBtn = t.closest('[data-today-subtab]');

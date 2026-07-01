@@ -4,8 +4,10 @@
 //   - Auth is required (matches the rest of the dashboard).
 //   - The page renders with a 200 + HTML when authenticated.
 //   - Every compartment (Bookmarks, YouTube Saves, YouTube History,
-//     Projects, Email) appears in the rendered HTML.
+//     Projects, Today) appears in the rendered HTML.
 //   - The PREVIEW watermark is present.
+//   - The email compartment is NOT present (it has its own real
+//     surface at /email as of #023).
 //   - Fixture data is wired in (at least one item from each compartment
 //     shows up — guards against the renderers silently dropping data).
 
@@ -44,7 +46,7 @@ describe('GET /preview/v2 — v2 visual preview', () => {
     expect(res.status).toBe(401)
   })
 
-  it('renders the preview page with all six compartments', async () => {
+  it('renders the preview page with all five compartments', async () => {
     const app = createApp({ passwordHash: HASH, tokenStore, db })
     const res = await app.request('/preview/v2', {
       headers: { authorization: basicHeader('david', PASSWORD) },
@@ -58,20 +60,24 @@ describe('GET /preview/v2 — v2 visual preview', () => {
     expect(html).toContain('Dashboard')
     expect(html).toContain('brand-name')
 
-    // All six compartments present as sidebar buttons and tab strip.
+    // All five compartments present as sidebar buttons and tab strip.
     expect(html).toContain('data-compartment="bookmarks"')
     expect(html).toContain('data-compartment="youtube-saves"')
     expect(html).toContain('data-compartment="youtube-history"')
     expect(html).toContain('data-compartment="projects"')
-    expect(html).toContain('data-compartment="email"')
     expect(html).toContain('data-compartment="today"')
 
-    // All six panels exist in the DOM (most are hidden, but rendered).
+    // Email has its own surface at /email as of #023 — no longer a
+    // preview compartment. Asserting absence guards against
+    // accidentally re-adding it to the v2 mockup.
+    expect(html).not.toContain('data-compartment="email"')
+    expect(html).not.toContain('data-panel="email"')
+
+    // All five panels exist in the DOM (most are hidden, but rendered).
     expect(html).toContain('data-panel="bookmarks"')
     expect(html).toContain('data-panel="youtube-saves"')
     expect(html).toContain('data-panel="youtube-history"')
     expect(html).toContain('data-panel="projects"')
-    expect(html).toContain('data-panel="email"')
     expect(html).toContain('data-panel="today"')
 
     // PREVIEW markers are unmistakable.
@@ -104,11 +110,8 @@ describe('GET /preview/v2 — v2 visual preview', () => {
     expect(html).toContain('Cozy Ledger')
     expect(html).toContain('Pixel Poesy')
 
-    // Email fixture (one Gmail, one Outlook)
-    expect(html).toContain('John Smith')
-    expect(html).toContain('Sarah Lee')
-    expect(html).toContain('Gmail')
-    expect(html).toContain('Outlook')
+    // Email fixture removed as of #023. Real email surface is at
+    // /email; the preview should not show email data.
 
     // Today sub-view fixture — routines
     expect(html).toContain('Drink water')

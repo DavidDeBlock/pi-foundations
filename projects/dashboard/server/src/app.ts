@@ -15,6 +15,8 @@ import type { StateSigner, TokenCipher } from './token-encryption.js'
 import { emailApi } from './email-oauth.js'
 import { emailSettingsView, emailSettingsSetupOnly } from './email-settings.js'
 import { emailSyncApi } from './email-sync.js'
+import { emailReadApi } from './email-read.js'
+import { emailViewApi } from './email-view.js'
 import type { EmailSyncWorker } from './email-sync-worker.js'
 
 export interface EmailDeps {
@@ -89,6 +91,20 @@ export function createApp({
   app.route('/api/folders', foldersApi(db))
   app.route('/api/bookmarks', bookmarksApi(db))
   app.route('/api/tags', tagsApi(db))
+
+  // Email read API (issue #022): list, detail, thread, search.
+  // Mounted unconditionally because it only reads from the DB —
+  // no OAuth/cipher/sync-worker deps required. The OAuth + sync
+  // routes (issue #020 / #021) are still gated behind `email` deps
+  // further down. Coexists with the other `/api/email/*` mounts
+  // because Hono dispatches by exact path match.
+  app.route('/api/email', emailReadApi(db))
+
+  // Email UI (issue #023): server-rendered inbox + detail + thread.
+  // Lives at `/email` (NOT `/api/email`) so the Hono path match is
+  // unambiguous. The view layer reads from the same DB rows the
+  // JSON API serves — no duplicate data path.
+  app.route('/email', emailViewApi(db))
 
   // Static assets (categorize.js for the categorize UI). Hand-rolled
   // tiny handler — see static-handler.ts for why we don't use Hono's

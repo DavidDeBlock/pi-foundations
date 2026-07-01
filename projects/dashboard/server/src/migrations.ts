@@ -29,6 +29,10 @@ const MIGRATIONS = [
     name: '004_emails_sync_state',
     filename: '004_emails_sync_state.sql',
   },
+  {
+    name: '005_email_search',
+    filename: '005_email_search.sql',
+  },
 ] as const
 
 export interface RunMigrationsOptions {
