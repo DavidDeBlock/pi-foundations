@@ -46,11 +46,11 @@
   // (no-guilt principle). Tunable — if the daughter
   // finds decay too slow or too fast, dial these.
   const DECAY_PER_MIN = {
-    hunger:    0.7,
-    happiness: 0.5,
-    energy:    0.5,
-    clean:     0.3,
-    learning:  0.15,
+    hunger:    2.5,
+    happiness: 2.0,
+    energy:    1.5,
+    clean:     1.0,
+    learning:  0.5,
   };
 
   // XP needed to reach the next level from level N.
@@ -139,6 +139,7 @@
     dom.coinsLabel.textContent = state.coins;
     dom.streakLabel.textContent = state.streak;
 
+    updatePetMood();
     renderStats();
     renderDayVinkjes();
     paintPetFrame();
@@ -263,6 +264,48 @@
   function onAction(name) {
     const deltas = ACTION_DELTAS[name];
     if (!deltas) return;
+
+    // Reset idle event pose and timer for any action
+    idleEventPose = null;
+    clearTimeout(idleEventTimer);
+
+    // Reset sleep override and timer if doing anything else
+    if (name !== "sleep") {
+      isSleepingOverride = false;
+      clearTimeout(isSleepingTimer);
+    }
+
+    // Reset eating override and timer if doing anything else
+    if (name !== "feed") {
+      isEating = false;
+      clearTimeout(isEatingTimer);
+    }
+
+    // Reset horizontal stroll position when sleeping or feeding
+    if (name === "sleep" || name === "feed") {
+      currentOffset = 0;
+      if (petCanvasElement) {
+        petCanvasElement.style.transform = "translateX(0px)";
+      }
+    }
+
+    // Animation overrides for Feed and Sleep actions
+    if (name === "feed") {
+      isEating = true;
+      clearTimeout(isEatingTimer);
+      isEatingTimer = setTimeout(() => {
+        isEating = false;
+        paintPetFrame();
+      }, 2500);
+    } else if (name === "sleep") {
+      isSleepingOverride = true;
+      clearTimeout(isSleepingTimer);
+      isSleepingTimer = setTimeout(() => {
+        isSleepingOverride = false;
+        paintPetFrame();
+      }, 5000); // Sleep for 5 seconds on screen
+    }
+
     // Stat deltas (clamped to 0–100)
     for (const k of STATS) {
       if (typeof deltas[k] === "number") {
@@ -339,62 +382,172 @@
 
   /* ───────────── 7b. PET RENDERER (F2) ───────────── */
   // Visual state — not persisted. The mood system
-  // (F4) will update `currentMood` from game state.
+  // updates `currentMood` from game state.
   let currentMood = "blij";
   let frameToggle = false;
-  let petGrid = null;
-  let petPixels = null;   // 16x16 array of <span>
 
-  function buildPetGrid() {
-    if (!dom.petCanvas) return;
-    dom.petCanvas.innerHTML = "";  // clear scaffold note / old grid
-    petGrid = document.createElement("div");
-    petGrid.className = "pixel-grid";
-    petPixels = [];
-    for (let r = 0; r < 16; r++) {
-      const row = [];
-      for (let c = 0; c < 16; c++) {
-        const span = document.createElement("span");
-        span.className = "pixel";
-        petGrid.appendChild(span);
-        row.push(span);
-      }
-      petPixels.push(row);
-    }
-    dom.petCanvas.appendChild(petGrid);
+  // Animation and state overrides
+  let isEating = false;
+  let isEatingTimer = null;
+  let isSleepingOverride = false;
+  let isSleepingTimer = null;
+  let idleEventPose = null;
+  let idleEventTimer = null;
+  let currentOffset = 0;
+
+  let petImage = null;
+  let petCanvasElement = null;
+  let canvasCtx = null;
+
+  function loadPetImage() {
+    if (petImage) return;
+    petImage = new Image();
+    petImage.src = "sprites/cat_sprites.jpg";
+    petImage.onload = () => {
+      paintPetFrame();
+    };
   }
 
-  // Set the current mood. F4 will call this when the
-  // mood system computes a new mood. F2 only ever sets
-  // the default ("blij").
+  function updatePetMood() {
+    // Check sleep override first
+    if (isSleepingOverride) {
+      setPetMood("slaperig");
+      return;
+    }
+    // Check eating override next
+    if (isEating) {
+      setPetMood("hongerig");
+      return;
+    }
+    // Check idle event pose next
+    if (idleEventPose) {
+      setPetMood(idleEventPose);
+      return;
+    }
+    // Check stats to set pet mood dynamically:
+    // slaperig (sleepy): energy < 40
+    // hongerig (hungry): hunger < 40
+    // blij (happy): happiness > 70
+    // neutraal (neutral): default
+    if (state.stats.energy < 40) {
+      setPetMood("slaperig");
+    } else if (state.stats.hunger < 40) {
+      setPetMood("hongerig");
+    } else if (state.stats.happiness > 70) {
+      setPetMood("blij");
+    } else {
+      setPetMood("neutraal");
+    }
+  }
+
   function setPetMood(mood) {
     if (PET.frames[mood]) currentMood = mood;
   }
 
   function paintPetFrame() {
     if (!dom.petCanvas) return;
-    const moodFrames = PET.frames[currentMood] || PET.frames.blij;
-    const frame = moodFrames[frameToggle ? 1 : 0];
-    // If no frame data yet, fall back to scaffold note.
-    if (!frame || !frame.length) {
-      if (dom.petCanvas.children.length === 0) {
-        dom.petCanvas.innerHTML =
-          '<div class="scaffold-note">' +
-            '<div class="big-emoji">🐱</div>' +
-            '<div class="muted">Geen frames geladen…</div>' +
-          '</div>';
-      }
-      return;
+    loadPetImage();
+
+    if (!petCanvasElement) {
+      dom.petCanvas.innerHTML = "";
+      petCanvasElement = document.createElement("canvas");
+      // Set to full 512x256 cell dimensions to prevent clipping on left/right
+      petCanvasElement.width = 512;
+      petCanvasElement.height = 256;
+      petCanvasElement.style.width = "300px";
+      petCanvasElement.style.height = "150px";
+      petCanvasElement.style.imageRendering = "pixelated";
+      petCanvasElement.style.display = "block";
+      petCanvasElement.style.margin = "0 auto";
+      dom.petCanvas.appendChild(petCanvasElement);
+      canvasCtx = petCanvasElement.getContext("2d");
     }
-    if (!petGrid) buildPetGrid();
-    for (let r = 0; r < 16; r++) {
-      const row = frame[r] || "";
-      for (let c = 0; c < 16; c++) {
-        const ch = row[c] || ".";
-        const color = PET.palette[ch] || PET.palette["."];
-        petPixels[r][c].style.backgroundColor = color;
+
+    if (!petImage.complete) return;
+
+    // Grid coordinates: 4 rows (neutraal, blij, slaperig, hongerig)
+    // and 2 columns (for frame toggle)
+    const moodRows = {
+      neutraal: 0,
+      blij: 1,
+      slaperig: 2,
+      hongerig: 3
+    };
+    const row = moodRows[currentMood] !== undefined ? moodRows[currentMood] : 0;
+    const col = frameToggle ? 1 : 0;
+
+    // Draw the full 512x256 cell (no cropping margins) to keep all elements visible
+    const sx = col * 512;
+    const sy = row * 256;
+    const sWidth = 512;
+    const sHeight = 256;
+
+    // Create an offscreen canvas to perform color keying on the background
+    const offscreen = document.createElement("canvas");
+    offscreen.width = 512;
+    offscreen.height = 256;
+    const oCtx = offscreen.getContext("2d");
+    oCtx.drawImage(petImage, sx, sy, sWidth, sHeight, 0, 0, 512, 256);
+
+    const imgData = oCtx.getImageData(0, 0, 512, 256);
+    const data = imgData.data;
+
+    // Sample background color from the very top-left pixel
+    const bgR = data[0];
+    const bgG = data[1];
+    const bgB = data[2];
+    const tolerance = 20;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      if (Math.abs(r - bgR) < tolerance &&
+          Math.abs(g - bgG) < tolerance &&
+          Math.abs(b - bgB) < tolerance) {
+        data[i + 3] = 0; // Make background transparent
       }
     }
+
+    canvasCtx.clearRect(0, 0, 512, 256);
+    canvasCtx.putImageData(imgData, 0, 0);
+  }
+
+  function startIdleLoop() {
+    // Random interval between 8 and 14 seconds
+    const nextIdleTime = 8000 + Math.random() * 6000;
+    setTimeout(() => {
+      // Only trigger idle events if the current calculated mood is neutral/blij,
+      // and there are no active sleep/eat overrides or active idle events
+      if ((currentMood === "neutraal" || currentMood === "blij") && 
+          !isSleepingOverride && !isEating && !idleEventPose) {
+        const r = Math.random();
+        if (r < 0.35) {
+          // Yawn/stretch (switch to slaperig pose for 2 seconds)
+          idleEventPose = "slaperig";
+          paintPetFrame();
+          idleEventTimer = setTimeout(() => {
+            idleEventPose = null;
+            paintPetFrame();
+          }, 2000);
+        } else if (r < 0.70) {
+          // Happy content pose (switch to blij pose for 2 seconds)
+          idleEventPose = "blij";
+          paintPetFrame();
+          idleEventTimer = setTimeout(() => {
+            idleEventPose = null;
+            paintPetFrame();
+          }, 2000);
+        } else {
+          // Stroll to a new position (translateX)
+          currentOffset = Math.floor(Math.random() * 120) - 60; // Offset between -60px and +60px
+          if (petCanvasElement) {
+            petCanvasElement.style.transform = `translateX(${currentOffset}px)`;
+          }
+        }
+      }
+      startIdleLoop();
+    }, nextIdleTime);
   }
 
   /* ───────────── 8. STATIC DATA (scaffold) ───────────── */
@@ -479,7 +632,10 @@
     // Stat decay loop — runs every second, gentle rates.
     setInterval(() => {
       tickDecay();
+      updatePetMood();
       renderStats();
+      paintPetFrame();
+      saveState(); // Ensure stats and lastSeen are persisted frequently
     }, 1000);
 
     // Save on tab close so offline decay is accurate.
@@ -489,15 +645,38 @@
     applyTimeOfDay();
     setInterval(applyTimeOfDay, 60 * 1000);
 
-    // Pet blink animation — toggle frame every 700ms.
+    // Pet blink and state-specific animation loop — runs every 200ms
+    let animTicks = 0;
     setInterval(() => {
-      frameToggle = !frameToggle;
-      paintPetFrame();
-    }, 700);
+      animTicks++;
+      const oldToggle = frameToggle;
+
+      if (currentMood === "neutraal") {
+        // Natural blink: eyes closed (Frame 1) for 200ms every 4 seconds
+        frameToggle = (animTicks % 20 === 0);
+      } else if (currentMood === "slaperig") {
+        // Sleep breathing: toggle frame every 1.2s (6 ticks)
+        if (animTicks % 6 === 0) {
+          frameToggle = !frameToggle;
+        }
+      } else if (currentMood === "blij") {
+        // Keep happy cat steady on Frame 0
+        frameToggle = false;
+      } else if (currentMood === "hongerig") {
+        // Show eating animation (Frame 1) if active, otherwise steady sitting (Frame 0)
+        frameToggle = isEating;
+      }
+
+      if (frameToggle !== oldToggle) {
+        paintPetFrame();
+      }
+    }, 200);
 
     // Show game or intro depending on save.
     if (hasSave) continueOld();
     else render();
+
+    startIdleLoop(); // Start random idle movements/poses
   }
 
   document.addEventListener("DOMContentLoaded", init);

@@ -168,23 +168,50 @@ h1 { margin: 0 0 6px; font-size: 1.8rem; }
   position: relative;
   text-align: center;
   padding: 24px 16px 18px;
-  background: linear-gradient(180deg, #fff7eb 0%, #ffe7cf 100%);
+  background: url('sprites/cat_scenery.jpg') no-repeat center;
+  background-size: cover;
   border-radius: 22px;
   box-shadow: var(--card-shadow);
   margin-bottom: 12px;
   overflow: hidden;
-  min-height: 200px;
-  transition: background 1.2s ease;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
 }
-body.time-night   .stage { background: linear-gradient(180deg, #4a4060 0%, #2a2040 100%); color: #fff; }
-body.time-evening .stage { background: linear-gradient(180deg, #6a5060 0%, #4a3050 100%); color: #fff; }
-body.time-morning .stage { background: linear-gradient(180deg, #fff8e0 0%, #ffe0b0 100%); }
+
+.stage::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  transition: background 1.2s ease;
+  z-index: 1;
+}
+
+/* Day/night overlays */
+body.time-morning .stage::before { background: rgba(255, 208, 160, 0.15); }
+body.time-day     .stage::before { background: rgba(255, 255, 255, 0); }
+body.time-evening .stage::before { background: rgba(106, 80, 96, 0.4); }
+body.time-night   .stage::before { background: rgba(42, 32, 64, 0.65); }
+
+/* Ensure elements are above the tint overlay */
+.pet-canvas, .bubble {
+  position: relative;
+  z-index: 2;
+}
 
 .pet-canvas {
   margin: 8px auto 4px;
-  display: inline-block;
+  display: block;
   position: relative;
-  min-height: 80px;
+  width: 300px;
+  height: 150px;
+}
+.pet-canvas canvas {
+  transition: transform 2s ease-in-out;
 }
 .scaffold-note {
   display: flex;
