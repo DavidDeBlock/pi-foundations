@@ -14,6 +14,13 @@
 // POST /settings/email/accounts/:id/disconnect is the form-friendly
 // alias for DELETE /api/email/accounts/:id — matches the existing
 // token-revoke pattern (browsers don't support method=DELETE in <form>).
+// POST /settings/email/accounts/:id/sync is the form-friendly alias
+// for POST /api/email/sync?account_id=:id. Kicks off the worker
+// fire-and-forget, then redirects to the polling page. (Bug fix #023:
+// an earlier version only redirected without starting the sync, so
+// the "Refresh" button was a no-op. The form post is now the actual
+// trigger; the redirect just carries the account id so the poller
+// JS knows who to watch.)
 
 import { Hono } from 'hono'
 import type { Database } from './db.js'
@@ -56,8 +63,14 @@ export function emailSettingsView(
       accounts,
       flash: readFlash(status, reason),
       sync: {
-        showProgress:
-          status === 'syncing' && statusInfo !== null && statusInfo.inProgress,
+        // Render the poller whenever the URL says a sync is in
+        // flight, regardless of the DB state at render time. The
+        // previous version required `statusInfo.inProgress`, which
+        // created a chicken-and-egg: the form post that was
+        // supposed to START the sync needed `inProgress: true` to
+        // render the poller, but `inProgress` only flips true
+        // after a sync has started. Bug #023.
+        showProgress: status === 'syncing' && accountId !== '',
         accountId,
         statusInfo,
       },
@@ -90,14 +103,66 @@ export function emailSettingsView(
     return c.redirect('/settings/email?status=disconnected', 302)
   })
 
-  // Form-friendly alias for POST /api/email/sync?account_id=:id. We
-  // don't BLOCK on the sync here — the worker is fire-and-forget
-  // and the page polls /api/email/accounts/:id/status for
-  // completion. The redirect to "?status=syncing" carries the
-  // account id so the polling JS knows who to watch.
+  // Form-friendly alias for POST /api/email/sync?account_id=:id. This
+  // is the primary trigger for the manual Refresh button. We do not
+  // block on the sync — the worker is fire-and-forget, and the page
+  // polls /api/email/accounts/:id/status for completion. The redirect
+  // to "?status=syncing" carries the account id so the polling JS
+  // knows who to watch.
+  //
+  // Bug fix #023: an earlier version only redirected without
+  // starting the sync. Combined with the showProgress check above
+  // (which required `inProgress: true` to render the poller), this
+  // meant clicking Refresh never actually ran a sync. The handler
+  // now mirrors what the JSON endpoint does: pre-flight the
+  // account + in-progress flag, then kick off the worker.
   api.post('/accounts/:id/sync', (c) => {
     const id = c.req.param('id')
-    return c.redirect(`/settings/email?status=syncing&account=${encodeURIComponent(id)}`, 303)
+
+    // Pre-flight: account must exist. An outdated form submission
+    // (account disconnected in another tab) should not look like a
+    // sync failure in the UI — just redirect back to the list.
+    const account = getEmailAccount(deps.db, deps.cipher, id)
+    if (!account) {
+      return c.redirect('/settings/email', 302)
+    }
+
+    // Pre-flight: don't double-trigger. A second Refresh click
+    // while a sync is running is a no-op (the running sync will
+    // finish, the poller will redirect back here).
+    if (deps.syncWorker.status(id).inProgress) {
+      return c.redirect(
+        `/settings/email?status=syncing&account=${encodeURIComponent(id)}`,
+        303,
+      )
+    }
+
+    // Fire-and-forget. Errors during the sync are NOT surfaced via
+    // this response (the sync is already in flight); the poller
+    // observes `inProgress` flipping to false and `lastSyncAt`
+    // either updating or staying old. We log so the operator has
+    // something to grep for.
+    void deps.syncWorker
+      .sync({ accountId: id })
+      .then((result) => {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[email-sync] account ${id}: +${result.added} ~${result.updated} -${result.removed} (${result.pages} page(s))`,
+        )
+      })
+      .catch((err: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error(
+          `[email-sync] account ${id} failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        )
+      })
+
+    return c.redirect(
+      `/settings/email?status=syncing&account=${encodeURIComponent(id)}`,
+      303,
+    )
   })
 
   return api

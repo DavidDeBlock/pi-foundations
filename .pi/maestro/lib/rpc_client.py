@@ -117,6 +117,15 @@ def run_rpc(prompt_text: str, phase_name: str = "builder", timeout_seconds: int 
             os.makedirs(str(session_path), exist_ok=True)
             actual_session_dir = session_path
     
+    # Clean up any existing process for this issue/flow before launching a new one
+    if issue_num > 0:
+        try:
+            import process_manager
+            process_manager.cleanup_existing_processes(flow_name, issue_num)
+        except Exception as e:
+            print(f"[rpc] Warning: failed to clean up existing processes: {e}", file=sys.stderr)
+            sys.stderr.flush()
+    
     # Build environment
     env = os.environ.copy()
     
@@ -169,6 +178,20 @@ def run_rpc(prompt_text: str, phase_name: str = "builder", timeout_seconds: int 
             "session_log": None,
             "agent_end": None,
         }
+
+    # Register the newly spawned process
+    try:
+        import process_manager
+        process_manager.register_process(
+            pid=proc.pid,
+            flow_name=flow_name,
+            issue_num=issue_num,
+            phase_name=phase_name,
+            cmd=cmd
+        )
+    except Exception as e:
+        print(f"[rpc] Warning: failed to register process: {e}", file=sys.stderr)
+        sys.stderr.flush()
 
     # Stream stdout and capture the agent_end event
     output_lines: list[str] = []
@@ -293,6 +316,12 @@ def run_rpc(prompt_text: str, phase_name: str = "builder", timeout_seconds: int 
             "session_log": None,
             "agent_end": None,
         }
+    finally:
+        try:
+            import process_manager
+            process_manager.unregister_process(proc.pid)
+        except Exception:
+            pass
     
     # Check for subprocess exit status
     if returncode != 0 and returncode is not None:

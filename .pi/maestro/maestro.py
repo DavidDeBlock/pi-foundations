@@ -97,6 +97,7 @@ from commands.projects import projects_cli  # noqa: E402
 from commands.onboard import onboard_cmd  # noqa: E402
 from commands.monitor import monitor_cmd  # noqa: E402
 from commands.action import action_cmd  # noqa: E402
+from commands.rpcs import rpcs_cli  # noqa: E402
 
 
 # ─── Top-level group ─────────────────────────────────────────────────────
@@ -135,6 +136,7 @@ def maestro_cli(ctx: click.Context) -> None:
       - maestro projects ...          inspect & manage the onboarded-projects registry
       - maestro onboard <path>        onboard a repo (mechanical + optional interview)
       - maestro monitor               read-only live view of active flows
+      - maestro rpcs ...              inspect & manage running Pi RPC client processes
 
     Run ``maestro <subcommand> --help`` for details on each.
     """
@@ -183,6 +185,9 @@ maestro_cli.add_command(monitor_cmd, name="monitor")
 # via the group callback above — mounting the command here makes
 # the menu reachable from ops scripts as ``maestro menu``.
 maestro_cli.add_command(action_cmd, name="menu")
+
+# Mount rpcs as a flat top-level command group
+maestro_cli.add_command(rpcs_cli, name="rpcs")
 
 
 # ─── Entrypoint ──────────────────────────────────────────────────────────
