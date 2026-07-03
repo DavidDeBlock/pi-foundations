@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "prompts/chrome automation.md",
+                "file": "31-planning-notes/Operationele Workflow.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "chrome automation"
+              "title": "Operationele Workflow"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "prompts/chrome automation.md",
+                "file": "31-planning-notes/Operationele Workflow.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Terugverwijzingen voor chrome automation"
+              "title": "Terugverwijzingen voor Operationele Workflow"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "prompts/chrome automation.md",
+                "file": "31-planning-notes/Operationele Workflow.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Uitgaande verwijzingen van chrome automation"
+              "title": "Uitgaande verwijzingen van Operationele Workflow"
             }
           },
           {
@@ -156,13 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "prompts/chrome automation.md",
+                "file": "31-planning-notes/Operationele Workflow.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Overzicht van chrome automation"
+              "title": "Overzicht van Operationele Workflow"
             }
           }
         ]
@@ -185,8 +185,13 @@
   },
   "active": "e455cf2032112639",
   "lastOpenFiles": [
-    "prompts/Automate Things.md",
+    "31-planning-notes/Workflows.md",
+    "31-planning-notes/Operationele Workflow.md",
+    "31-planning-notes/Pos.md",
+    "31-planning-notes/Stappen Boekhouding.md",
+    "40-decisions/ADR-009-issue-interaction-contract.md",
     "prompts/chrome automation.md",
+    "prompts/Automate Things.md",
     "25-system-specs/maestro-orchestrator-plan.md",
     "prompts",
     "25-system-specs/01-meta-workflow.md",
