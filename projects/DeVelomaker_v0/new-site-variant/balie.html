@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lokale Online Balie — De Velomaker</title>
+  <meta name="description" content="Digitale toegang tot onderdelen, uw fietspaspoort en behoefte-analyse bij De Velomaker.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,300..900;1,300..900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Naar de inhoud</a>
+
+  <header class="site-header">
+    <div class="container site-header__inner">
+      <a href="index.html" class="site-header__brand">
+        <span class="site-header__brand-name">De Velomaker</span>
+        <span class="site-header__brand-tag">Fietsenmaker · Brugse Poort</span>
+      </a>
+      <nav class="site-nav" aria-label="Hoofdnavigatie">
+        <ul class="site-nav__list">
+          <li><a href="herstellingen.html" class="site-nav__link">Herstellingen</a></li>
+          <li><a href="onderhoud.html" class="site-nav__link">Onderhoud</a></li>
+          <li><a href="afspraak.html" class="site-nav__link">Afspraak maken</a></li>
+          <li><a href="fietsen.html" class="site-nav__link">Fietsen</a></li>
+          <li><a href="contact.html" class="site-nav__link">Info &amp; Contact</a></li>
+          <li><a href="balie.html" class="site-nav__link site-nav__link--marquee">Online Balie</a></li>
+        </ul>
+      </nav>
+      <button class="site-header__toggle" type="button" aria-expanded="false" aria-controls="mobile-nav" aria-label="Menu openen">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+    <div class="mobile-nav" id="mobile-nav" hidden>
+      <ul>
+        <li><a href="herstellingen.html">Herstellingen</a></li>
+        <li><a href="onderhoud.html">Onderhoud</a></li>
+        <li><a href="afspraak.html">Afspraak maken</a></li>
+        <li><a href="fietsen.html">Fietsen</a></li>
+        <li><a href="contact.html">Info &amp; Contact</a></li>
+        <li><a href="balie.html">Online Balie</a></li>
+      </ul>
+    </div>
+  </header>
+
+  <main id="main">
+    <header class="page-header">
+      <div class="container">
+        <h1 class="page-header__title">Lokale Online Balie</h1>
+        <p class="section-lede">Uw persoonlijke toegang tot ons onderdelendepot, uw digitaal fietspaspoort en advies op maat.</p>
+      </div>
+    </header>
+
+    <!-- Login Area (Simulated) -->
+    <section class="section" id="login-section">
+      <div class="container">
+        <div class="portal-login-card">
+          <h2 style="font-size: var(--text-2xl); color: var(--color-primary); margin-bottom: var(--space-3);">Meld u aan voor de Online Balie</h2>
+          <p style="margin-bottom: var(--space-5); font-size: var(--text-sm); color: var(--color-text-muted);">
+            Onze onderdelencatalogus is exclusief toegankelijk voor klanten uit de regio Gent. Hiermee voorkomen we misbruik door online prijsjagers en garanderen we de beste lokale service.
+          </p>
+          <form id="login-form">
+            <div class="form-group" style="text-align: left; margin-bottom: var(--space-4);">
+              <label for="login-email">E-mailadres</label>
+              <input type="email" id="login-email" class="form-control" placeholder="naam@domein.be" required>
+            </div>
+            <button type="submit" class="button button--primary" style="width: 100%;">Aanmelden als Klant</button>
+          </form>
+          <div style="margin-top: var(--space-4); border-top: 1px solid var(--color-border); padding-top: var(--space-4);">
+            <p style="font-size: var(--text-xs); color: var(--color-text-muted); margin-bottom: var(--space-3);">Direct testen met een demo-klant?</p>
+            <button type="button" class="button button--secondary" id="demo-login-btn" style="width: 100%; min-height: 40px; font-size: var(--text-xs);">Log in als Jan Peeters (Demo)</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Portal Area (Initially Hidden) -->
+    <section class="section" id="portal-section" style="display: none;">
+      <div class="container">
+        
+        <!-- Tab Navigation -->
+        <nav class="portal-nav-tabs" aria-label="Portaal opties">
+          <button class="portal-tab-btn is-active" data-target="tab-paspoort">🚲 Mijn Fietspaspoort</button>
+          <button class="portal-tab-btn" data-target="tab-catalogus">🔧 Click &amp; Collect Catalogus</button>
+          <button class="portal-tab-btn" data-target="tab-intake">📝 Fiets-Intake Showroom</button>
+        </nav>
+
+        <!-- PANEL 1: Fietspaspoort -->
+        <div class="portal-tab-panel is-active" id="tab-paspoort">
+          <div class="content-block">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-6); flex-wrap: wrap; gap: var(--space-4);">
+              <div>
+                <h2 style="margin-top: 0;" id="user-bike-title">Velo De Ville AEB 800 (Jan Peeters)</h2>
+                <p style="color: var(--color-text-muted); font-size: var(--text-sm);">Frame ID: <span id="user-bike-frame">VDV-8849-GP</span> | Gekoppeld e-mailadres: <span id="user-email-display">jan@peeters.be</span></p>
+              </div>
+              <a href="dashboard.html" class="button button--secondary" style="min-height: 40px; padding: var(--space-2) var(--space-4); font-size: var(--text-xs);" target="_blank">Open Technieker Dashboard ↗</a>
+            </div>
+
+            <div class="showroom-wizard-card" style="margin-bottom: var(--space-6);">
+              <h3 style="margin-top: 0; font-size: var(--text-lg); color: var(--color-primary); margin-bottom: var(--space-2);">Digitaal Statusrapport ("Verkeerslicht")</h3>
+              <p style="font-size: var(--text-sm); margin-bottom: var(--space-4);">Lopend rapport opgesteld door de technieker in de werkplaats. Groene groepen zijn perfect in orde, oranje groepen behoeven toekomstige aandacht (Fase 2), rode groepen moeten direct worden hersteld voor uw veiligheid (Fase 1).</p>
+              
+              <div class="fietspaspoort-grid">
+                <div class="fietspaspoort-item">
+                  <span><strong>Algemeen &amp; Frame</strong> (Bouten, zadel, stuurstand)</span>
+                  <span class="status-badge status-badge--green" id="badge-general">🟢 In orde</span>
+                </div>
+                <div class="fietspaspoort-item">
+                  <span><strong>Wielen &amp; Banden</strong> (Spaakspanning, profiel)</span>
+                  <span class="status-badge status-badge--green" id="badge-wheels">🟢 In orde</span>
+                </div>
+                <div class="fietspaspoort-item">
+                  <span><strong>Remsysteem</strong> (Remblokken, olie/kabels)</span>
+                  <span class="status-badge status-badge--red" id="badge-brakes">🔴 Kritiek (Remblokken versleten)</span>
+                </div>
+                <div class="fietspaspoort-item">
+                  <span><strong>Aandrijving &amp; Versnellingen</strong> (Ketting, cassette, derailleur)</span>
+                  <span class="status-badge status-badge--orange" id="badge-drivetrain">🟡 Slijtage (Fase 2 - Ketting rekt uit)</span>
+                </div>
+                <div class="fietspaspoort-item">
+                  <span><strong>Verlichting &amp; Accessoires</strong> (Koplamp, slot, bel)</span>
+                  <span class="status-badge status-badge--green" id="badge-lights">🟢 In orde</span>
+                </div>
+              </div>
+
+              <div id="fase1-warning" class="status-badge status-badge--red" style="width: 100%; border-radius: var(--radius-md); padding: var(--space-4); margin-top: var(--space-4); display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: var(--space-2);">
+                <strong style="font-size: var(--text-sm);">⚠️ Actie vereist: Fase 1 Veiligheidsproblemen</strong>
+                <span style="font-size: var(--text-xs); text-transform: none; font-weight: normal;">Uw remsysteem heeft een kritieke status gekregen. Gelieve direct een herstelling te boeken. U kunt ervoor kiezen om enkel de veiligheidsproblemen (Fase 1) te herstellen en de ketting (Fase 2) later te plannen om kosten te spreiden.</span>
+                <a href="afspraak.html" class="button button--accent" style="min-height: 36px; padding: var(--space-2) var(--space-4); font-size: var(--text-xs); margin-top: var(--space-2);">Herstelling Fase 1 Inplannen</a>
+              </div>
+            </div>
+
+            <div class="showroom-wizard-card" id="fase2-info" style="display: block; border-color: var(--color-border-strong);">
+              <h3 style="margin-top: 0; font-size: var(--text-lg); color: var(--color-primary); margin-bottom: var(--space-2);">Fase 2 Planning (Gefaseerd Herstellen)</h3>
+              <p style="font-size: var(--text-sm);">De onderdelen in deze lijst vertonen lichte slijtage, maar zijn nog veilig. Wij slaan deze op in de database en sturen u na 3 maanden automatisch een reminder wanneer dit onderhoud relevant wordt. Dit houdt uw budget behapbaar.</p>
+              
+              <div class="table-wrapper">
+                <table class="table-custom">
+                  <thead>
+                    <tr>
+                      <th>Onderdeel (Oranje status)</th>
+                      <th>Verwachte levensduur</th>
+                      <th>Geschat flat-rate tarief</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Ketting &amp; Tandwielen vervangen</td>
+                      <td>2 tot 3 maanden (ca. 1000 km)</td>
+                      <td>€ 85,00 (all-in)</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PANEL 2: Click & Collect Catalogus -->
+        <div class="portal-tab-panel" id="tab-catalogus">
+          <div class="content-block">
+            <h2>Lokale Online Balie — Click &amp; Collect</h2>
+            <p>Koop uw onderdelen online en haal ze af in de winkel. We scannen en leggen ze klaar tijdens onze openbare uren om uw focus en onze montagetijd te beschermen.</p>
+            
+            <div style="margin: var(--space-5) 0; display: flex; gap: var(--space-3); flex-wrap: wrap;">
+              <input type="text" id="catalog-search" class="form-control" style="max-width: 350px; flex: 1;" placeholder="Zoek op fietsonderdeel (bijv. ketting, remblokken)...">
+              <button class="button button--primary" style="min-height: 46px;" id="search-btn">Zoeken</button>
+              <button class="button button--secondary" style="min-height: 46px;" id="clear-search-btn">Reset</button>
+            </div>
+
+            <!-- Doubt Section -->
+            <div class="doubt-box">
+              <h3 style="margin-top: 0; font-size: var(--text-lg); color: var(--color-primary); margin-bottom: var(--space-2);">🤔 Twijfelt u over het juiste onderdeel?</h3>
+              <p style="font-size: var(--text-sm); margin-bottom: var(--space-4);">
+                Voorkom verkeerde bestellingen en tijdverlies aan de balie. Klik op de twijfel-knop, upload een foto van uw huidige onderdeel (bijvoorbeeld uw remblokken) en wij leggen de juiste variant voor u klaar in uw dashboard.
+              </p>
+              <button class="button button--secondary" id="doubt-btn" style="min-height: 40px; font-size: var(--text-xs);">Onderdeel fotograferen &amp; uploaden</button>
+            </div>
+
+            <!-- Catalog Grid -->
+            <div class="catalog-grid" id="catalog-container">
+              <!-- Cards dynamically inserted -->
+            </div>
+          </div>
+        </div>
+
+        <!-- PANEL 3: Fiets-Intake Showroom Wizard -->
+        <div class="portal-tab-panel" id="tab-intake">
+          <div class="content-block">
+            <h2>Showroom Intake — Digitale Behoefte-Analyse</h2>
+            <p>Heeft u interesse in een nieuwe fiets? Loop door deze korte behoefte-analyse om uw wensen in kaart te brengen. De software stelt op basis hiervan de beste matches voor en slaat dit op in een Showroom-Fiche voor uw bezoek.</p>
+
+            <div class="showroom-wizard-card" id="showroom-wizard">
+              <!-- Step 1 -->
+              <div class="wizard-step" id="step-1">
+                <h3 style="margin-top: 0; font-size: var(--text-xl); color: var(--color-primary);">1. Wat is het hoofddoel van uw nieuwe fiets?</h3>
+                <div class="wizard-options-grid">
+                  <div class="wizard-option-card" data-val="woon-werk">
+                    <div style="font-size: 2rem; margin-bottom: var(--space-2);">💼</div>
+                    <strong>Woon-werkverkeer</strong>
+                  </div>
+                  <div class="wizard-option-card" data-val="recreatie">
+                    <div style="font-size: 2rem; margin-bottom: var(--space-2);">🌳</div>
+                    <strong>Recreatief / Weekend</strong>
+                  </div>
+                  <div class="wizard-option-card" data-val="boodschappen">
+                    <div style="font-size: 2rem; margin-bottom: var(--space-2);">🛒</div>
+                    <strong>Boodschappen &amp; Korte ritten</strong>
+                  </div>
+                  <div class="wizard-option-card" data-val="sportief">
+                    <div style="font-size: 2rem; margin-bottom: var(--space-2);">🚴</div>
+                    <strong>Sportief / Training</strong>
+                  </div>
+                </div>
+                <div style="text-align: right; margin-top: var(--space-6);">
+                  <button class="button button--primary next-step-btn" disabled>Volgende stap</button>
+                </div>
+              </div>
+
+              <!-- Step 2 -->
+              <div class="wizard-step" id="step-2" style="display: none;">
+                <h3 style="margin-top: 0; font-size: var(--text-xl); color: var(--color-primary);">2. Hoeveel kilometer schat u per rit te fietsen?</h3>
+                <div class="wizard-options-grid">
+                  <div class="wizard-option-card" data-val="korte-afstand">
+                    <div style="font-size: 2rem; margin-bottom: var(--space-2);">📍</div>
+                    <strong>Minder dan 10 km</strong>
+                  </div>
+                  <div class="wizard-option-card" data-val="midden-afstand">
+                    <div style="font-size: 2rem; margin-bottom: var(--space-2);">🚲</div>
+                    <strong>10 tot 30 km</strong>
+                  </div>
+                  <div class="wizard-option-card" data-val="lange-afstand">
+                    <div style="font-size: 2rem; margin-bottom: var(--space-2);">⚡</div>
+                    <strong>Meer dan 30 km</strong>
+                  </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: var(--space-6);">
+                  <button class="button button--secondary prev-step-btn">Vorige</button>
+                  <button class="button button--primary next-step-btn" disabled>Volgende stap</button>
+                </div>
+              </div>
+
+              <!-- Step 3 -->
+              <div class="wizard-step" id="step-3" style="display: none;">
+                <h3 style="margin-top: 0; font-size: var(--text-xl); color: var(--color-primary);">3. Welk type zithouding verkiest u?</h3>
+                <div class="wizard-options-grid">
+                  <div class="wizard-option-card" data-val="comfort">
+                    <div style="font-size: 2rem; margin-bottom: var(--space-2);">🧘</div>
+                    <strong>Rechtop &amp; Comfortabel</strong>
+                  </div>
+                  <div class="wizard-option-card" data-val="sportief-houding">
+                    <div style="font-size: 2rem; margin-bottom: var(--space-2);">🏎️</div>
+                    <strong>Licht voorover &amp; Actief</strong>
+                  </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: var(--space-6);">
+                  <button class="button button--secondary prev-step-btn">Vorige</button>
+                  <button class="button button--primary next-step-btn" disabled>Volgende stap</button>
+                </div>
+              </div>
+
+              <!-- Step 4 (Result/Submit) -->
+              <div class="wizard-step" id="step-4" style="display: none;">
+                <h3 style="margin-top: 0; font-size: var(--text-xl); color: var(--color-primary);">4. Wat is uw richtbudget voor de nieuwe fiets?</h3>
+                <div class="wizard-options-grid">
+                  <div class="wizard-option-card" data-val="budget-instap">
+                    <strong>Onder € 2.000</strong>
+                  </div>
+                  <div class="wizard-option-card" data-val="budget-mid">
+                    <strong>€ 2.000 tot € 3.500</strong>
+                  </div>
+                  <div class="wizard-option-card" data-val="budget-high">
+                    <strong>Boven € 3.500</strong>
+                  </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: var(--space-6);">
+                  <button class="button button--secondary prev-step-btn">Vorige</button>
+                  <button class="button button--accent" id="finish-wizard-btn" disabled>Intake afronden &amp; verzenden</button>
+                </div>
+              </div>
+
+              <!-- Wizard Success -->
+              <div class="wizard-step" id="step-success" style="display: none; text-align: center;">
+                <div style="font-size: 4rem; margin-bottom: var(--space-4);">🎉</div>
+                <h3 style="margin-top: 0; font-size: var(--text-2xl); color: var(--color-primary);">Intake succesvol opgeslagen!</h3>
+                <p>Uw antwoorden zijn direct gekoppeld aan uw klantenprofiel.</p>
+                <p style="font-weight: var(--weight-semibold); margin-top: var(--space-3); color: var(--color-primary);">
+                  Aanbevolen model op basis van uw profiel:
+                  <span id="wizard-recommendation" style="display: block; font-size: var(--text-xl); margin-top: var(--space-2); color: var(--color-accent);">Velo De Ville Custom Comfort E-Bike</span>
+                </p>
+                <p style="font-size: var(--text-xs); color: var(--color-text-muted); margin-top: var(--space-4);">
+                  We hebben een samenvatting naar uw e-mail gestuurd. Kom gerust langs in de showroom voor een testrit op dit geadviseerde model!
+                </p>
+                <div style="margin-top: var(--space-6);">
+                  <button class="button button--primary" onclick="resetWizard()">Opnieuw invullen</button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- Simulators & Modals (Click & Collect Flow) -->
+  <!-- 1. Doubt (Photo Upload Modal) -->
+  <div class="modal-overlay" id="doubt-modal" style="display: none;">
+    <div class="modal-content">
+      <h3 class="modal-title">Twijfel-knop: Foto-Upload</h3>
+      <p style="font-size: var(--text-sm); margin-bottom: var(--space-4);">
+        Upload een foto van het onderdeel op uw fiets waar u over twijfelt. Wij zoeken het exacte merk/type op en zetten de bestelling voor u klaar.
+      </p>
+      <form id="doubt-upload-form">
+        <div class="form-group" style="margin-bottom: var(--space-4);">
+          <label for="doubt-part-desc">Welk onderdeel zoekt u ongeveer?</label>
+          <input type="text" id="doubt-part-desc" class="form-control" placeholder="Bijv: remblokken achterwiel, versnellingskabel" required>
+        </div>
+        <div class="form-group" style="margin-bottom: var(--space-4);">
+          <label for="doubt-image-file">Foto uploaden (Simulatie)</label>
+          <input type="file" id="doubt-image-file" class="form-control" accept="image/*" required>
+        </div>
+        <div class="image-preview-container" id="preview-box">
+          <img src="" id="mock-preview-img" style="width: 100%; height: auto; object-fit: cover;" alt="Preview">
+        </div>
+        <div style="display: flex; gap: var(--space-2); justify-content: flex-end; margin-top: var(--space-6);">
+          <button type="button" class="button button--secondary" id="close-doubt-modal-btn">Annuleren</button>
+          <button type="submit" class="button button--accent">Foto verzenden</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. Upsell Modal -->
+  <div class="modal-overlay" id="upsell-modal" style="display: none;">
+    <div class="modal-content" style="max-width: 480px;">
+      <div style="font-size: 3rem; text-align: center; margin-bottom: var(--space-2);">🔧</div>
+      <h3 class="modal-title" style="text-align: center;">Handige extra's nodig?</h3>
+      <p style="font-size: var(--text-sm); text-align: center; margin-bottom: var(--space-5);">
+        Je legt een **KMC E9 Ketting** in je winkelmandje. Heb je al nagedacht over het juiste montagegereedschap en onderhoud?
+      </p>
+      
+      <div class="fietspaspoort-grid" style="margin-bottom: var(--space-6);">
+        <div class="fietspaspoort-item" style="background-color: var(--color-bg);">
+          <div>
+            <strong>Kettingspray Pro (150ml)</strong>
+            <div style="font-size: var(--text-xs); color: var(--color-text-muted);">Houdt uw nieuwe ketting geruisloos en soepel</div>
+          </div>
+          <button class="button button--primary add-upsell-btn" data-id="upsell-lube" data-price="8.99" data-name="Kettingspray Pro" style="min-height: 36px; padding: var(--space-1) var(--space-3); font-size: var(--text-xs);">Voeg toe + € 8,99</button>
+        </div>
+        <div class="fietspaspoort-item" style="background-color: var(--color-bg);">
+          <div>
+            <strong>Kettingpons Tool</strong>
+            <div style="font-size: var(--text-xs); color: var(--color-text-muted);">Nodig om de ketting op de juiste lengte in te korten</div>
+          </div>
+          <button class="button button--primary add-upsell-btn" data-id="upsell-tool" data-price="14.99" data-name="Kettingpons Tool" style="min-height: 36px; padding: var(--space-1) var(--space-3); font-size: var(--text-xs);">Voeg toe + € 14,99</button>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: var(--space-2); justify-content: space-between; align-items: center; margin-top: var(--space-4);">
+        <button class="button button--secondary" id="skip-upsell-btn" style="min-height: 40px; font-size: var(--text-xs);">Nee bedankt, doorgaan</button>
+        <button class="button button--accent" id="checkout-btn" style="min-height: 40px; font-size: var(--text-xs);">Afrekenen &amp; Bestellen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Payment Success / Stripe mollie screen simulation -->
+  <div class="modal-overlay" id="checkout-modal" style="display: none;">
+    <div class="modal-content" style="text-align: center;">
+      <div style="font-size: 3rem; margin-bottom: var(--space-2); color: var(--color-primary);">💳</div>
+      <h3 class="modal-title">Veilige betaling</h3>
+      <p style="font-size: var(--text-sm); margin-bottom: var(--space-5);">Simulatie van betaling via Mollie/Bancontact...</p>
+      
+      <div style="background: var(--color-surface); padding: var(--space-4); border-radius: var(--radius-md); text-align: left; margin-bottom: var(--space-6);">
+        <p style="margin: 0; font-size: var(--text-sm);"><strong>Totaalbedrag:</strong> <span id="checkout-total">€ 28,50</span></p>
+        <p style="margin: var(--space-1) 0 0 0; font-size: var(--text-xs); color: var(--color-text-muted);">Begunstigde: De Velomaker Gent</p>
+      </div>
+
+      <button class="button button--accent" id="simulate-pay-btn" style="width: 100%;">Betaling Bevestigen</button>
+    </div>
+  </div>
+
+  <!-- 4. Final Order Success -->
+  <div class="modal-overlay" id="success-modal" style="display: none;">
+    <div class="modal-content" style="text-align: center; border-color: var(--color-primary);">
+      <div style="font-size: 4rem; margin-bottom: var(--space-2);">📦</div>
+      <h3 class="modal-title" style="color: var(--color-primary);">Bestelling betaald!</h3>
+      <p style="font-size: var(--text-sm); margin-bottom: var(--space-4);">
+        Bedankt! Uw betaling is ontvangen. Uw bestelling heeft nu de status: **"In behandeling"**.
+      </p>
+      
+      <div style="background-color: var(--color-surface); border: 1px solid var(--color-accent); padding: var(--space-4); border-radius: var(--radius-md); text-align: left; margin-bottom: var(--space-6); font-size: var(--text-sm);">
+        <strong style="color: var(--color-accent);">⚠️ Let op: Kom nog niet af!</strong>
+        <p style="margin-top: var(--space-2); margin-bottom: 0; font-size: var(--text-xs);">
+          Pas wanneer wij de onderdelen fysiek uit ons magazijn scannen en klaarleggen, verandert uw bestelling naar "Klaar voor afhaling". U ontvangt dan automatisch een sms met afhaalinstructies.
+        </p>
+      </div>
+
+      <button class="button button--primary" id="close-success-modal-btn" style="width: 100%;">Sluiten</button>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container site-footer__inner">
+      <div class="site-footer__brand">
+        <p class="site-footer__name">De Velomaker</p>
+        <p class="site-footer__tag">Fietsenmaker in de Brugse Poort — sinds 2011.</p>
+      </div>
+      <div class="site-footer__col">
+        <h4>Herstellingen &amp; onderhoud</h4>
+        <ul>
+          <li><a href="herstellingen.html">Herstellingen</a></li>
+          <li><a href="onderhoud.html">Onderhoud</a></li>
+          <li><a href="afspraak.html">Afspraak maken</a></li>
+        </ul>
+      </div>
+      <div class="site-footer__col">
+        <h4>Fietsen</h4>
+        <ul>
+          <li><a href="fietsen.html">Ons aanbod</a></li>
+          <li><a href="fietsen/velo-de-ville.html">Velo De Ville</a></li>
+          <li><a href="fietsen/oxford.html">Oxford</a></li>
+        </ul>
+      </div>
+      <div class="site-footer__col">
+        <h4>Contact</h4>
+        <address>
+          Rooigemlaan 193<br>
+          9000 Gent<br>
+          <a href="tel:092334595">09 233 45 95</a><br>
+          <a href="mailto:info@develomaker.be">info@develomaker.be</a>
+        </address>
+      </div>
+    </div>
+    <div class="site-footer__base">
+      <div class="container">
+        <p>BTW BE0578.875.016 · <a href="contact.html">Openingsuren</a></p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Mock Database & Client Logic -->
+  <script>
+    // Parts catalog mock database
+    const PARTS_DATABASE = [
+      { id: 'part-1', name: 'KMC E9 Sport Ketting (9-speed)', sku: 'KMC-E9-SPT', price: 28.50, stock: 'Nu op voorraad in de winkel', isInstant: true, matches: ['velo-de-ville', 'stadsfiets', 'e-bike', 'ketting'] },
+      { id: 'part-2', name: 'Shimano B01S / resin remblokken (Set van 2)', sku: 'SHI-B01S-RES', price: 9.95, stock: 'Nu op voorraad in de winkel', isInstant: true, matches: ['oxford', 'velo-de-ville', 'e-bike', 'remblokken'] },
+      { id: 'part-3', name: 'Schwalbe Marathon Plus 28" band (Anti-lek)', sku: 'SCH-MAR-PL-28', price: 39.95, stock: 'Leverbaar binnen 24u', isInstant: false, matches: ['stadsfiets', 'e-bike', 'band'] },
+      { id: 'part-4', name: 'KMC e10 E-bike Ketting (10-speed)', sku: 'KMC-E10-EL', price: 38.00, stock: 'Nu op voorraad in de winkel', isInstant: true, matches: ['velo-de-ville', 'e-bike', 'ketting'] },
+      { id: 'part-5', name: 'Shimano HG200 9-speed Cassette (11-34T)', sku: 'SHI-HG200-9', price: 24.95, stock: 'Leverbaar binnen 24u', isInstant: false, matches: ['velo-de-ville', 'stadsfiets', 'cassette'] },
+      { id: 'part-6', name: 'Abus Iven Chain 8210 kettingslot', sku: 'ABU-IVN-8210', price: 69.95, stock: 'Nu op voorraad in de winkel', isInstant: true, matches: ['algemeen', 'slot'] }
+    ];
+
+    let currentCartItem = null;
+    let cartAdditions = []; // Upsells added
+    let currentUserEmail = "";
+    let mockUploadedImage = ""; // Holds simulated uploaded image URL base64
+
+    // Initialize Page
+    document.addEventListener("DOMContentLoaded", () => {
+      // Check for existing session
+      const savedUser = localStorage.getItem("portal_user");
+      if (savedUser) {
+        loginUser(savedUser);
+      }
+
+      // Tab click events
+      document.querySelectorAll(".portal-tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".portal-tab-btn").forEach(b => b.classList.remove("is-active"));
+          document.querySelectorAll(".portal-tab-panel").forEach(p => p.classList.remove("is-active"));
+          
+          btn.classList.add("is-active");
+          document.getElementById(btn.getAttribute("data-target")).classList.add("is-active");
+        });
+      });
+
+      // Login form submission
+      document.getElementById("login-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const email = document.getElementById("login-email").value;
+        loginUser(email);
+      });
+
+      // Demo login button
+      document.getElementById("demo-login-btn").addEventListener("click", () => {
+        loginUser("jan@peeters.be");
+      });
+
+      // Search and catalog logic
+      document.getElementById("search-btn").addEventListener("click", renderCatalog);
+      document.getElementById("clear-search-btn").addEventListener("click", () => {
+        document.getElementById("catalog-search").value = "";
+        renderCatalog();
+      });
+
+      // Doubt button click (Modal trigger)
+      document.getElementById("doubt-btn").addEventListener("click", () => {
+        document.getElementById("doubt-modal").style.display = "flex";
+      });
+      document.getElementById("close-doubt-modal-btn").addEventListener("click", () => {
+        document.getElementById("doubt-modal").style.display = "none";
+      });
+
+      // Simulate Photo File Selection
+      document.getElementById("doubt-image-file").addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = function(event) {
+            document.getElementById("mock-preview-img").src = event.target.result;
+            document.getElementById("preview-box").style.display = "block";
+            mockUploadedImage = event.target.result;
+          };
+          reader.readAsDataURL(file);
+        }
+      });
+
+      // Doubt Form Submission
+      document.getElementById("doubt-upload-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const desc = document.getElementById("doubt-part-desc").value;
+        
+        // Save doubt upload simulation to localStorage
+        const doubts = JSON.parse(localStorage.getItem("shop_doubts") || "[]");
+        doubts.push({
+          id: 'doubt-' + Date.now(),
+          email: currentUserEmail,
+          description: desc,
+          image: mockUploadedImage || "assets/images/winkel/mock_part.jpg",
+          status: 'In afwachting van controle',
+          timestamp: new Date().toLocaleTimeString()
+        });
+        localStorage.setItem("shop_doubts", JSON.stringify(doubts));
+
+        document.getElementById("doubt-modal").style.display = "none";
+        alert("Uw foto is succesvol doorgestuurd! De technieker bekijkt dit in zijn focusblok en zal de juiste onderdelen koppelen aan uw dashboard.");
+        
+        // Reset form
+        document.getElementById("doubt-upload-form").reset();
+        document.getElementById("preview-box").style.display = "none";
+        mockUploadedImage = "";
+      });
+
+      // Wizard Option Selections
+      document.querySelectorAll(".wizard-option-card").forEach(card => {
+        card.addEventListener("click", () => {
+          const parent = card.closest(".wizard-step");
+          parent.querySelectorAll(".wizard-option-card").forEach(c => c.classList.remove("is-selected"));
+          card.classList.add("is-selected");
+          parent.querySelector(".next-step-btn, #finish-wizard-btn").removeAttribute("disabled");
+        });
+      });
+
+      // Wizard Navigation Buttons
+      document.querySelectorAll(".next-step-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const currentStep = btn.closest(".wizard-step");
+          const nextId = parseInt(currentStep.id.split("-")[1]) + 1;
+          currentStep.style.display = "none";
+          document.getElementById("step-" + nextId).style.display = "block";
+        });
+      });
+      document.querySelectorAll(".prev-step-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const currentStep = btn.closest(".wizard-step");
+          const prevId = parseInt(currentStep.id.split("-")[1]) - 1;
+          currentStep.style.display = "none";
+          document.getElementById("step-" + prevId).style.display = "block";
+        });
+      });
+
+      // Wizard Finish
+      document.getElementById("finish-wizard-btn").addEventListener("click", () => {
+        const choice1 = document.querySelector("#step-1 .is-selected").getAttribute("data-val");
+        const choice2 = document.querySelector("#step-2 .is-selected").getAttribute("data-val");
+        const choice3 = document.querySelector("#step-3 .is-selected").getAttribute("data-val");
+        const choice4 = document.querySelector("#step-4 .is-selected").getAttribute("data-val");
+
+        // Determine recommendation
+        let rec = "Velo De Ville Custom Comfort E-Bike";
+        if (choice1 === "woon-werk" || choice2 === "lange-afstand") {
+          rec = "Velo De Ville Premium Sport E-Bike (Belt Drive)";
+        } else if (choice1 === "boodschappen") {
+          rec = "Oxford City-Life Stadsfiets (Direct leverbaar)";
+        } else if (choice1 === "sportief") {
+          rec = "Velo De Ville Allround Sport Shimano Cues";
+        }
+
+        document.getElementById("wizard-recommendation").innerText = rec;
+
+        // Save Showroom-Fiche intake data to localStorage for POS simulation
+        const showroomIntake = {
+          email: currentUserEmail,
+          purpose: choice1,
+          distance: choice2,
+          posture: choice3,
+          budget: choice4,
+          recommendation: rec,
+          timestamp: new Date().toLocaleDateString()
+        };
+        localStorage.setItem("showroom_intake_" + currentUserEmail, JSON.stringify(showroomIntake));
+
+        // Display success
+        document.getElementById("step-4").style.display = "none";
+        document.getElementById("step-success").style.display = "block";
+      });
+
+      // Upsell logic
+      document.querySelectorAll(".add-upsell-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const name = btn.getAttribute("data-name");
+          const price = parseFloat(btn.getAttribute("data-price"));
+          
+          if (btn.classList.contains("button--primary")) {
+            cartAdditions.push({ name, price });
+            btn.classList.remove("button--primary");
+            btn.classList.add("button--accent");
+            btn.innerText = "Toegevoegd!";
+          } else {
+            cartAdditions = cartAdditions.filter(item => item.name !== name);
+            btn.classList.add("button--primary");
+            btn.classList.remove("button--accent");
+            btn.innerText = "Voeg toe + € " + price.toFixed(2);
+          }
+        });
+      });
+
+      document.getElementById("skip-upsell-btn").addEventListener("click", () => {
+        openCheckout();
+      });
+      document.getElementById("checkout-btn").addEventListener("click", () => {
+        openCheckout();
+      });
+
+      // Payment Confirmation Simulation
+      document.getElementById("simulate-pay-btn").addEventListener("click", () => {
+        // Save order to localStorage
+        const orders = JSON.parse(localStorage.getItem("shop_orders") || "[]");
+        const newOrder = {
+          id: 'order-' + Math.floor(Math.random() * 9000 + 1000),
+          email: currentUserEmail,
+          item: currentCartItem.name,
+          sku: currentCartItem.sku,
+          price: currentCartItem.price,
+          extra: cartAdditions,
+          status: 'In behandeling (Betaald)',
+          pickupSmsTriggered: false,
+          timestamp: new Date().toLocaleTimeString()
+        };
+        orders.push(newOrder);
+        localStorage.setItem("shop_orders", JSON.stringify(orders));
+
+        // Show final success screen
+        document.getElementById("checkout-modal").style.display = "none";
+        document.getElementById("success-modal").style.display = "flex";
+      });
+
+      // Close success modal
+      document.getElementById("close-success-modal-btn").addEventListener("click", () => {
+        document.getElementById("success-modal").style.display = "none";
+        // Reset cart selections
+        currentCartItem = null;
+        cartAdditions = [];
+        document.querySelectorAll(".add-upsell-btn").forEach(btn => {
+          btn.classList.add("button--primary");
+          btn.classList.remove("button--accent");
+          const price = btn.getAttribute("data-price");
+          btn.innerText = "Voeg toe + € " + price;
+        });
+      });
+    });
+
+    // Helper functions
+    function loginUser(email) {
+      currentUserEmail = email;
+      localStorage.setItem("portal_user", email);
+      
+      // Update displays
+      document.getElementById("user-email-display").innerText = email;
+      if (email === "jan@peeters.be") {
+        document.getElementById("user-bike-title").innerText = "Velo De Ville AEB 800 (Jan Peeters)";
+        document.getElementById("user-bike-frame").innerText = "VDV-8849-GP";
+        
+        // Restore/Set Default Jan Peeters Fietspaspoort
+        document.getElementById("badge-general").className = "status-badge status-badge--green";
+        document.getElementById("badge-general").innerText = "🟢 In orde";
+        document.getElementById("badge-wheels").className = "status-badge status-badge--green";
+        document.getElementById("badge-wheels").innerText = "🟢 In orde";
+        document.getElementById("badge-brakes").className = "status-badge status-badge--red";
+        document.getElementById("badge-brakes").innerText = "🔴 Kritiek (Remblokken versleten)";
+        document.getElementById("badge-drivetrain").className = "status-badge status-badge--orange";
+        document.getElementById("badge-drivetrain").innerText = "🟡 Slijtage (Fase 2 - Ketting rekt uit)";
+        document.getElementById("badge-lights").className = "status-badge status-badge--green";
+        document.getElementById("badge-lights").innerText = "🟢 In orde";
+        document.getElementById("fase1-warning").style.display = "flex";
+        document.getElementById("fase2-info").style.display = "block";
+      } else {
+        // Load custom created paspoort from localStorage if available
+        const customPaspoort = JSON.parse(localStorage.getItem("paspoort_" + email));
+        if (customPaspoort) {
+          document.getElementById("user-bike-title").innerText = customPaspoort.bike;
+          document.getElementById("user-bike-frame").innerText = customPaspoort.frame || "N/A";
+          
+          updatePillBadge("badge-general", customPaspoort.general);
+          updatePillBadge("badge-wheels", customPaspoort.wheels);
+          updatePillBadge("badge-brakes", customPaspoort.brakes);
+          updatePillBadge("badge-drivetrain", customPaspoort.drivetrain);
+          updatePillBadge("badge-lights", customPaspoort.lights);
+
+          if (customPaspoort.brakes === "red" || customPaspoort.general === "red" || customPaspoort.wheels === "red") {
+            document.getElementById("fase1-warning").style.display = "flex";
+          } else {
+            document.getElementById("fase1-warning").style.display = "none";
+          }
+
+          if (customPaspoort.drivetrain === "orange") {
+            document.getElementById("fase2-info").style.display = "block";
+          } else {
+            document.getElementById("fase2-info").style.display = "none";
+          }
+        } else {
+          // Set clean template for new user
+          document.getElementById("user-bike-title").innerText = "Nieuwe Fiets (Ongeregistreerd)";
+          document.getElementById("user-bike-frame").innerText = "Geen frame ID gekoppeld";
+          
+          document.getElementById("badge-general").className = "status-badge status-badge--green";
+          document.getElementById("badge-general").innerText = "🟢 In orde";
+          document.getElementById("badge-wheels").className = "status-badge status-badge--green";
+          document.getElementById("badge-wheels").innerText = "🟢 In orde";
+          document.getElementById("badge-brakes").className = "status-badge status-badge--green";
+          document.getElementById("badge-brakes").innerText = "🟢 In orde";
+          document.getElementById("badge-drivetrain").className = "status-badge status-badge--green";
+          document.getElementById("badge-drivetrain").innerText = "🟢 In orde";
+          document.getElementById("badge-lights").className = "status-badge status-badge--green";
+          document.getElementById("badge-lights").innerText = "🟢 In orde";
+          
+          document.getElementById("fase1-warning").style.display = "none";
+          document.getElementById("fase2-info").style.display = "none";
+        }
+      }
+
+      // Hide login, show portal
+      document.getElementById("login-section").style.display = "none";
+      document.getElementById("portal-section").style.display = "block";
+
+      renderCatalog();
+    }
+
+    function updatePillBadge(elementId, status) {
+      const badge = document.getElementById(elementId);
+      if (status === "green") {
+        badge.className = "status-badge status-badge--green";
+        badge.innerText = "🟢 In orde";
+      } else if (status === "orange") {
+        badge.className = "status-badge status-badge--orange";
+        badge.innerText = "🟡 Slijtage (Fase 2)";
+      } else if (status === "red") {
+        badge.className = "status-badge status-badge--red";
+        badge.innerText = "🔴 Kritiek (Fase 1)";
+      }
+    }
+
+    function renderCatalog() {
+      const query = document.getElementById("catalog-search").value.toLowerCase().trim();
+      const container = document.getElementById("catalog-container");
+      container.innerHTML = "";
+
+      const filtered = PARTS_DATABASE.filter(item => {
+        if (!query) return true;
+        return item.name.toLowerCase().includes(query) || 
+               item.sku.toLowerCase().includes(query) || 
+               item.matches.some(m => m.includes(query));
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--color-text-muted);">Geen onderdelen gevonden die overeenstemmen met uw zoekopdracht.</p>`;
+        return;
+      }
+
+      filtered.forEach(item => {
+        const card = document.createElement("div");
+        card.className = "part-card";
+        card.innerHTML = `
+          <div>
+            <h4 class="part-card__title">${item.name}</h4>
+            <span class="part-card__sku">SKU: ${item.sku}</span>
+            <div style="margin: var(--space-2) 0;">
+              <span class="stock-tag ${item.isInstant ? 'stock-tag--instant' : 'stock-tag--24h'}">
+                ${item.isInstant ? '🟢 ' + item.stock : '🟡 ' + item.stock}
+              </span>
+            </div>
+          </div>
+          <div>
+            <div class="part-card__price">€ ${item.price.toFixed(2)}</div>
+            <button class="button button--primary buy-part-btn" data-id="${item.id}" style="width: 100%; min-height: 40px; font-size: var(--text-xs);">Click &amp; Collect Bestellen</button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+
+      // Add events to Buy Buttons
+      document.querySelectorAll(".buy-part-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const id = btn.getAttribute("data-id");
+          const item = PARTS_DATABASE.find(p => p.id === id);
+          currentCartItem = item;
+
+          if (id === 'part-1') {
+            // Trigger Digital Upsell Modal for chain purchases
+            document.getElementById("upsell-modal").style.display = "flex";
+          } else {
+            // Go directly to checkout
+            openCheckout();
+          }
+        });
+      });
+    }
+
+    function openCheckout() {
+      document.getElementById("upsell-modal").style.display = "none";
+      
+      // Calculate total
+      let total = currentCartItem.price;
+      cartAdditions.forEach(extra => {
+        total += extra.price;
+      });
+
+      document.getElementById("checkout-total").innerText = "€ " + total.toFixed(2);
+      document.getElementById("checkout-modal").style.display = "flex";
+    }
+
+    // Close checkout triggers
+    document.getElementById("skip-upsell-btn").addEventListener("click", () => {
+      document.getElementById("upsell-modal").style.display = "none";
+    });
+
+    function resetWizard() {
+      // Reset option selections
+      document.querySelectorAll(".wizard-option-card").forEach(c => c.classList.remove("is-selected"));
+      document.querySelectorAll(".next-step-btn, #finish-wizard-btn").forEach(btn => btn.setAttribute("disabled", "true"));
+      
+      // Navigate to step 1
+      document.querySelectorAll(".wizard-step").forEach(step => step.style.display = "none");
+      document.getElementById("step-1").style.display = "block";
+    }
+
+    function logout() {
+      localStorage.removeItem("portal_user");
+      currentUserEmail = "";
+      document.getElementById("portal-section").style.display = "none";
+      document.getElementById("login-section").style.display = "block";
+    }
+  </script>
+</body>
+</html>

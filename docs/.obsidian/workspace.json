@@ -13,7 +13,7 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "31-planning-notes/Operationele Workflow.md",
+                "file": "31-planning-notes/Pos research/Operationele Workflow.md",
                 "mode": "source",
                 "source": false
               },
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "31-planning-notes/Operationele Workflow.md",
+                "file": "31-planning-notes/Pos research/Operationele Workflow.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -113,7 +113,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "31-planning-notes/Operationele Workflow.md",
+                "file": "31-planning-notes/Pos research/Operationele Workflow.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
@@ -156,7 +156,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "31-planning-notes/Operationele Workflow.md",
+                "file": "31-planning-notes/Pos research/Operationele Workflow.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
@@ -185,10 +185,15 @@
   },
   "active": "e455cf2032112639",
   "lastOpenFiles": [
-    "31-planning-notes/Workflows.md",
-    "31-planning-notes/Operationele Workflow.md",
-    "31-planning-notes/Pos.md",
+    "31-planning-notes/Pos research/Click & Collect.md",
+    "31-planning-notes/Pos research/Operationele Workflow.md",
+    "31-planning-notes/Pos research/Tijdsbesteding.md",
+    "31-planning-notes/Pos research/Tooling.md",
+    "31-planning-notes/todo.md",
+    "31-planning-notes/Pos research",
     "31-planning-notes/Stappen Boekhouding.md",
+    "31-planning-notes/Pos.md",
+    "31-planning-notes/Workflows.md",
     "40-decisions/ADR-009-issue-interaction-contract.md",
     "prompts/chrome automation.md",
     "prompts/Automate Things.md",

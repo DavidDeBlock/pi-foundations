@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Technieker Dashboard — De Velomaker Werkplaats</title>
+  <meta name="description" content="Intern beheersysteem voor Click & Collect bestellingen, Fietspaspoorten en Showroom Fiches.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,300..900;1,300..900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body style="background-color: var(--color-surface-dark);">
+
+  <header class="site-header" style="background-color: var(--color-primary-dark);">
+    <div class="container site-header__inner">
+      <a href="index.html" class="site-header__brand">
+        <span class="site-header__brand-name" style="color: var(--color-accent);">De Velomaker WORKSHOP</span>
+        <span class="site-header__brand-tag">Intern Dashboard</span>
+      </a>
+      <span style="font-size: var(--text-xs); color: rgba(244, 238, 226, 0.7); background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 4px;">Werkplaats-modus</span>
+    </div>
+  </header>
+
+  <main class="container" style="padding: var(--space-8) var(--container-pad);">
+    <div class="dashboard-grid">
+      
+      <!-- Sidebar Menu -->
+      <aside class="dashboard-sidebar">
+        <nav class="dashboard-sidebar-menu" aria-label="Beheermenu">
+          <button class="dashboard-menu-item is-active" data-target="panel-bestellingen">📦 Click &amp; Collect Bestellingen</button>
+          <button class="dashboard-menu-item" data-target="panel-twijfel">🤔 Twijfel-Foto's (<span id="doubt-count">0</span>)</button>
+          <button class="dashboard-menu-item" data-target="panel-paspoorten">🚲 Fietspaspoorten Fiche</button>
+          <button class="dashboard-menu-item" data-target="panel-showroom">🛋️ Showroom Offertes &amp; Intakes</button>
+        </nav>
+        <div style="margin-top: var(--space-4); background-color: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-4); font-size: var(--text-xs); color: var(--color-text-muted);">
+          <strong>💡 Protip voor de demo:</strong> Open de <a href="balie.html" target="_blank" style="text-decoration: underline; font-weight: bold; color: var(--color-primary);">Online Balie</a> in een ander tabblad. Plaats een bestelling of upload een twijfelfoto en zie het hier live verschijnen!
+        </div>
+      </aside>
+
+      <!-- Main Dashboard Panels -->
+      <section class="dashboard-main" style="background-color: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-6); min-height: 500px; box-shadow: var(--shadow-md);">
+        
+        <!-- PANEL 1: Click & Collect Bestellingen -->
+        <div class="dashboard-panel is-active" id="panel-bestellingen">
+          <div class="dashboard-header-bar">
+            <h2 style="margin: 0; font-size: var(--text-2xl); color: var(--color-primary);">Click &amp; Collect Bestellingen</h2>
+            <button class="button button--secondary" style="min-height: 36px; padding: var(--space-1) var(--space-3); font-size: var(--text-xs);" onclick="initDemoOrders()">Laad Demo-Bestelling</button>
+          </div>
+          <p style="font-size: var(--text-sm); margin-bottom: var(--space-4);">Klanten hebben deze onderdelen online betaald. Haal ze fysiek uit de schappen en scan ze in om de afhaal-sms te triggeren.</p>
+
+          <table class="dashboard-table">
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Klant E-mail</th>
+                <th>Onderdeel (SKU)</th>
+                <th>Totaal</th>
+                <th>Status</th>
+                <th>Acties</th>
+              </tr>
+            </thead>
+            <tbody id="orders-table-body">
+              <!-- Inserted dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- PANEL 2: Doubt Photos controle -->
+        <div class="dashboard-panel" id="panel-twijfel">
+          <div class="dashboard-header-bar">
+            <h2 style="margin: 0; font-size: var(--text-2xl); color: var(--color-primary);">Controle Twijfel-Foto's</h2>
+          </div>
+          <p style="font-size: var(--text-sm); margin-bottom: var(--space-4);">Leken die niet zeker weten welke onderdelen ze nodig hebben, uploaden hier een foto. Selecteer de juiste variant en push de betaallink.</p>
+
+          <div id="doubts-list-container">
+            <!-- Inserted dynamically -->
+          </div>
+        </div>
+
+        <!-- PANEL 3: Fietspaspoorten Beheer -->
+        <div class="dashboard-panel" id="panel-paspoorten">
+          <div class="dashboard-header-bar">
+            <h2 style="margin: 0; font-size: var(--text-2xl); color: var(--color-primary);">Fietspaspoort Aanmaken / Updaten</h2>
+          </div>
+          <p style="font-size: var(--text-sm); margin-bottom: var(--space-4);">Voer het "Verkeerslicht"-statusrapport in voor de fiets van een klant om dit direct in hun Online Balie te publiceren.</p>
+
+          <form id="paspoort-form" class="form-custom" style="max-width: 100%; box-shadow: none; padding: 0; border: none; background: transparent;">
+            <div class="wizard-options-grid" style="grid-template-columns: 1fr 1fr; margin-bottom: var(--space-4);">
+              <div class="form-group">
+                <label for="p-email">E-mailadres klant</label>
+                <input type="email" id="p-email" class="form-control" placeholder="Bijv. jan@peeters.be" required>
+              </div>
+              <div class="form-group">
+                <label for="p-bike">Merk &amp; Type Fiets</label>
+                <input type="text" id="p-bike" class="form-control" placeholder="Bijv. Velo De Ville AEB 800" required>
+              </div>
+            </div>
+
+            <div class="wizard-options-grid" style="grid-template-columns: 1fr; margin-bottom: var(--space-4);">
+              <div class="form-group">
+                <label for="p-frame">Frame ID (Optioneel)</label>
+                <input type="text" id="p-frame" class="form-control" placeholder="Bijv. VDV-8849-GP">
+              </div>
+            </div>
+
+            <h3 style="font-size: var(--text-lg); color: var(--color-primary); margin-top: var(--space-6); border-bottom: 1px solid var(--color-border); padding-bottom: var(--space-2);">Status per categorie</h3>
+            
+            <div class="fietspaspoort-grid">
+              <div class="fietspaspoort-item">
+                <span><strong>Algemeen &amp; Frame</strong> (Bouten, stuur, zadel)</span>
+                <select id="p-status-general" class="form-control" style="width: auto;">
+                  <option value="green" selected>🟢 Groen (In orde)</option>
+                  <option value="orange">🟡 Oranje (Beginnende slijtage)</option>
+                  <option value="red">🔴 Rood (Kritiek / Fase 1)</option>
+                </select>
+              </div>
+              
+              <div class="fietspaspoort-item">
+                <span><strong>Wielen &amp; Banden</strong> (Spaakspanning, bandenprofiel)</span>
+                <select id="p-status-wheels" class="form-control" style="width: auto;">
+                  <option value="green" selected>🟢 Groen (In orde)</option>
+                  <option value="orange">🟡 Oranje (Beginnende slijtage)</option>
+                  <option value="red">🔴 Rood (Kritiek / Fase 1)</option>
+                </select>
+              </div>
+
+              <div class="fietspaspoort-item">
+                <span><strong>Remsysteem</strong> (Slijtage remblokken, kabels)</span>
+                <select id="p-status-brakes" class="form-control" style="width: auto;">
+                  <option value="green" selected>🟢 Groen (In orde)</option>
+                  <option value="orange">🟡 Oranje (Beginnende slijtage)</option>
+                  <option value="red">🔴 Rood (Kritiek / Fase 1)</option>
+                </select>
+              </div>
+
+              <div class="fietspaspoort-item">
+                <span><strong>Aandrijving &amp; Versnellingen</strong> (Ketting, cassette)</span>
+                <select id="p-status-drivetrain" class="form-control" style="width: auto;">
+                  <option value="green" selected>🟢 Groen (In orde)</option>
+                  <option value="orange">🟡 Oranje (Fase 2 - Reminder sturen)</option>
+                  <option value="red">🔴 Rood (Kritiek / Fase 1)</option>
+                </select>
+              </div>
+
+              <div class="fietspaspoort-item">
+                <span><strong>Verlichting &amp; Accessoires</strong> (Lichten, slot)</span>
+                <select id="p-status-lights" class="form-control" style="width: auto;">
+                  <option value="green" selected>🟢 Groen (In orde)</option>
+                  <option value="orange">🟡 Oranje (Beginnende slijtage)</option>
+                  <option value="red">🔴 Rood (Kritiek / Fase 1)</option>
+                </select>
+              </div>
+            </div>
+
+            <button type="submit" class="button button--accent" style="width: 100%; margin-top: var(--space-4);">Paspoort Opslaan &amp; Publiceren naar Klantenportaal</button>
+          </form>
+        </div>
+
+        <!-- PANEL 4: Showroom intakes en offertes -->
+        <div class="dashboard-panel" id="panel-showroom">
+          <div class="dashboard-header-bar">
+            <h2 style="margin: 0; font-size: var(--text-2xl); color: var(--color-primary);">Showroom Offertes &amp; Intakes</h2>
+            <button class="button button--secondary" style="min-height: 36px; padding: var(--space-1) var(--space-3); font-size: var(--text-xs);" onclick="initDemoIntake()">Laad Demo-Intake</button>
+          </div>
+          <p style="font-size: var(--text-sm); margin-bottom: var(--space-4);">Hier vindt u de behoefte-analyses die klanten thuis of op de showroom-tablet hebben ingevuld. Voer de showroom-fiche in om de opvolg-flow te starten.</p>
+
+          <div id="intakes-list-container">
+            <!-- Inserted dynamically -->
+          </div>
+        </div>
+
+      </section>
+
+    </div>
+  </main>
+
+  <!-- 1. Scanner / Afhaal upsell simulation modal -->
+  <div class="modal-overlay" id="scan-modal" style="display: none;">
+    <div class="modal-content" style="max-width: 500px;">
+      <h3 class="modal-title">Barcode Scan &amp; Leg Klaar</h3>
+      <p style="font-size: var(--text-sm); margin-bottom: var(--space-4);">Simuleer de scanner door op "Scannen" te klikken. Dit haalt het product uit voorraad, activeert de SMS-trigger en toont de balie-upsell voor uw medewerker.</p>
+      
+      <div style="background-color: var(--color-surface); padding: var(--space-4); border-radius: var(--radius-md); font-size: var(--text-sm); margin-bottom: var(--space-6);">
+        <p style="margin: 0;"><strong>Klant:</strong> <span id="scan-client-email">jan@peeters.be</span></p>
+        <p style="margin: var(--space-1) 0 0 0;"><strong>Onderdeel:</strong> <span id="scan-part-name">KMC E9 Sport Ketting</span></p>
+      </div>
+
+      <!-- SMS Message preview -->
+      <h4 style="font-size: var(--text-xs); text-transform: uppercase; color: var(--color-text-muted); margin-bottom: var(--space-2);">Geactiveerde SMS-Notificatie:</h4>
+      <div class="sms-simulator-box">
+        Velomaker Bestelling: Je onderdelen liggen ingescand klaar aan de balie! Je kunt je pakket uitsluitend komen afhalen tijdens onze openbare inloopuren (08:30-10:00 of 16:30-18:30). Tot zo!
+      </div>
+
+      <!-- Face-to-Face Counter Upsell Alert -->
+      <div style="background-color: #fff3cd; border: 1px solid #ffecb5; color: #664d03; padding: var(--space-4); border-radius: var(--radius-md); margin-top: var(--space-4); font-size: var(--text-sm);">
+        <strong>💡 Toonbank-Upsell Kans voor medewerker:</strong>
+        <p style="margin-top: var(--space-2); margin-bottom: 0; font-size: var(--text-xs);">
+          <em>"Heeft de klant de juiste cassettesleutel of kettingzweep om dit te monteren? Bied aan om deze te huren (€5) of te kopen."</em>
+        </p>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-6);">
+        <button class="button button--secondary" onclick="closeScanModal()">Annuleren</button>
+        <button class="button button--accent" id="confirm-scan-btn">Scan bevestigen (Verzend SMS)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Showroom-Fiche Offerte Opvolging Modal -->
+  <div class="modal-overlay" id="showroom-modal" style="display: none;">
+    <div class="modal-content" style="max-width: 550px;">
+      <h3 class="modal-title">Showroom-Fiche &amp; Offerte-opvolging</h3>
+      <p style="font-size: var(--text-sm); margin-bottom: var(--space-4);">Voer het testritverslag in voor deze klant en stuur direct een offerte. De follow-up e-mail wordt na 3 dagen automatisch klaargezet.</p>
+      
+      <form id="showroom-fiche-form">
+        <input type="hidden" id="sf-email">
+        <div class="form-group" style="margin-bottom: var(--space-3);">
+          <label for="sf-tested">Geteste Fietsmodellen</label>
+          <input type="text" id="sf-tested" class="form-control" placeholder="Bijv. Velo De Ville AEB 800, Oxford Cargo E-bike" required>
+        </div>
+        <div class="form-group" style="margin-bottom: var(--space-3);">
+          <label for="sf-feedback">Persoonlijke feedback klant</label>
+          <textarea id="sf-feedback" rows="3" class="form-control" placeholder="Klant vond zithouding comfortabel, twijfelt nog tussen riem of ketting..." required></textarea>
+        </div>
+        
+        <div style="background-color: var(--color-surface); padding: var(--space-4); border-radius: var(--radius-md); font-size: var(--text-sm); margin-bottom: var(--space-4);">
+          <strong>📧 E-mailopvolging (Auto-Flow):</strong>
+          <ul style="font-size: var(--text-xs); color: var(--color-text-muted); margin-top: var(--space-2); padding-left: var(--space-4); list-style: disc;">
+            <li><strong>Nu:</strong> Directe samenvatting van testritten &amp; offerte-link via e-mail.</li>
+            <li><strong>Na 3 dagen:</strong> Automatische opvolgmail ("Keuze al kunnen maken? Boek een 2e testrit of leg leverdatum vast.")</li>
+          </ul>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-6);">
+          <button type="button" class="button button--secondary" onclick="closeShowroomModal()">Annuleren</button>
+          <button type="submit" class="button button--accent">Verzend Fiche &amp; Activeer Flow</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let activeOrderId = null;
+
+    document.addEventListener("DOMContentLoaded", () => {
+      // Sidebar navigation
+      document.querySelectorAll(".dashboard-menu-item").forEach(btn => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".dashboard-menu-item").forEach(b => b.classList.remove("is-active"));
+          document.querySelectorAll(".dashboard-panel").forEach(p => p.classList.remove("is-active"));
+
+          btn.classList.add("is-active");
+          document.getElementById(btn.getAttribute("data-target")).classList.add("is-active");
+        });
+      });
+
+      // Paspoort form submission
+      document.getElementById("paspoort-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const email = document.getElementById("p-email").value;
+        const bike = document.getElementById("p-bike").value;
+        const frame = document.getElementById("p-frame").value;
+        
+        const general = document.getElementById("p-status-general").value;
+        const wheels = document.getElementById("p-status-wheels").value;
+        const brakes = document.getElementById("p-status-brakes").value;
+        const drivetrain = document.getElementById("p-status-drivetrain").value;
+        const lights = document.getElementById("p-status-lights").value;
+
+        const paspoort = { email, bike, frame, general, wheels, brakes, drivetrain, lights };
+        localStorage.setItem("paspoort_" + email, JSON.stringify(paspoort));
+
+        alert("Fietspaspoort succesvol gepubliceerd! De klant ziet dit direct in zijn Online Balie bij het inloggen.");
+        document.getElementById("paspoort-form").reset();
+      });
+
+      // Confirm scan trigger
+      document.getElementById("confirm-scan-btn").addEventListener("click", () => {
+        const orders = JSON.parse(localStorage.getItem("shop_orders") || "[]");
+        const idx = orders.findIndex(o => o.id === activeOrderId);
+        if (idx !== -1) {
+          orders[idx].status = "Klaar voor afhaling (SMS verzonden)";
+          orders[idx].pickupSmsTriggered = true;
+          localStorage.setItem("shop_orders", JSON.stringify(orders));
+        }
+
+        closeScanModal();
+        renderOrders();
+      });
+
+      // Showroom Fiche Form submission
+      document.getElementById("showroom-fiche-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const email = document.getElementById("sf-email").value;
+        const tested = document.getElementById("sf-tested").value;
+        const feedback = document.getElementById("sf-feedback").value;
+
+        // Save Showroom Fiche to database
+        const fiches = JSON.parse(localStorage.getItem("showroom_fiches") || "[]");
+        fiches.push({
+          email,
+          tested,
+          feedback,
+          followUpScheduled: true,
+          followUpDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString(),
+          timestamp: new Date().toLocaleDateString()
+        });
+        localStorage.setItem("showroom_fiches", JSON.stringify(fiches));
+
+        alert("Showroom-fiche opgeslagen! De opvolgmails zijn ingepland voor verzending over 3 dagen.");
+        
+        // Remove intake from display (since it's processed)
+        localStorage.removeItem("showroom_intake_" + email);
+        
+        closeShowroomModal();
+        renderShowroomIntakes();
+      });
+
+      // Initial renders
+      renderOrders();
+      renderDoubts();
+      renderShowroomIntakes();
+
+      // Poll localStorage changes for fluid prototype experience
+      window.addEventListener("storage", () => {
+        renderOrders();
+        renderDoubts();
+        renderShowroomIntakes();
+      });
+    });
+
+    // Bestellingen functions
+    function renderOrders() {
+      const orders = JSON.parse(localStorage.getItem("shop_orders") || "[]");
+      const tbody = document.getElementById("orders-table-body");
+      tbody.innerHTML = "";
+
+      if (orders.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--color-text-muted);">Geen lopende bestellingen.</td></tr>`;
+        return;
+      }
+
+      orders.forEach(order => {
+        let itemsString = order.item;
+        if (order.extra && order.extra.length > 0) {
+          itemsString += " + " + order.extra.map(ex => ex.name).join(", ");
+        }
+
+        let total = order.price;
+        if (order.extra) {
+          order.extra.forEach(ex => total += ex.price);
+        }
+
+        const isReady = order.status.includes("Klaar");
+
+        tbody.innerHTML += `
+          <tr>
+            <td><strong>${order.id}</strong></td>
+            <td>${order.email}</td>
+            <td>${itemsString} (${order.sku || 'N/A'})</td>
+            <td>€ ${total.toFixed(2)}</td>
+            <td>
+              <span class="status-badge ${isReady ? 'status-badge--green' : 'status-badge--orange'}">
+                ${order.status}
+              </span>
+            </td>
+            <td>
+              ${isReady ? 
+                `<span style="font-size: var(--text-xs); color: #0f5132; font-weight: bold;">Afgehandeld</span>` : 
+                `<button class="button button--accent" style="min-height:30px; padding: var(--space-1) var(--space-2); font-size: var(--text-xs);" onclick="openScanModal('${order.id}', '${order.email}', '${order.item}')">Scan &amp; Leg Klaar</button>`
+              }
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    function initDemoOrders() {
+      const orders = [
+        {
+          id: 'order-3829',
+          email: 'piet@gent.be',
+          item: 'KMC E9 Sport Ketting (9-speed)',
+          sku: 'KMC-E9-SPT',
+          price: 28.50,
+          extra: [{name: 'Kettingspray Pro', price: 8.99}],
+          status: 'In behandeling (Betaald)',
+          timestamp: new Date().toLocaleTimeString()
+        }
+      ];
+      localStorage.setItem("shop_orders", JSON.stringify(orders));
+      renderOrders();
+    }
+
+    function openScanModal(orderId, email, itemName) {
+      activeOrderId = orderId;
+      document.getElementById("scan-client-email").innerText = email;
+      document.getElementById("scan-part-name").innerText = itemName;
+      document.getElementById("scan-modal").style.display = "flex";
+    }
+
+    function closeScanModal() {
+      document.getElementById("scan-modal").style.display = "none";
+    }
+
+    // Doubts controle functions
+    function renderDoubts() {
+      const doubts = JSON.parse(localStorage.getItem("shop_doubts") || "[]");
+      const container = document.getElementById("doubts-list-container");
+      const countEl = document.getElementById("doubt-count");
+      
+      const pendingDoubts = doubts.filter(d => d.status.includes("afwachting"));
+      countEl.innerText = pendingDoubts.length;
+      container.innerHTML = "";
+
+      if (doubts.length === 0) {
+        container.innerHTML = `<p style="text-align: center; color: var(--color-text-muted); padding: var(--space-8) 0;">Geen twijfel-aanvragen binnengekomen.</p>`;
+        return;
+      }
+
+      doubts.forEach(doubt => {
+        const isProcessed = !doubt.status.includes("afwachting");
+
+        const block = document.createElement("div");
+        block.className = "showroom-wizard-card";
+        block.style.marginBottom = "var(--space-4)";
+        block.innerHTML = `
+          <div style="display: grid; grid-template-columns: 1fr; gap: var(--space-6); align-items: start;">
+            <div style="display: grid; grid-template-columns: 150px 1fr; gap: var(--space-4); align-items: start;">
+              <div style="border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; background: #eee; height: 120px; display: flex; align-items: center; justify-content: center;">
+                <img src="${doubt.image}" style="width: 100%; height: 100%; object-fit: cover;" alt="Doubt Photo">
+              </div>
+              <div>
+                <span class="status-badge ${isProcessed ? 'status-badge--green' : 'status-badge--orange'}" style="margin-bottom: var(--space-2);">${doubt.status}</span>
+                <p style="margin: 0 0 var(--space-2) 0;"><strong>Klant:</strong> ${doubt.email} (ingediend om ${doubt.timestamp})</p>
+                <p style="margin: 0;"><strong>Omschrijving van de klant:</strong> "${doubt.description}"</p>
+              </div>
+            </div>
+            
+            ${isProcessed ? '' : `
+              <div style="border-top: 1px solid var(--color-border); padding-top: var(--space-4); display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap;">
+                <label for="select-part-${doubt.id}" style="font-weight: bold; font-size: var(--text-sm);">Koppel correct onderdeel:</label>
+                <select id="select-part-${doubt.id}" class="form-control" style="width: auto; max-width: 320px;">
+                  <option value="part-2">Shimano B01S remblokken resin (€ 9,95)</option>
+                  <option value="part-1">KMC E9 Sport Ketting 9-speed (€ 28,50)</option>
+                  <option value="part-3">Schwalbe Marathon Plus 28" anti-lek (€ 39,95)</option>
+                </select>
+                <button class="button button--primary" style="min-height: 40px; font-size: var(--text-xs);" onclick="resolveDoubt('${doubt.id}')">Koppel &amp; Stuur Betaallink</button>
+              </div>
+            `}
+          </div>
+        `;
+        container.appendChild(block);
+      });
+    }
+
+    function resolveDoubt(doubtId) {
+      const doubts = JSON.parse(localStorage.getItem("shop_doubts") || "[]");
+      const idx = doubts.findIndex(d => d.id === doubtId);
+      if (idx === -1) return;
+
+      const selectEl = document.getElementById("select-part-" + doubtId);
+      const partId = selectEl.value;
+
+      // Update doubt status
+      doubts[idx].status = "Gekoppeld & Betaallink verstuurd";
+      localStorage.setItem("shop_doubts", JSON.stringify(doubts));
+
+      // Push a simulated order for the client to pay
+      const orders = JSON.parse(localStorage.getItem("shop_orders") || "[]");
+      const parts = [
+        { id: 'part-1', name: 'KMC E9 Sport Ketting (9-speed)', sku: 'KMC-E9-SPT', price: 28.50 },
+        { id: 'part-2', name: 'Shimano B01S / resin remblokken (Set van 2)', sku: 'SHI-B01S-RES', price: 9.95 },
+        { id: 'part-3', name: 'Schwalbe Marathon Plus 28" band (Anti-lek)', sku: 'SCH-MAR-PL-28', price: 39.95 }
+      ];
+      const matchedPart = parts.find(p => p.id === partId);
+
+      orders.push({
+        id: 'order-' + Math.floor(Math.random() * 9000 + 1000),
+        email: doubts[idx].email,
+        item: matchedPart.name,
+        sku: matchedPart.sku,
+        price: matchedPart.price,
+        extra: [],
+        status: 'Betaallink verstuurd (Wacht op betaling)',
+        timestamp: new Date().toLocaleTimeString()
+      });
+      localStorage.setItem("shop_orders", JSON.stringify(orders));
+
+      alert("Onderdeel succesvol gekoppeld! De klant heeft direct een e-mail ontvangen met de Mollie-betaallink om de bestelling te voltooien.");
+      renderDoubts();
+    }
+
+    // Showroom Intakes functions
+    function renderShowroomIntakes() {
+      const container = document.getElementById("intakes-list-container");
+      container.innerHTML = "";
+
+      // Gather active intakes from localStorage
+      let intakesFound = false;
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith("showroom_intake_")) {
+          intakesFound = true;
+          const data = JSON.parse(localStorage.getItem(key));
+          
+          const block = document.createElement("div");
+          block.className = "showroom-wizard-card";
+          block.style.marginBottom = "var(--space-4)";
+          block.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: var(--space-4);">
+              <div>
+                <h3 style="margin-top: 0; font-size: var(--text-lg); color: var(--color-primary);">Intake-analyse: ${data.email}</h3>
+                <p style="font-size: var(--text-xs); color: var(--color-text-muted);">Verzonden op ${data.timestamp || 'Vandaag'}</p>
+                
+                <ul style="font-size: var(--text-sm); margin-top: var(--space-3); line-height: var(--leading-relaxed); list-style: square; padding-left: var(--space-4);">
+                  <li><strong>Gebruiksdoel:</strong> ${data.purpose}</li>
+                  <li><strong>Afstand per rit:</strong> ${data.distance}</li>
+                  <li><strong>Zithouding:</strong> ${data.posture}</li>
+                  <li><strong>Richtbudget:</strong> ${data.budget}</li>
+                  <li><strong>Aanbevolen model:</strong> <strong style="color: var(--color-accent);">${data.recommendation}</strong></li>
+                </ul>
+              </div>
+              <button class="button button--primary" style="min-height: 40px; font-size: var(--text-xs);" onclick="openShowroomModal('${data.email}')">Nieuw Showroom-Fiche</button>
+            </div>
+          `;
+          container.appendChild(block);
+        }
+      }
+
+      if (!intakesFound) {
+        container.innerHTML = `
+          <p style="text-align: center; color: var(--color-text-muted); padding: var(--space-8) 0;">Geen onverwerkte showroom-intakes gevonden.</p>
+        `;
+      }
+    }
+
+    function initDemoIntake() {
+      const demoIntake = {
+        email: 'brecht@brugsepoort.be',
+        purpose: 'woon-werk',
+        distance: 'midden-afstand',
+        posture: 'comfort',
+        budget: 'budget-mid',
+        recommendation: 'Velo De Ville Custom Comfort E-Bike',
+        timestamp: new Date().toLocaleDateString()
+      };
+      localStorage.setItem("showroom_intake_brecht@brugsepoort.be", JSON.stringify(demoIntake));
+      renderShowroomIntakes();
+    }
+
+    function openShowroomModal(email) {
+      document.getElementById("sf-email").value = email;
+      document.getElementById("sf-tested").value = "";
+      document.getElementById("sf-feedback").value = "";
+      document.getElementById("showroom-modal").style.display = "flex";
+    }
+
+    function closeShowroomModal() {
+      document.getElementById("showroom-modal").style.display = "none";
+    }
+  </script>
+</body>
+</html>

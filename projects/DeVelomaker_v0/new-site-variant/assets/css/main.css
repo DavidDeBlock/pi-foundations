@@ -1268,6 +1268,340 @@ section {
 }
 
 /* ============================================================
+   Portal & Dashboard UI Elements
+   ============================================================ */
+.portal-login-card {
+  max-width: 450px;
+  margin: var(--space-8) auto;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  padding: var(--space-8) var(--space-6);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+}
+
+.portal-nav-tabs {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-2);
+  border-bottom: 2px solid var(--color-border);
+  margin-bottom: var(--space-8);
+  flex-wrap: wrap;
+}
+
+.portal-tab-btn {
+  padding: var(--space-3) var(--space-5);
+  font-weight: var(--weight-bold);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.portal-tab-btn.is-active {
+  background-color: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-primary);
+  box-shadow: 0 2px 0 var(--color-surface);
+}
+
+.portal-tab-panel {
+  display: none;
+}
+
+.portal-tab-panel.is-active {
+  display: block;
+}
+
+/* Fietspaspoort Traffic Lights */
+.fietspaspoort-grid {
+  display: grid;
+  gap: var(--space-4);
+  margin: var(--space-6) 0;
+}
+
+.fietspaspoort-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-3);
+  border-radius: 50px;
+}
+
+.status-badge--green {
+  background-color: #d1e7dd;
+  color: #0f5132;
+  border: 1px solid #badbcc;
+}
+
+.status-badge--orange {
+  background-color: #fff3cd;
+  color: #664d03;
+  border: 1px solid #ffecb5;
+}
+
+.status-badge--red {
+  background-color: #f8d7da;
+  color: #842029;
+  border: 1px solid #f5c2c7;
+}
+
+/* Click & Collect Catalog */
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-5);
+  margin: var(--space-6) 0;
+}
+
+.part-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.part-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.part-card__title {
+  font-size: var(--text-lg);
+  color: var(--color-primary);
+  margin-bottom: var(--space-1);
+}
+
+.part-card__sku {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-3);
+}
+
+.part-card__price {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  color: var(--color-text);
+  margin-bottom: var(--space-3);
+}
+
+.stock-tag {
+  display: inline-block;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  margin-bottom: var(--space-3);
+}
+
+.stock-tag--instant {
+  color: #0f5132;
+}
+
+.stock-tag--24h {
+  color: var(--color-accent);
+}
+
+/* AI Doubt Button & Uploader */
+.doubt-box {
+  background-color: var(--color-surface);
+  border: 2px dashed var(--color-border-strong);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  margin: var(--space-6) 0;
+}
+
+.image-preview-container {
+  max-width: 200px;
+  margin: var(--space-4) auto;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: none;
+}
+
+/* Modal Overlay & Modal simulation */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(26, 40, 32, 0.7);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--container-pad);
+}
+
+.modal-content {
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  padding: var(--space-8) var(--space-6);
+  border-radius: var(--radius-lg);
+  max-width: 500px;
+  width: 100%;
+  box-shadow: var(--shadow-lg);
+  position: relative;
+}
+
+.modal-title {
+  font-size: var(--text-2xl);
+  color: var(--color-primary);
+  margin-bottom: var(--space-4);
+}
+
+/* Showroom intake wizard */
+.showroom-wizard-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  padding: var(--space-8) var(--space-6);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.wizard-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-6) 0;
+}
+
+.wizard-option-card {
+  background-color: var(--color-bg);
+  border: 2px solid var(--color-border);
+  padding: var(--space-5) var(--space-4);
+  border-radius: var(--radius-md);
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.wizard-option-card:hover {
+  border-color: var(--color-primary-hover);
+}
+
+.wizard-option-card.is-selected {
+  border-color: var(--color-primary);
+  background-color: var(--color-white);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+/* Dashboard Styles */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-8);
+}
+
+@media (min-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 280px 1fr;
+  }
+}
+
+.dashboard-sidebar-menu {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.dashboard-menu-item {
+  display: block;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-weight: var(--weight-semibold);
+  transition: all 0.2s ease;
+}
+
+.dashboard-menu-item:hover {
+  background-color: rgba(30, 56, 43, 0.05);
+}
+
+.dashboard-menu-item.is-active {
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
+}
+
+.dashboard-panel {
+  display: none;
+}
+
+.dashboard-panel.is-active {
+  display: block;
+}
+
+.dashboard-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid var(--color-border);
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.dashboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: var(--color-white);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  margin: var(--space-4) 0;
+}
+
+.dashboard-table th,
+.dashboard-table td {
+  padding: var(--space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dashboard-table th {
+  background-color: var(--color-primary-dark);
+  color: var(--color-text-inverse);
+  font-weight: var(--weight-bold);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+}
+
+.dashboard-table tr:hover {
+  background-color: rgba(30, 56, 43, 0.02);
+}
+
+.sms-simulator-box {
+  background-color: #1e1e1e;
+  color: #00ff00;
+  font-family: monospace;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  margin: var(--space-4) 0;
+  border: 1px solid #333;
+}
+
+/* ============================================================
    Reduced motion
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {
