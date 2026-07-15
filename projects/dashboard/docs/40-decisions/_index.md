@@ -12,3 +12,4 @@ Architecture Decision Records (ADRs) for the **Dashboard** project. One file per
 | [006](./006-chrome-sync-two-way.md) | Two-way Chrome sync, dashboard wins | Accepted |
 | [007](./007-auth-password-and-token.md) | App password + extension API token | Accepted |
 | [008](./008-mvp-scope.md) | v1 = read-only Chrome bookmarks + categorize + search | Accepted |
+| [009](./009-youtube-subscriptions-rss.md) | YouTube subscriptions + RSS-based new-video detection (v3.0) | Accepted |

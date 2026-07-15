@@ -1245,3 +1245,10 @@ to-issues, to-prd, triage, typescript-implementer, web-searcher, write-a-skill, 
  I want a completely new website to have a look and feel of the new design and use the current site as an example. For now, it can be plain HTML, Javascript, and CSS. 
 
  Don't go too deep right now. 
+
+
+ So I'm interested in the history and the playlists and if it's possible on subscriptions. And these subscriptions are the ones I'm of course subscribed to, but I want to select a couple of them because some of them are music channels, so those are only useful on YouTube itself. The main goal of handling YouTube is that I want to categorize them, and later on, for the most important ones, I want an AI to take the transcripts And create a summary of it so I will have an up-to-date dashboard that informs me about the newest videos of the ones I'm subscribed to. That way, I don't have to watch the video only if I'm interested or really interested, but then I will always have a summary of the subject the video was about.  
+
+ I can agree with your recommendations, and for the LLM, since I have a big cloud subscription, we can use the cloud one. 
+
+ But for now, we can skip the LLM part, We can add it later. 

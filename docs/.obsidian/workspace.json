@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "31-planning-notes/Pos research/Operationele Workflow.md",
+                "file": "31-planning-notes/Pos research/Tooling.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Operationele Workflow"
+              "title": "Tooling"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "31-planning-notes/Pos research/Operationele Workflow.md",
+                "file": "31-planning-notes/Pos research/Tooling.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Terugverwijzingen voor Operationele Workflow"
+              "title": "Terugverwijzingen voor Tooling"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "31-planning-notes/Pos research/Operationele Workflow.md",
+                "file": "31-planning-notes/Pos research/Tooling.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Uitgaande verwijzingen van Operationele Workflow"
+              "title": "Uitgaande verwijzingen van Tooling"
             }
           },
           {
@@ -156,13 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "31-planning-notes/Pos research/Operationele Workflow.md",
+                "file": "31-planning-notes/Pos research/Tooling.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Overzicht van Operationele Workflow"
+              "title": "Overzicht van Tooling"
             }
           }
         ]
@@ -185,8 +185,8 @@
   },
   "active": "e455cf2032112639",
   "lastOpenFiles": [
-    "31-planning-notes/Pos research/Click & Collect.md",
     "31-planning-notes/Pos research/Operationele Workflow.md",
+    "31-planning-notes/Pos research/Click & Collect.md",
     "31-planning-notes/Pos research/Tijdsbesteding.md",
     "31-planning-notes/Pos research/Tooling.md",
     "31-planning-notes/todo.md",

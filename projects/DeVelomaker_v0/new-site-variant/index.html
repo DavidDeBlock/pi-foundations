@@ -10,13 +10,13 @@
   <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,300..900;1,300..900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/main.css">
 </head>
-<body>
+<body class="home-page">
   <a class="skip-link" href="#main">Naar de inhoud</a>
 
   <header class="site-header">
     <div class="container site-header__inner">
-      <a href="index.html" class="site-header__brand">
-        <span class="site-header__brand-name">De Velomaker</span>
+      <a href="index.html" class="site-header__brand" aria-label="De Velomaker — home">
+        <span class="site-header__brand-name"><span class="brand-mark" aria-hidden="true">D</span> De Velomaker</span>
         <span class="site-header__brand-tag">Fietsenmaker · Brugse Poort</span>
       </a>
       <nav class="site-nav" aria-label="Hoofdnavigatie">
@@ -26,7 +26,7 @@
           <li><a href="afspraak.html" class="site-nav__link">Afspraak maken</a></li>
           <li><a href="fietsen.html" class="site-nav__link">Fietsen</a></li>
           <li><a href="contact.html" class="site-nav__link">Info &amp; Contact</a></li>
-          <li><a href="balie.html" class="site-nav__link">Online Balie</a></li>
+          <li><a href="balie.html" class="site-nav__link site-nav__link--cta">Online Balie <span aria-hidden="true">↗</span></a></li>
         </ul>
       </nav>
       <button class="site-header__toggle" type="button" aria-expanded="false" aria-controls="mobile-nav" aria-label="Menu openen">
@@ -50,15 +50,25 @@
     <section class="hero">
       <div class="container hero__inner">
         <div class="hero__content">
-          <h1 class="hero__title">Uw nieuwe fiets met de service van uw maker om de hoek.</h1>
+          <p class="eyebrow">Uw fietsenmaker in Gent</p>
+          <h1 class="hero__title">Meer fiets.<br><em>Minder gedoe.</em></h1>
           <p class="hero__subhead">Ontdek onze stadsfietsen en e-bikes van Oxford en Velo De Ville. Volledig gemonteerd, rijklaar afgesteld en met gratis eerste service.</p>
           <div class="hero__ctas">
-            <a href="#fietsen-teaser" class="button button--accent">Ontdek onze fietsen</a>
-            <a href="#diensten" class="hero__secondary-link">Herstelling &amp; onderhoud →</a>
+            <a href="#fietsen-teaser" class="button button--accent">Vind uw fiets <span aria-hidden="true">→</span></a>
+            <a href="afspraak.html" class="hero__secondary-link">Plan een herstelling <span aria-hidden="true">↗</span></a>
           </div>
+          <ul class="hero__proof" aria-label="Onze voordelen">
+            <li><strong>Sinds 2011</strong><span>in de Brugse Poort</span></li>
+            <li><strong>Gratis</strong><span>eerste service</span></li>
+            <li><strong>Persoonlijk</strong><span>advies &amp; testrit</span></li>
+          </ul>
         </div>
         <div class="hero__image">
-          <img src="assets/images/winkel/5.jpg" alt="Werkplaats en toonbank van De Velomaker" class="hero__img">
+          <img src="assets/images/banner_algemeen.webp" alt="Elektrische fiets op een groene fietsroute" class="hero__img">
+          <div class="hero__floating-card">
+            <span class="hero__floating-icon" aria-hidden="true">✓</span>
+            <span><strong>Rijklaar geleverd</strong><small>Afgesteld op uw maat</small></span>
+          </div>
         </div>
       </div>
     </section>
@@ -81,7 +91,8 @@
     <section class="why-buy-local" id="diensten">
       <div class="container">
         <header class="section-header">
-          <h2 class="section-title">Waarom een nieuwe fiets kopen bij ons?</h2>
+          <p class="eyebrow">Zorgeloos op weg</p>
+          <h2 class="section-title">Een fiets kopen zoals het hoort.</h2>
           <p class="section-lede">Zes voordelen van uw lokale fietsenmaker — betrouwbaar, persoonlijk en altijd dichtbij.</p>
         </header>
         <ol class="why-buy-local__grid">
@@ -133,19 +144,25 @@
           <p class="section-lede">Velo De Ville voor wie zijn fiets wil configureren. Oxford voor wie vandaag wil vertrekken.</p>
         </header>
         <div class="fietsen-teaser__grid">
-          <article class="brand-card">
+          <article class="brand-card brand-card--vdv">
+            <div class="brand-card__visual"><img src="assets/images/banner_vdv_3.jpg" alt="Velo De Ville fiets in detail" loading="lazy"></div>
+            <div class="brand-card__content">
             <span class="brand-card__tag">Custom · premium</span>
             <h3 class="brand-card__name">Velo De Ville</h3>
             <p class="brand-card__body">Custom-built in Duitsland, volledig configureerbaar, premium afwerking. U kiest het frame, de kleur, de componenten.</p>
             <p class="brand-card__price">Vanaf €649 voor een eigen configuratie</p>
             <a href="fietsen/velo-de-ville.html" class="button button--primary">Naar Velo De Ville →</a>
+            </div>
           </article>
-          <article class="brand-card">
+          <article class="brand-card brand-card--oxford">
+            <div class="brand-card__visual"><img src="assets/images/fietsen/AEB800.jpg" alt="Oxford elektrische fiets" loading="lazy"></div>
+            <div class="brand-card__content">
             <span class="brand-card__tag">Op voorraad · scherpe prijs</span>
             <h3 class="brand-card__name">Oxford</h3>
             <p class="brand-card__body">Degelijke stads- en cargofietsen, direct leverbaar. Kom langs om te testen voor u beslist.</p>
             <p class="brand-card__price">Op voorraad in de winkel</p>
             <a href="fietsen/oxford.html" class="button button--primary">Naar Oxford →</a>
+            </div>
           </article>
         </div>
       </div>

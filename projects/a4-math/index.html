@@ -1,72 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>a4-math — Printable Math Worksheets</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <header class="controls" aria-label="Worksheet controls">
-    <h1>a4-math</h1>
-    <p class="subtitle">Generate A4-sized printable math worksheets</p>
-
-    <form id="config" class="config-grid">
-      <label>
-        <span>Operation</span>
-        <select name="operation">
-          <option value="addition" selected>Addition</option>
-          <option value="subtraction">Subtraction</option>
-          <option value="mixed">Mixed (+ and −)</option>
-        </select>
-      </label>
-
-      <label>
-        <span>Min number</span>
-        <input type="number" name="min" value="1" min="0" max="999">
-      </label>
-
-      <label>
-        <span>Max number</span>
-        <input type="number" name="max" value="20" min="1" max="999">
-      </label>
-
-      <label>
-        <span>Problems per page</span>
-        <select name="count">
-          <option value="20">20 (4 × 5)</option>
-          <option value="30" selected>30 (3 × 10)</option>
-          <option value="40">40 (4 × 10)</option>
-        </select>
-      </label>
-
-      <label class="checkbox" id="borrowing-row">
-        <input type="checkbox" name="borrowing">
-        <span>Allow borrowing (subtraction only)</span>
-      </label>
-
-      <label class="checkbox">
-        <input type="checkbox" name="answers">
-        <span>Include answer key page</span>
-      </label>
-
-      <label>
-        <span>Page title</span>
-        <input type="text" name="title" value="Math Practice" maxlength="40">
-      </label>
-
-      <div class="actions">
-        <button type="submit" class="primary">Generate</button>
-        <button type="button" id="print">Print</button>
-        <button type="button" id="reset">Reset</button>
-      </div>
-    </form>
-  </header>
-
-  <main id="worksheets" class="worksheets" aria-label="Worksheet preview">
-    <p class="empty">Click <strong>Generate</strong> to create a worksheet.</p>
-  </main>
-
-  <script src="main.js"></script>
-</body>
-</html>
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f4f6f3"><title>a4 math — Worksheet Studio</title><link rel="stylesheet" href="style.css"></head><body>
+<header class="topbar"><a class="brand" href="#"><span class="brand-mark">a⁴</span><span>a4 math</span></a><div class="topbar-note"><span class="status-dot"></span>Ready to create</div></header>
+<main class="app-shell"><aside class="studio-panel" aria-label="Worksheet controls"><div class="panel-heading"><p class="eyebrow">Worksheet studio</p><h1>Build your practice sheet</h1><p>Choose the challenge level and create a print-ready worksheet in seconds.</p></div>
+<form id="config" class="config-form"><fieldset class="form-section"><legend>Operation</legend><div class="segmented-control"><label><input type="radio" name="operation" value="addition" checked><span><b>＋</b>Add</span></label><label><input type="radio" name="operation" value="subtraction"><span><b>−</b>Subtract</span></label><label><input type="radio" name="operation" value="mixed"><span><b>±</b>Mixed</span></label></div></fieldset>
+<fieldset class="form-section"><legend>Number range</legend><div class="range-fields"><label><span>From</span><input type="number" name="min" value="1" min="0" max="999"></label><i>→</i><label><span>To</span><input type="number" name="max" value="20" min="1" max="999"></label></div></fieldset>
+<div class="form-section form-grid"><label class="field"><span>Problems</span><select name="count"><option value="20">20 problems</option><option value="30" selected>30 problems</option><option value="40">40 problems</option></select></label><label class="field"><span>Worksheet title</span><input type="text" name="title" value="Math Practice" maxlength="40"></label></div>
+<div class="form-section toggles"><label class="toggle-row" id="borrowing-row"><span><b>Allow borrowing</b><small>For subtraction problems</small></span><input type="checkbox" name="borrowing"><i></i></label><label class="toggle-row"><span><b>Include answer key</b><small>Add a second printable page</small></span><input type="checkbox" name="answers"><i></i></label></div>
+<button type="submit" class="generate-button"><svg viewBox="0 0 24 24"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.2 2.2m8.4 8.4 2.2 2.2m0-12.8-2.2 2.2M7.8 16.2l-2.2 2.2"/><circle cx="12" cy="12" r="4"/></svg>Generate worksheet</button><button type="button" id="reset" class="reset-button">Reset settings</button></form></aside>
+<section class="preview-area" aria-label="Worksheet preview"><div class="preview-toolbar"><div><p class="eyebrow">Live preview</p><h2>Your worksheet</h2></div><div class="preview-actions"><span id="page-count" class="page-count">1 page</span><button type="button" id="print" class="print-button"><svg viewBox="0 0 24 24"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M7 14h10v7H7z"/></svg>Print / Save PDF</button></div></div><div id="worksheets" class="worksheets"></div></section></main><script src="main.js"></script></body></html>

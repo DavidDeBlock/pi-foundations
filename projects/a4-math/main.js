@@ -8,6 +8,7 @@ const form = $("#config");
 const printBtn = $("#print");
 const resetBtn = $("#reset");
 const borrowingRow = $("#borrowing-row");
+const pageCount = $("#page-count");
 
 const DEFAULTS = {
   operation: "addition",
@@ -32,7 +33,9 @@ function syncBorrowingVisibility() {
   borrowingRow.style.display = op === "subtraction" ? "" : "none";
 }
 
-form.operation.addEventListener("change", syncBorrowingVisibility);
+form.addEventListener("change", (event) => {
+  if (event.target.name === "operation") syncBorrowingVisibility();
+});
 
 // ------------------------------------------------------------
 // Problem generation
@@ -59,10 +62,10 @@ function makeProblem(op, min, max, allowBorrowing) {
   }
 
   // subtraction
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 1000; i++) {
     const a = randInt(min, max);
-    const b = randInt(min, a); // a >= b guaranteed
-    if (allowBorrowing || !needsBorrow(a, b)) {
+    const b = randInt(min, max);
+    if (a >= b && (allowBorrowing || !needsBorrow(a, b))) {
       return { a, b, op: "−", answer: a - b };
     }
   }
@@ -75,9 +78,26 @@ function generate(config) {
   const allowBorrowing = operation === "subtraction" && config.borrowing;
 
   const problems = [];
+  const seen = new Set();
+
   for (let i = 0; i < count; i++) {
-    const op = operation === "mixed" ? (Math.random() < 0.5 ? "+" : "−") : operation === "addition" ? "+" : "−";
-    problems.push(makeProblem(op, min, max, allowBorrowing));
+    let problem;
+    let attempts = 0;
+    while (attempts < 100) {
+      const op = operation === "mixed" ? (Math.random() < 0.5 ? "+" : "−") : operation === "addition" ? "+" : "−";
+      problem = makeProblem(op, min, max, allowBorrowing);
+      
+      const key = problem.op === "+"
+        ? `+:${Math.min(problem.a, problem.b)}:${Math.max(problem.a, problem.b)}`
+        : `${problem.op}:${problem.a}:${problem.b}`;
+        
+      if (!seen.has(key)) {
+        seen.add(key);
+        break;
+      }
+      attempts++;
+    }
+    problems.push(problem);
   }
   return problems;
 }
@@ -174,6 +194,7 @@ function render(config) {
     html += pageHTML(problems, { title: config.title, kind: "key", cols, rows });
   }
   worksheets.innerHTML = html;
+  pageCount.textContent = config.answers ? "2 pages" : "1 page";
 }
 
 form.addEventListener("submit", (e) => {
@@ -189,7 +210,9 @@ printBtn.addEventListener("click", () => {
 });
 
 resetBtn.addEventListener("click", () => {
-  window.location.reload();
+  form.reset();
+  syncBorrowingVisibility();
+  render(readConfig());
 });
 
 // Initial render so the page isn't empty
