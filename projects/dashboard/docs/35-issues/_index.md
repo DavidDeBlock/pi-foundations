@@ -40,6 +40,19 @@ Small visual / layout adjustments after v1 was used in anger. Each is independen
 | [018](./018-activity-feed-grid-view.md) | Activity feed: responsive grid view (1/2/3 cols) | AFK | — |
 | [019](./019-feed-pagination-top-and-bottom.md) | Activity feed: pagination on top AND bottom | AFK | — |
 
+## v3.0 — YouTube subscriptions + new-video detection (PRD-003)
+
+From PRD: [PRD-003](../35-prds/PRD-003-youtube-v3-subscriptions.md)
+
+| # | Title | Type | Blocked by |
+|---|-------|------|------------|
+| [YT-001](./YT-001-youtube-oauth-client-and-settings.md) | YouTube OAuth + YouTubeOAuthClient + /settings/youtube connect | AFK (manual smoke) | — |
+| [YT-002](./YT-002-subscriptions-schema-fetcher-sync.md) | subscriptions schema + SubscriptionsFetcher + SubscriptionsSync + daily scheduler | AFK | YT-001 |
+| [YT-003](./YT-003-subscriptions-api-and-ui.md) | Subscriptions API + SubscriptionsView UI | AFK | YT-002 |
+| [YT-004](./YT-004-videos-schema-rss-poller.md) | videos + video_tags schema + RssFeedFetcher + VideoIngest + RssPoller (15-min job) | AFK | YT-002 |
+| [YT-005](./YT-005-videos-api-and-ui.md) | Videos API + NewVideosView + VideoDetailView | AFK | YT-004 |
+| [YT-006](./YT-006-youtube-e2e-smoke-and-docs.md) | Tracer-bullet E2E + smoke test + docs | AFK (manual smoke) | YT-003, YT-005 |
+
 ## v4 — Email mirror (PRD-002)
 
 From PRD: [PRD-002](../35-prds/PRD-002-email-mirror.md)
@@ -95,6 +108,20 @@ From PRD: [PRD-002](../35-prds/PRD-002-email-mirror.md)
 Notes on parallelism:
 - 024, 025, 026 all branch from 023 and can run in any order. They modify different files (no merge conflicts expected) and don't depend on each other.
 - 028 and 029 both branch from 027 and are independent of each other.
+
+## v3.0 (YouTube) dependency graph
+
+```
+YT-001 ── YT-002 ──┬── YT-003
+                   └── YT-004 ── YT-005
+                              └── YT-006 (waits for all)
+```
+
+Notes on parallelism:
+- YT-003 (subscriptions UI) and YT-004 (RSS poller + videos schema) both branch from YT-002 and can run in **parallel**. They touch different tables (`subscriptions` vs `videos`/`video_tags`), different modules (`SubscriptionsAPI`/`SubscriptionsView` vs `RssFeedFetcher`/`VideoIngest`/`RssPoller`), and have no merge friction.
+- YT-005 depends on YT-004 because the videos UI needs videos in DB to render.
+- YT-006 is the final integration slice and waits for both UI slices (YT-003 + YT-005) so the full smoke test is meaningful.
+- YT-001 is the natural starting point (no blockers) but also the slice with the most real-world uncertainty (Google Cloud Console OAuth setup is a manual step).
 
 ## Slicing rationale
 
