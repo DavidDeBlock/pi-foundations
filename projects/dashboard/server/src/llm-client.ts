@@ -25,7 +25,7 @@ export class OpenAiCompatibleLlmClient {
     this.#fetch = options.fetchFn ?? fetch
   }
 
-  async complete(messages: ReadonlyArray<LlmMessage>): Promise<string> {
+  async complete(messages: ReadonlyArray<LlmMessage>, options: { readonly maxCompletionTokens?: number } = {}): Promise<string> {
     const response = await this.#fetch(`${this.#baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -36,7 +36,7 @@ export class OpenAiCompatibleLlmClient {
         model: this.model,
         messages,
         temperature: 0.2,
-        max_completion_tokens: 2048,
+        max_completion_tokens: options.maxCompletionTokens ?? 2048,
         // MiniMax separates reasoning from display content when supported.
         reasoning_split: true,
       }),

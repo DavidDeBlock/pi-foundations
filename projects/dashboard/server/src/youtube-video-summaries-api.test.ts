@@ -75,4 +75,46 @@ describe('video summary API', () => {
       summary: { status: 'ready', tldr: 'Short.', key_points: [{ text: 'Point', start_ms: 0 }] },
     })
   })
+
+  it('creates, lists, reads, and prefers immutable summary runs', async () => {
+    db.run(`INSERT INTO video_transcripts
+      (video_id, status, language, requested_at, fetched_at, error_message, updated_at)
+      VALUES (?, 'ready', 'en', '2026-01-01', '2026-01-01', NULL, '2026-01-01')`, [videoId])
+    db.run(`INSERT INTO video_transcript_segments
+      (video_id, position, start_ms, duration_ms, text) VALUES (?, 0, 0, 1000, 'Point')`, [videoId])
+    const queued = await app.request(`/api/videos/${videoId}/summaries`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ profile_id: 'builtin-standard', output_language: 'nl', focus_instruction: 'Practical steps', research: false }),
+    })
+    expect(queued.status).toBe(202)
+    const queuedBody = await queued.json() as { summary: { id: string } }
+    await service.whenIdle()
+    const detail = await app.request(`/api/videos/${videoId}/summaries/${queuedBody.summary.id}`)
+    expect(await detail.json()).toMatchObject({ ok: true, summary: {
+      id: queuedBody.summary.id, status: 'ready', output_language: 'nl',
+      profile: { built_in_key: 'standard' }, focus_instruction: 'Practical steps', outputs: { nl: { tldr: 'Short.' } },
+    } })
+    const list = await app.request(`/api/videos/${videoId}/summaries`)
+    expect(await list.json()).toMatchObject({ ok: true, preferred_run_id: queuedBody.summary.id,
+      summaries: [{ id: queuedBody.summary.id, preferred: true }] })
+    expect((await app.request(`/api/videos/${videoId}/summaries/${queuedBody.summary.id}/prefer`, { method: 'POST' })).status).toBe(200)
+  })
+
+  it('validates plural run requests', async () => {
+    db.run(`INSERT INTO video_transcripts
+      (video_id, status, language, requested_at, fetched_at, error_message, updated_at)
+      VALUES (?, 'ready', 'en', '2026-01-01', '2026-01-01', NULL, '2026-01-01')`, [videoId])
+    for (const body of [
+      { profile_id: 'missing', output_language: 'en', research: false },
+      { profile_id: 'builtin-quick', output_language: 'fr', research: false },
+      { profile_id: 'builtin-quick', output_language: 'en', focus_instruction: 'x'.repeat(1001), research: false },
+    ]) {
+      expect((await app.request(`/api/videos/${videoId}/summaries`, { method: 'POST',
+        headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).status).toBe(400)
+    }
+    expect((await app.request(`/api/videos/${videoId}/summaries`, { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+        profile_id: 'builtin-quick', output_language: 'en', research: true,
+      }) })).status).toBe(503)
+  })
 })

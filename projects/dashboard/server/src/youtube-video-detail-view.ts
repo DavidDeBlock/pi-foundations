@@ -40,15 +40,23 @@ import {
 } from './youtube-transcripts.js'
 import {
   getVideoSummary,
+  getPreferredVideoSummaryRun,
+  listSummaryProfiles,
+  listVideoSummaryRuns,
   type CitedInsight,
+  type LocalizedSummary,
+  type SummaryProfile,
+  type VideoSummaryRun,
   type VideoSummary,
 } from './youtube-video-summaries.js'
+import { readDefaults } from './ai-research-settings.js'
 
 // ─── Hono sub-app ─────────────────────────────────────────────────────────
 
 export interface YouTubeVideoDetailViewDeps {
   readonly db: Database
   readonly summaryConfigured?: boolean
+  readonly researchConfigured?: boolean
 }
 
 /**
@@ -80,6 +88,10 @@ export function youtubeVideoDetailView(
     const tags = listAllTagsWithUsage(deps.db)
     const transcript = getVideoTranscript(deps.db, id)
     const summary = getVideoSummary(deps.db, id)
+    const summaryRun = getPreferredVideoSummaryRun(deps.db, id)
+    const summaryRuns = listVideoSummaryRuns(deps.db, id)
+    const summaryProfiles = listSummaryProfiles(deps.db)
+    const aiDefaults = readDefaults(deps.db)
     c.header('Content-Security-Policy', YOUTUBE_FRAME_CSP)
     return c.html(
       renderPage({
@@ -89,7 +101,14 @@ export function youtubeVideoDetailView(
         allTags: tags,
         transcript,
         summary,
+        summaryRun,
+        summaryRuns,
+        summaryProfiles,
+        defaultProfileId: aiDefaults.defaultProfileId,
+        defaultLanguage: aiDefaults.defaultLanguage,
         summaryConfigured: deps.summaryConfigured === true,
+        researchConfigured: deps.researchConfigured === true,
+        maxSearchQueries: aiDefaults.maxSearchQueries,
       }),
     )
   })
@@ -109,7 +128,14 @@ interface RenderPageOptions {
   readonly allTags: ReadonlyArray<{ readonly id: string; readonly name: string }>
   readonly transcript: VideoTranscript | null
   readonly summary: VideoSummary | null
+  readonly summaryRun: VideoSummaryRun | null
+  readonly summaryRuns: ReadonlyArray<VideoSummaryRun>
+  readonly summaryProfiles: ReadonlyArray<SummaryProfile>
+  readonly defaultProfileId: string
+  readonly defaultLanguage: string
   readonly summaryConfigured: boolean
+  readonly researchConfigured: boolean
+  readonly maxSearchQueries: number
 }
 
 function renderPage(opts: RenderPageOptions): string {
@@ -199,7 +225,7 @@ ${COMMON_HEAD}
           <p class="video-detail-tag-status" data-video-tag-status></p>
         </section>
 
-        ${renderSummarySection(detail, opts.transcript, opts.summary, opts.summaryConfigured)}
+        ${renderSummarySection(detail, opts.transcript, opts.summary, opts.summaryRun, opts.summaryRuns, opts.summaryProfiles, opts.summaryConfigured, opts.researchConfigured, opts.maxSearchQueries, opts.defaultProfileId, opts.defaultLanguage)}
         ${renderTranscriptSection(detail, opts.transcript)}
       </article>
     </main>
@@ -269,44 +295,120 @@ function renderSummarySection(
   detail: VideoDetail,
   transcript: VideoTranscript | null,
   summary: VideoSummary | null,
+  run: VideoSummaryRun | null,
+  runs: ReadonlyArray<VideoSummaryRun>,
+  profiles: ReadonlyArray<SummaryProfile>,
   configured: boolean,
+  researchConfigured: boolean,
+  maxSearchQueries: number,
+  defaultProfileId: string,
+  defaultLanguage: string,
 ): string {
   let content: string
   if (!configured) {
     content = `<div class="video-ai-empty">
       <p>Add <code>LLM_API_KEY</code> to <code>server/.env</code> and restart the dashboard to enable MiniMax summaries.</p>
     </div>`
+  } else if (run?.status === 'ready') {
+    content = renderRunOutput(detail, run)
   } else if (summary?.status === 'ready') {
     const points = summary.keyPoints.map((item) => renderCitedInsight(detail, item)).join('')
-    const actions = summary.actionItems.length > 0
-      ? `<div class="video-ai-block"><h3>Action items</h3><ul>${summary.actionItems.map((item) => renderCitedInsight(detail, item)).join('')}</ul></div>`
-      : ''
-    const mentioned = summary.mentioned.length > 0
-      ? `<div class="video-ai-mentioned">${summary.mentioned.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}</div>`
-      : ''
-    content = `<div class="video-ai-ready">
-      <div class="video-ai-tldr"><span>TL;DR</span><p>${escapeHtml(summary.tldr ?? '')}</p></div>
+    const actions = summary.actionItems.length ? `<div class="video-ai-block"><h3>Action items</h3><ul>${summary.actionItems.map((item) => renderCitedInsight(detail, item)).join('')}</ul></div>` : ''
+    const mentioned = summary.mentioned.length ? `<div class="video-ai-mentioned">${summary.mentioned.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}</div>` : ''
+    content = `<div class="video-ai-ready"><div class="video-ai-tldr"><span>TL;DR</span><p>${escapeHtml(summary.tldr ?? '')}</p></div>
       <div class="video-ai-block"><h3>Key takeaways</h3><ul>${points}</ul></div>
-      <div class="video-ai-block"><h3>Why watch the full video?</h3><p>${escapeHtml(summary.worthWatching ?? '')}</p></div>
-      ${actions}
-      ${mentioned}
-      <div class="video-ai-footer"><span>Generated with ${escapeHtml(summary.model)}</span><button type="button" class="video-ai-link-button" data-summarize-video data-force="true">Regenerate</button></div>
-    </div>`
+      <div class="video-ai-block"><h3>Why watch the full video?</h3><p>${escapeHtml(summary.worthWatching ?? '')}</p></div>${actions}${mentioned}
+      <div class="video-ai-footer"><span>Generated with ${escapeHtml(summary.model)}</span></div></div>`
   } else if (summary?.status === 'pending') {
-    content = `<div class="video-ai-working"><span class="video-ai-spark" aria-hidden="true">✦</span><div><strong>Building your Insight Card…</strong><p>MiniMax is reading the timed transcript in the background.</p></div></div>`
+    content = `<div class="video-ai-working"><span class="video-ai-spinner" aria-hidden="true"></span><div><strong>Building your Insight Card…</strong><p>MiniMax is reading the timed transcript in the background.</p></div></div>`
   } else if (summary?.status === 'failed') {
-    content = `<div class="video-ai-empty"><p>The Insight Card could not be generated. You can safely retry without fetching the transcript again.</p><button type="button" class="primary-button" data-summarize-video>Try again</button></div>`
+    content = `<div class="video-ai-empty"><p>The Insight Card could not be generated. Adjust the controls above and create a new run; the failed attempt stays in history.</p></div>`
   } else if (transcript?.status !== 'ready') {
     content = `<div class="video-ai-empty"><p>Fetch the transcript first, then MiniMax can turn it into a short, timestamped briefing.</p></div>`
   } else {
-    content = `<div class="video-ai-empty"><p>Turn this transcript into a concise briefing with key points, action items, and links to the exact moments.</p><button type="button" class="primary-button" data-summarize-video>Summarize with MiniMax</button></div>`
+    content = `<div class="video-ai-empty"><p>Choose a depth and language above to turn this transcript into a timestamped briefing.</p></div>`
   }
 
-  return `<section class="video-ai-card" data-video-summary data-summary-status="${summary?.status ?? 'not_requested'}">
+  const controls = configured && transcript?.status === 'ready'
+    ? renderSummaryControls(profiles, run?.profileId ?? defaultProfileId, run?.outputLanguage ?? defaultLanguage, researchConfigured, maxSearchQueries)
+    : ''
+  const history = runs.length > 0 ? renderSummaryHistory(runs) : ''
+  return `<section class="video-ai-card" data-video-summary data-summary-status="${summary?.status ?? 'not_requested'}" data-active-run-id="${escapeHtml(run?.id ?? '')}">
     <div class="video-ai-heading"><div class="video-ai-icon" aria-hidden="true">✦</div><div><span class="video-ai-eyebrow">AI insight</span><h2>Video briefing</h2></div></div>
+    ${controls}
     <div data-summary-content>${content}</div>
+    ${history}
     <p class="video-ai-feedback" data-summary-feedback aria-live="polite"></p>
   </section>`
+}
+
+function renderSummaryControls(profiles: ReadonlyArray<SummaryProfile>, selectedProfile: string, language: string,
+  researchConfigured: boolean, maxSearchQueries: number): string {
+  const profileOptions = profiles.map((profile) => `<option value="${escapeHtml(profile.id)}" data-default-research="${profile.options.default_research === true ? 'true' : 'false'}"${profile.id === selectedProfile ? ' selected' : ''}>${escapeHtml(profile.name)}</option>`).join('')
+  const researchDefault = profiles.find((profile) => profile.id === selectedProfile)?.options.default_research === true && researchConfigured
+  const languageOptions = [['en', 'English'], ['nl', 'Nederlands'], ['en_nl', 'English + Nederlands']]
+    .map(([value, label]) => `<option value="${value}"${language === value ? ' selected' : ''}>${label}</option>`).join('')
+  return `<form class="video-ai-controls" data-summary-form>
+    <label><span>Depth</span><select name="profile_id" data-summary-profile>${profileOptions}</select></label>
+    <label><span>Language</span><select name="output_language" data-summary-language>${languageOptions}</select></label>
+    <label class="video-ai-research"><span>Web research · up to ${maxSearchQueries} queries</span><span><input type="checkbox" name="research" data-summary-research${researchDefault ? ' checked' : ''}${researchConfigured ? '' : ' disabled'}> Add current web context</span>${researchConfigured ? '' : '<small>Configure Serper in <a href="/settings/ai">AI settings</a>.</small>'}</label>
+    <label class="video-ai-focus"><span>Optional focus</span><input name="focus_instruction" maxlength="1000" placeholder="e.g. Extract practical architecture steps"></label>
+    <button type="submit" class="primary-button" data-generate-summary>Generate new run</button>
+  </form>`
+}
+
+function renderRunOutput(detail: VideoDetail, run: VideoSummaryRun): string {
+  const languages = run.outputLanguage === 'en_nl' ? ['en', 'nl'] as const
+    : [run.outputLanguage === 'nl' ? 'nl' : 'en'] as const
+  const tabs = languages.length === 2 ? `<div class="video-ai-language-tabs" role="tablist" aria-label="Summary language">
+    <button type="button" role="tab" aria-selected="true" data-summary-language-tab="en">English</button>
+    <button type="button" role="tab" aria-selected="false" data-summary-language-tab="nl">Nederlands</button>
+  </div>` : ''
+  const panels = languages.map((language, index) => {
+    const output = run.outputs[language]
+    return output ? `<div class="video-ai-language-panel" role="tabpanel" data-summary-language-panel="${language}"${index > 0 ? ' hidden' : ''}>${renderLocalizedOutput(detail, output, run.sources)}</div>` : ''
+  }).join('')
+  const researchNotice = run.researchStatus === 'partial' || run.researchStatus === 'failed'
+    ? `<div class="video-ai-research-notice"><strong>Web research ${escapeHtml(run.researchStatus)}</strong><span>${escapeHtml(run.researchErrorMessage ?? 'Transcript summary preserved; web context is incomplete.')}</span></div>` : ''
+  const noContext = run.researchStatus === 'ready' && run.researchQueryLimit !== null && run.sources.length === 0
+    ? '<div class="video-ai-research-notice"><strong>No useful web context found</strong><span>The transcript summary completed normally.</span></div>' : ''
+  const sources = run.sources.length ? renderResearchSources(run) : ''
+  return `<div class="video-ai-ready">${tabs}${panels}
+    ${researchNotice}${noContext}${sources}<div class="video-ai-footer"><span>${escapeHtml(run.profile.name)} · ${escapeHtml(run.model)} · ${escapeHtml(formatDateFull(run.generatedAt ?? run.requestedAt))}</span></div>
+  </div>`
+}
+
+function renderLocalizedOutput(detail: VideoDetail, output: LocalizedSummary, sources: VideoSummaryRun['sources']): string {
+  const sections = output.sections.length > 0
+    ? output.sections.map((section) => `<div class="video-ai-block" data-summary-section="${escapeHtml(section.id)}"><h3>${escapeHtml(section.title)}</h3><ul>${section.items.map((item) => renderCitedInsight(detail, item)).join('')}</ul></div>`).join('')
+    : `<div class="video-ai-block"><h3>${output.language === 'nl' ? 'Belangrijkste punten' : 'Key takeaways'}</h3><ul>${output.keyPoints.map((item) => renderCitedInsight(detail, item)).join('')}</ul></div>`
+  const actions = output.actionItems.length ? `<div class="video-ai-block"><h3>${output.language === 'nl' ? 'Acties' : 'Action items'}</h3><ul>${output.actionItems.map((item) => renderCitedInsight(detail, item)).join('')}</ul></div>` : ''
+  const mentioned = output.mentioned.length ? `<div class="video-ai-mentioned">${output.mentioned.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}</div>` : ''
+  const research = output.research ? `<section class="video-ai-research-result"><h3>${output.language === 'nl' ? 'Webonderzoek' : 'Web research'}</h3>
+    ${renderWebItems(output.language === 'nl' ? 'Ondersteunende context' : 'Supporting context', output.research.supportingContext, sources)}
+    ${renderWebItems(output.language === 'nl' ? 'Tegenstrijdigheden en updates' : 'Contradictions and updates', output.research.contradictionsUpdates, sources)}
+    ${renderWebItems(output.language === 'nl' ? 'Openstaande vragen' : 'Unresolved items', output.research.unresolvedItems, sources)}</section>` : ''
+  return `<div class="video-ai-tldr"><span>TL;DR</span><p>${escapeHtml(output.tldr)}</p></div>${sections}
+    <div class="video-ai-block"><h3>${output.language === 'nl' ? 'Waarom de hele video bekijken?' : 'Why watch the full video?'}</h3><p>${escapeHtml(output.worthWatching)}</p></div>${actions}${mentioned}${research}`
+}
+
+function renderWebItems(title: string, items: NonNullable<LocalizedSummary['research']>['supportingContext'], sources: VideoSummaryRun['sources']): string {
+  if (!items.length) return ''
+  const byId = new Map(sources.map((source) => [source.id, source]))
+  return `<div class="video-ai-block web-context"><h4>${escapeHtml(title)}</h4><ul>${items.map((item) => `<li><span>${escapeHtml(item.text)}</span><span class="web-citations">${item.sourceIds.flatMap((id) => {
+    const source = byId.get(id); return source ? [`<a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(source.title)}">${source.position}</a>`] : []
+  }).join('')}</span></li>`).join('')}</ul></div>`
+}
+
+function renderResearchSources(run: VideoSummaryRun): string {
+  return `<details class="video-ai-sources"><summary>Web sources <span>${run.sources.length}</span></summary><ol>${run.sources.map((source) => `<li><a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.title)}</a><span>${escapeHtml(source.domain)}</span><p>${escapeHtml(source.snippet)}</p><details><summary>Research metadata</summary><small>Query: ${escapeHtml(source.query)} · Retrieved: ${escapeHtml(formatDateFull(source.retrievedAt))}</small></details></li>`).join('')}</ol></details>`
+}
+
+function renderSummaryHistory(runs: ReadonlyArray<VideoSummaryRun>): string {
+  return `<details class="video-ai-history"><summary>Previous runs <span>${runs.length}</span></summary><div class="video-ai-history-list">${runs.map((run) => `<article${run.preferred ? ' class="preferred"' : ''}>
+    <div><strong>${escapeHtml(run.profile.name)}</strong><span>${run.outputLanguage === 'en_nl' ? 'EN + NL' : run.outputLanguage.toUpperCase()} · ${escapeHtml(run.status)} · ${escapeHtml(formatDateFull(run.generatedAt ?? run.requestedAt))}</span>${run.focusInstruction ? `<small>Focus: ${escapeHtml(run.focusInstruction)}</small>` : ''}</div>
+    <div>${run.preferred ? '<span class="video-ai-preferred">Preferred</span>' : `<button type="button" data-prefer-summary-run="${escapeHtml(run.id)}">Set as preferred</button>`}</div>
+  </article>`).join('')}</div></details>`
 }
 
 function renderCitedInsight(detail: VideoDetail, insight: CitedInsight): string {
@@ -499,6 +601,17 @@ const VIDEO_DETAIL_STYLES = `
 .video-ai-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; color: white; background: linear-gradient(135deg, var(--accent), #a855f7); box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 28%, transparent); }
 .video-ai-eyebrow { display: block; color: var(--accent); font-size: .7rem; font-weight: 750; text-transform: uppercase; letter-spacing: .12em; }
 .video-ai-heading h2 { margin: 2px 0 0; font-size: 1.1rem; }
+.video-ai-controls { position:relative; z-index:1; display:grid; grid-template-columns:minmax(0,.7fr) minmax(0,.8fr) minmax(190px,1.2fr); gap:10px; align-items:end; margin:0 0 20px; padding:14px; border:1px solid color-mix(in srgb,var(--accent) 20%,var(--border)); border-radius:12px; background:color-mix(in srgb,var(--surface) 86%,transparent); }
+.video-ai-controls label { display:grid; gap:5px; color:var(--muted); font-size:.72rem; font-weight:700; letter-spacing:.04em; }
+.video-ai-controls select, .video-ai-controls input { box-sizing:border-box; width:100%; min-height:38px; padding:7px 9px; border:1px solid var(--border); border-radius:8px; color:var(--text); background:var(--bg); font:inherit; font-weight:500; letter-spacing:0; }
+.video-ai-controls .video-ai-focus { grid-column:1 / 3; }
+.video-ai-controls .primary-button { grid-column:3; width:100%; min-height:38px; white-space:nowrap; }
+.video-ai-controls .video-ai-research > span:nth-child(2) { display:flex; align-items:center; gap:7px; min-height:38px; color:var(--text); font-weight:600; letter-spacing:0; }
+.video-ai-controls .video-ai-research input { width:auto; min-height:auto; accent-color:var(--accent); }
+.video-ai-controls .video-ai-research small { font-weight:500; letter-spacing:0; }
+.video-ai-language-tabs { display:flex; gap:5px; margin-bottom:13px; }
+.video-ai-language-tabs button { padding:6px 12px; border:1px solid var(--border); border-radius:999px; color:var(--muted); background:transparent; cursor:pointer; }
+.video-ai-language-tabs button[aria-selected="true"] { color:white; border-color:var(--accent); background:var(--accent); }
 .video-ai-empty { position: relative; z-index: 1; }
 .video-ai-empty p { max-width: 680px; margin: 0 0 14px; color: var(--muted); line-height: 1.55; }
 .video-ai-empty code { color: var(--text); font-size: .85em; }
@@ -516,14 +629,33 @@ const VIDEO_DETAIL_STYLES = `
 .video-ai-mentioned { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 19px; }
 .video-ai-mentioned span { padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 76%, transparent); color: var(--muted); font-size: .77rem; }
 .video-ai-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 20px; padding-top: 13px; border-top: 1px solid color-mix(in srgb, var(--accent) 14%, var(--border)); color: var(--muted); font-size: .75rem; }
+.video-ai-research-result { margin-top:22px; padding:18px; border:1px solid color-mix(in srgb,#22d3ee 32%,var(--border)); border-radius:14px; background:color-mix(in srgb,#0891b2 7%,var(--surface)); }
+.video-ai-research-result > h3 { margin:0; color:#67e8f9; font-size:.9rem; text-transform:uppercase; letter-spacing:.08em; }
+.video-ai-block.web-context h4 { margin:0 0 9px; color:var(--muted); font-size:.79rem; }
+.web-citations { display:flex; gap:5px; padding-left:0!important; }.web-citations a { display:grid; place-items:center; width:22px; height:22px; border-radius:999px; background:#0891b222; border:1px solid #22d3ee55; color:#67e8f9!important; font-weight:800; }
+.video-ai-research-notice { display:grid; gap:3px; margin-top:16px; padding:12px 14px; border-left:3px solid #f59e0b; border-radius:8px; background:#f59e0b12; }.video-ai-research-notice span { color:var(--muted); font-size:.8rem; }
+.video-ai-sources { margin-top:20px; border-top:1px solid var(--border); padding-top:14px; }.video-ai-sources>summary { cursor:pointer; font-weight:750; }.video-ai-sources>summary span { color:var(--muted); }.video-ai-sources ol { display:grid; gap:14px; padding-left:24px; }.video-ai-sources li>a { color:#67e8f9; }.video-ai-sources li>span { display:block; color:var(--muted); font-size:.75rem; }.video-ai-sources li>p { margin:5px 0; color:var(--muted); font-size:.82rem; }.video-ai-sources li details { font-size:.75rem; color:var(--muted); }
 .video-ai-link-button { border: 0; padding: 3px; color: var(--accent); background: transparent; cursor: pointer; font: inherit; }
 .video-ai-working { display: flex; gap: 12px; align-items: center; }
-.video-ai-working .video-ai-spark { color: var(--accent); font-size: 1.4rem; animation: ai-pulse 1.3s ease-in-out infinite; }
+.video-ai-spinner { box-sizing:border-box; display:inline-block; width:20px; height:20px; flex:0 0 auto; border:2px solid color-mix(in srgb,var(--accent) 24%,var(--border)); border-top-color:var(--accent); border-radius:50%; animation:ai-spin .75s linear infinite; }
 .video-ai-working strong { display: block; }
 .video-ai-working p { margin: 3px 0 0; color: var(--muted); font-size: .88rem; }
 .video-ai-feedback { min-height: 1.15em; margin: 10px 0 0; color: var(--muted); font-size: .82rem; }
+.video-ai-feedback.is-working { display:flex; align-items:center; gap:7px; }
+.video-ai-feedback.is-working::before { content:''; box-sizing:border-box; width:13px; height:13px; flex:0 0 auto; border:2px solid color-mix(in srgb,var(--accent) 22%,var(--border)); border-top-color:var(--accent); border-radius:50%; animation:ai-spin .75s linear infinite; }
 .video-ai-feedback.error-flash { color: var(--danger); }
-@keyframes ai-pulse { 50% { opacity: .4; transform: scale(.85) rotate(18deg); } }
+.video-ai-history { position:relative; z-index:1; margin-top:18px; padding-top:12px; border-top:1px solid color-mix(in srgb,var(--accent) 14%,var(--border)); }
+.video-ai-history > summary { cursor:pointer; color:var(--muted); font-size:.82rem; font-weight:700; }
+.video-ai-history > summary span { display:inline-grid; place-items:center; min-width:20px; min-height:20px; margin-left:5px; border-radius:999px; background:var(--surface-2); }
+.video-ai-history-list { display:grid; gap:7px; margin-top:10px; }
+.video-ai-history-list article { display:flex; justify-content:space-between; gap:12px; padding:10px 11px; border:1px solid var(--border); border-radius:9px; background:color-mix(in srgb,var(--surface) 88%,transparent); }
+.video-ai-history-list article.preferred { border-color:color-mix(in srgb,var(--accent) 42%,var(--border)); }
+.video-ai-history-list article div:first-child { display:grid; gap:2px; }
+.video-ai-history-list article span, .video-ai-history-list article small { color:var(--muted); font-size:.72rem; }
+.video-ai-history-list button { border:0; color:var(--accent); background:transparent; cursor:pointer; font-size:.76rem; }
+.video-ai-preferred { color:var(--accent)!important; font-weight:700; }
+@keyframes ai-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .video-ai-spinner, .video-ai-feedback.is-working::before { animation-duration:1.8s; } }
 .video-detail-transcript { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--border); }
 .video-transcript-heading h2 { margin: 0; font-size: 1.05rem; }
 .video-transcript-heading p { margin: 4px 0 16px; color: var(--muted); font-size: .88rem; }
@@ -537,6 +669,8 @@ const VIDEO_DETAIL_STYLES = `
 .video-transcript-feedback { min-height: 1.2em; margin: 8px 0 0; color: var(--muted); font-size: .84rem; }
 .video-transcript-feedback.error-flash { color: var(--danger); }
 @media (max-width: 720px) {
+  .video-ai-controls { grid-template-columns:1fr; }
+  .video-ai-controls .video-ai-focus, .video-ai-controls .primary-button { grid-column:auto; }
   .video-detail-header { grid-template-columns: 1fr; }
   .video-detail-edit-btn { justify-self: start; }
   .video-detail-player-heading { align-items: start; flex-direction: column; }
@@ -902,11 +1036,17 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
   // ── AI Insight Card request + status polling ────────────────
   var summary = article.querySelector('[data-video-summary]');
   var summaryButton = summary && summary.querySelector('[data-summarize-video]');
+  var summaryForm = summary && summary.querySelector('[data-summary-form]');
+  var generateSummaryButton = summaryForm && summaryForm.querySelector('[data-generate-summary]');
   var summaryFeedback = summary && summary.querySelector('[data-summary-feedback]');
   var summaryPollAttempts = 0;
-  function pollSummary(){
+  var pendingSummaryRunId = null;
+  function pollSummary(runId){
     summaryPollAttempts++;
-    fetch('/api/videos/' + encodeURIComponent(videoId) + '/summary', { credentials: 'same-origin' })
+    var path = runId
+      ? '/api/videos/' + encodeURIComponent(videoId) + '/summaries/' + encodeURIComponent(runId)
+      : '/api/videos/' + encodeURIComponent(videoId) + '/summary';
+    fetch(path, { credentials: 'same-origin' })
       .then(function(res){
         if (res.status === 401) { window.location.href = '/api/login'; return null; }
         return res.json().then(function(json){ return { res: res, json: json }; });
@@ -916,8 +1056,11 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
         if (!pair.res.ok) throw new Error(pair.json.error || ('HTTP ' + pair.res.status));
         var value = pair.json.summary;
         if (value && value.status === 'pending' && summaryPollAttempts < 80) {
-          if (summaryFeedback) summaryFeedback.textContent = 'MiniMax is building the briefing…';
-          setTimeout(pollSummary, 1500);
+          if (summaryFeedback) {
+            summaryFeedback.className = 'video-ai-feedback is-working';
+            summaryFeedback.textContent = 'MiniMax is building the briefing…';
+          }
+          setTimeout(function(){ pollSummary(runId); }, 1500);
           return;
         }
         if (value && value.status !== 'pending') window.location.reload();
@@ -930,38 +1073,75 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
         }
       });
   }
+  function queueSummary(payload, button){
+    if (button) button.disabled = true;
+    if (summaryFeedback) {
+      summaryFeedback.className = 'video-ai-feedback is-working';
+      summaryFeedback.textContent = 'Adding a new summary run to the queue…';
+    }
+    fetch('/api/videos/' + encodeURIComponent(videoId) + '/summaries', {
+      method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(function(res){
+        if (res.status === 401) { window.location.href = '/api/login'; return null; }
+        return res.json().then(function(json){ return { res: res, json: json }; });
+      })
+      .then(function(pair){
+        if (!pair) return;
+        if (!pair.res.ok) throw new Error(pair.json.error || ('HTTP ' + pair.res.status));
+        pendingSummaryRunId = pair.json.summary && pair.json.summary.id;
+        summaryPollAttempts = 0;
+        pollSummary(pendingSummaryRunId);
+      })
+      .catch(function(err){
+        if (button) button.disabled = false;
+        if (summaryFeedback) {
+          summaryFeedback.textContent = err.message === 'transcript_required' ? 'Fetch the transcript first.' : (err.message || 'Failed to request summary.');
+          summaryFeedback.className = 'video-ai-feedback error-flash';
+        }
+      });
+  }
+  if (summaryForm) {
+    summaryForm.addEventListener('submit', function(ev){
+      ev.preventDefault();
+      var profile = summaryForm.querySelector('[data-summary-profile]');
+      var language = summaryForm.querySelector('[data-summary-language]');
+      var focus = summaryForm.querySelector('[name="focus_instruction"]');
+      var research = summaryForm.querySelector('[data-summary-research]');
+      queueSummary({ profile_id: profile && profile.value, output_language: language && language.value,
+        focus_instruction: focus && focus.value ? focus.value.trim() : null, research: Boolean(research && research.checked) }, generateSummaryButton);
+    });
+    var researchToggle = summaryForm.querySelector('[data-summary-research]');
+    var profileSelect = summaryForm.querySelector('[data-summary-profile]');
+    if (researchToggle && profileSelect) profileSelect.addEventListener('change', function(){
+      var selected = profileSelect.options[profileSelect.selectedIndex];
+      researchToggle.checked = !researchToggle.disabled && selected && selected.getAttribute('data-default-research') === 'true';
+    });
+  }
   if (summaryButton) {
     summaryButton.addEventListener('click', function(){
-      summaryButton.disabled = true;
-      if (summaryFeedback) summaryFeedback.textContent = 'Adding the Insight Card to the queue…';
-      var force = summaryButton.getAttribute('data-force') === 'true';
-      fetch('/api/videos/' + encodeURIComponent(videoId) + '/summary', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ force: force }),
-      })
-        .then(function(res){
-          if (res.status === 401) { window.location.href = '/api/login'; return null; }
-          return res.json().then(function(json){ return { res: res, json: json }; });
-        })
-        .then(function(pair){
-          if (!pair) return;
-          if (!pair.res.ok) throw new Error(pair.json.error || ('HTTP ' + pair.res.status));
-          if (pair.json.summary && pair.json.summary.status === 'ready') { window.location.reload(); return; }
-          summaryPollAttempts = 0;
-          pollSummary();
-        })
-        .catch(function(err){
-          summaryButton.disabled = false;
-          if (summaryFeedback) {
-            var message = err.message === 'transcript_required' ? 'Fetch the transcript first.' : err.message;
-            summaryFeedback.textContent = message || 'Failed to request summary.';
-            summaryFeedback.className = 'video-ai-feedback error-flash';
-          }
-        });
+      queueSummary({ profile_id: 'builtin-quick', output_language: 'en', research: false }, summaryButton);
     });
   } else if (summary && summary.getAttribute('data-summary-status') === 'pending') {
-    pollSummary();
+    pollSummary(summary.getAttribute('data-active-run-id'));
+  }
+  if (summary) {
+    summary.addEventListener('click', function(ev){
+      var tab = ev.target.closest && ev.target.closest('[data-summary-language-tab]');
+      if (tab) {
+        var language = tab.getAttribute('data-summary-language-tab');
+        summary.querySelectorAll('[data-summary-language-tab]').forEach(function(button){ button.setAttribute('aria-selected', button === tab ? 'true' : 'false'); });
+        summary.querySelectorAll('[data-summary-language-panel]').forEach(function(panel){ panel.hidden = panel.getAttribute('data-summary-language-panel') !== language; });
+        return;
+      }
+      var prefer = ev.target.closest && ev.target.closest('[data-prefer-summary-run]');
+      if (!prefer) return;
+      prefer.disabled = true;
+      fetch('/api/videos/' + encodeURIComponent(videoId) + '/summaries/' + encodeURIComponent(prefer.getAttribute('data-prefer-summary-run')) + '/prefer', {
+        method: 'POST', credentials: 'same-origin',
+      }).then(function(res){ if (!res.ok) throw new Error('Could not select summary'); window.location.reload(); })
+        .catch(function(err){ prefer.disabled = false; if (summaryFeedback) summaryFeedback.textContent = err.message; });
+    });
   }
 })();`

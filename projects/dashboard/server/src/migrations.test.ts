@@ -103,6 +103,9 @@ describe('Migrations runner', () => {
       '016_youtube_playlists',
       '017_youtube_watch_history',
       '018_youtube_subscription_tags',
+      '019_youtube_summary_runs',
+      '020_ai_research_settings',
+      '021_youtube_summary_research',
     ])
 
     // Spot-check that every table from the PRD schema now exists.
@@ -145,6 +148,15 @@ describe('Migrations runner', () => {
     expect(names).toContain('youtube_history_imports')
     expect(names).toContain('youtube_watch_events')
     expect(names).toContain('subscription_tags')
+    expect(names).toContain('summary_profiles')
+    expect(names).toContain('video_summary_runs')
+    expect(names).toContain('video_preferred_summary_runs')
+    expect(names).toContain('ai_research_settings')
+    expect(names).toContain('summary_profile_revisions')
+    expect(names).toContain('video_summary_sources')
+    expect(db.all<{ id: string }>('SELECT id FROM summary_profiles ORDER BY id').map((row) => row.id)).toEqual([
+      'builtin-detailed', 'builtin-quick', 'builtin-standard',
+    ])
     const subscriptionCols = db.all<{ name: string }>('PRAGMA table_info(subscriptions)')
     expect(subscriptionCols.some((c) => c.name === 'auto_fetch_transcripts')).toBe(true)
     // Sync debounce column for the background scheduler (issue #026).
@@ -155,11 +167,11 @@ describe('Migrations runner', () => {
   it('is idempotent — running twice does NOT re-apply', async () => {
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const firstApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(firstApplied).toHaveLength(18)
+    expect(firstApplied).toHaveLength(21)
 
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const secondApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(secondApplied).toHaveLength(18)
+    expect(secondApplied).toHaveLength(21)
     // applied_at should be unchanged on re-run (still the original timestamps).
     expect(secondApplied.map((r) => r.name).sort()).toEqual(
       firstApplied.map((r) => r.name).sort(),
@@ -236,6 +248,24 @@ describe('Migrations runner', () => {
                '2025-02-03T00:02:00.000Z', '2025-02-03T00:03:00.000Z',
                '2025-02-03T00:03:00.000Z')`,
     )
+    db.run(
+      `INSERT INTO videos
+         (id, video_id, channel_id, title, published_at, thumbnail_url, link,
+          discovered_at, created_at, updated_at)
+       VALUES ('video-pending', 'youtube-pending', 'UClegacy', 'Pending video',
+               '2025-02-01T00:00:00.000Z', NULL, 'https://youtube.com/watch?v=youtube-pending',
+               '2025-02-02T00:00:00.000Z', '2025-02-02T00:00:00.000Z', '2025-02-02T00:00:00.000Z'),
+              ('video-failed', 'youtube-failed', 'UClegacy', 'Failed video',
+               '2025-02-01T00:00:00.000Z', NULL, 'https://youtube.com/watch?v=youtube-failed',
+               '2025-02-02T00:00:00.000Z', '2025-02-02T00:00:00.000Z', '2025-02-02T00:00:00.000Z')`,
+    )
+    db.run(`INSERT INTO video_summaries
+      (video_id, status, model, prompt_version, requested_at, updated_at)
+      VALUES ('video-pending', 'pending', 'old-model', 3, '2025-02-03T00:00:00Z', '2025-02-03T00:00:00Z')`)
+    db.run(`INSERT INTO video_summaries
+      (video_id, status, model, prompt_version, requested_at, generated_at, error_message, updated_at)
+      VALUES ('video-failed', 'failed', 'old-model', 4, '2025-02-03T00:00:00Z',
+              '2025-02-03T00:01:00Z', 'provider failed', '2025-02-03T00:01:00Z')`)
 
     await runMigrations(db, { dir: MIGRATIONS_DIR })
 
@@ -247,6 +277,18 @@ describe('Migrations runner', () => {
     expect(db.get('SELECT * FROM video_tags')).toEqual({ video_id: 'video-local-1', tag_id: 'tag-1' })
     expect(db.get<{ text: string }>('SELECT text FROM video_transcript_segments')?.text).toBe('Preserved transcript')
     expect(db.get<{ tldr: string }>('SELECT tldr FROM video_summaries')?.tldr).toBe('Preserved summary')
+    expect(db.get('SELECT id, status, profile_id, output_language, model, prompt_revision FROM video_summary_runs')).toEqual({
+      id: 'legacy-video-local-1', status: 'ready', profile_id: 'builtin-quick', output_language: 'en',
+      model: 'MiniMax-M2.7', prompt_revision: 1,
+    })
+    expect(db.get(`SELECT video_id, run_id FROM video_preferred_summary_runs WHERE video_id = 'video-local-1'`)).toEqual({
+      video_id: 'video-local-1', run_id: 'legacy-video-local-1',
+    })
+    expect(db.all(`SELECT video_id, status, model, prompt_revision, error_message
+      FROM video_summary_runs WHERE video_id != 'video-local-1' ORDER BY video_id`)).toEqual([
+      { video_id: 'video-failed', status: 'failed', model: 'old-model', prompt_revision: 4, error_message: 'provider failed' },
+      { video_id: 'video-pending', status: 'pending', model: 'old-model', prompt_revision: 3, error_message: null },
+    ])
     expect(db.get('SELECT origin_type, source_id FROM video_origins')).toEqual({
       origin_type: 'subscription_rss',
       source_id: 'sub-1',

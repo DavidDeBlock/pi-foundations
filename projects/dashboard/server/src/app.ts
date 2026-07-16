@@ -42,6 +42,8 @@ import { youtubePlaylistsView } from './youtube-playlists-view.js'
 import type { YouTubeHistoryImports } from './youtube-history-imports.js'
 import { youtubeHistoryApi } from './youtube-history-api.js'
 import { youtubeHistoryView } from './youtube-history-view.js'
+import { aiResearchApi, type AiProviderStatus } from './ai-research-settings.js'
+import { aiResearchSettingsView } from './ai-research-settings-view.js'
 
 export interface EmailDeps {
   /** AES-256-GCM cipher for OAuth tokens at rest. */
@@ -121,6 +123,7 @@ export interface AppDeps {
   readonly youtube?: YouTubeDeps
   /** Private, local-only Google Takeout watch-history importer (YT-012). */
   readonly youtubeHistory?: YouTubeHistoryImports
+  readonly ai?: AiProviderStatus
 }
 
 /**
@@ -137,6 +140,7 @@ export function createApp({
   email,
   youtube,
   youtubeHistory,
+  ai,
 }: AppDeps): Hono<{ Variables: AuthVariables }> {
   const app = new Hono<{ Variables: AuthVariables }>()
 
@@ -156,6 +160,10 @@ export function createApp({
   app.get('/settings', settings.list)
   app.post('/settings/tokens', settings.createToken)
   app.post('/settings/tokens/:id/revoke', settings.revokeFromUi)
+
+  const aiProviders = ai ?? { minimaxConfigured: false, serperConfigured: false }
+  app.route('/api/ai', aiResearchApi({ db, providers: aiProviders, ...(youtube?.summaryService ? { summaryService: youtube.summaryService } : {}) }))
+  app.route('/settings/ai', aiResearchSettingsView({ db, providers: aiProviders }))
 
   // Bookmark detail page (HTML; 404 if missing). Mounted at /bookmarks
   // so it doesn't shadow future routes.
@@ -340,7 +348,8 @@ export function createApp({
     )
     app.route(
       '/videos',
-      youtubeVideoDetailView({ db, summaryConfigured: youtube.summaryService !== undefined }),
+      youtubeVideoDetailView({ db, summaryConfigured: youtube.summaryService !== undefined,
+        researchConfigured: aiProviders.serperConfigured }),
     )
   } else {
     app.route('/settings/youtube', youtubeSettingsSetupOnly())

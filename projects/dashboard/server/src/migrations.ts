@@ -85,6 +85,18 @@ const MIGRATIONS = [
     name: '018_youtube_subscription_tags',
     filename: '018_youtube_subscription_tags.sql',
   },
+  {
+    name: '019_youtube_summary_runs',
+    filename: '019_youtube_summary_runs.sql',
+  },
+  {
+    name: '020_ai_research_settings',
+    filename: '020_ai_research_settings.sql',
+  },
+  {
+    name: '021_youtube_summary_research',
+    filename: '021_youtube_summary_research.sql',
+  },
 ] as const
 
 export interface RunMigrationsOptions {

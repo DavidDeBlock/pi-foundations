@@ -74,7 +74,7 @@ beforeEach(async () => {
         videoId: overrides.videoId ?? 'dQw4w9WgXcQ',
         channelId: overrides.channelId ?? 'UCaaaaaaa000000000000aab',
         title: overrides.title ?? 'Never Gonna Give You Up',
-        publishedAt: overrides.publishedAt ?? '2009-10-25T06:57:33.000Z',
+        publishedAt: overrides.publishedAt ?? new Date().toISOString(),
         thumbnailUrl:
           overrides.thumbnailUrl !== undefined
             ? overrides.thumbnailUrl
@@ -110,6 +110,13 @@ async function getText(res: Response): Promise<string> {
   return res.text()
 }
 
+function lastThirtyDaysForTest(now = new Date()): { readonly from: string; readonly to: string } {
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const start = new Date(end)
+  start.setUTCDate(start.getUTCDate() - 29)
+  return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) }
+}
+
 // ─── Auth ──────────────────────────────────────────────────────────────────
 
 describe('auth', () => {
@@ -134,11 +141,47 @@ describe('GET /videos', () => {
     expect(html).toContain('data-videos-published-from')
     expect(html).toContain('data-videos-published-to')
     expect(html).toContain('data-videos-sort-choice')
+    expect(html).toContain('data-videos-exclude-shorts')
     expect(html).toContain('Recently discovered')
     expect(html).toContain('Last 7 days')
     expect(html).toContain('Last 30 days')
+    expect(html).toContain('<option value="published_at:desc" selected>Newest published</option>')
+    const expectedRange = lastThirtyDaysForTest()
+    expect(html).toContain(`name="published_from" type="date" value="${expectedRange.from}"`)
+    expect(html).toContain(`name="published_to" type="date" value="${expectedRange.to}"`)
     // Empty-state copy when there are no videos
     expect(html).toContain('No videos yet')
+  })
+
+  it('supports an all-time date override and a refresh-safe Hide Shorts filter', async () => {
+    env.seed({
+      videoId: 'short-card',
+      title: 'Short card',
+      publishedAt: '2009-10-25T06:57:33.000Z',
+      link: 'https://www.youtube.com/shorts/short-card',
+    })
+    env.seed({
+      videoId: 'regular-card',
+      title: 'Regular card',
+      publishedAt: '2009-10-25T06:57:33.000Z',
+      link: 'https://www.youtube.com/watch?v=regular-card',
+    })
+    env.seed({
+      videoId: 'regular-card-2',
+      title: 'Another regular card',
+      publishedAt: '2009-10-24T06:57:33.000Z',
+      link: 'https://www.youtube.com/watch?v=regular-card-2',
+    })
+    const html = await getText(await get(
+      env.app,
+      '/videos?date_range=all&exclude_shorts=true&limit=1',
+    ))
+    expect(html).toContain('name="date_range" value="all"')
+    expect(html).toContain('name="exclude_shorts" value="true" checked')
+    expect(html).toMatch(/Regular card|Another regular card/)
+    expect(html).not.toContain('Short card')
+    expect(html).toContain('exclude_shorts=true')
+    expect(html).toContain('date_range=all')
   })
 
   it('reflects sort and inclusive date controls and summarizes the active range', async () => {
@@ -237,7 +280,7 @@ describe('GET /videos — row rendering', () => {
     expect(html).toContain('Title A')
     expect(html).toContain('videos-row-channel')
     // Date rendered via <time datetime="...">
-    expect(html).toMatch(/<time datetime="2009-10-25/)
+    expect(html).toMatch(/<time datetime="\d{4}-\d{2}-\d{2}T/)
   })
 
   it('renders the folder name when present, "Unfoldered" otherwise', async () => {

@@ -33,6 +33,7 @@ const RELEVANT_ENV_KEYS = [
   'LLM_API_KEY',
   'LLM_BASE_URL',
   'LLM_MODEL',
+  'SERPER_API_KEY',
 ] as const
 
 let savedEnv: Record<string, string | undefined> = {}

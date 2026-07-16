@@ -212,6 +212,7 @@ ${COMMON_HEAD}
         <a href="/settings" class="settings-tab">API tokens</a>
         <a href="/settings/email" class="settings-tab">Email</a>
         <a href="/settings/youtube" class="settings-tab settings-tab-active" aria-current="page">YouTube</a>
+        <a href="/settings/ai" class="settings-tab">AI &amp; Research</a>
       </nav>
 
       ${inSetupMode ? renderSetupRequiredBanner(args.setupMissing!) : ''}

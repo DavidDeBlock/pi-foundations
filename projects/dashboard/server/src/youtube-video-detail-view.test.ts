@@ -425,6 +425,95 @@ describe('GET /videos/:id — AI Insight Card', () => {
     expect(body).toContain('>1:05</a>')
     expect(body).toContain('Generated with MiniMax-M2.7')
   })
+
+  it('shows an animated working indicator while a summary is pending', async () => {
+    const id = env.seed()
+    env.db.run(`INSERT INTO video_summaries
+      (video_id, status, model, prompt_version, requested_at, updated_at)
+      VALUES (?, 'pending', 'MiniMax-M2.7', 2, '2026-07-16T00:00:00Z', '2026-07-16T00:00:00Z')`, [id])
+    const passwordHash = await bcrypt.hash(PASSWORD, 4)
+    const app = new Hono<{ Variables: AuthVariables }>()
+    app.use('*', auth({ passwordHash, tokenStore: new InMemoryTokenStore() }))
+    app.route('/videos', youtubeVideoDetailView({ db: env.db, summaryConfigured: true }))
+    const { body } = await getText(app, `/videos/${id}`)
+    expect(body).toContain('class="video-ai-spinner"')
+    expect(body).toContain('@keyframes ai-spin')
+    expect(body).toContain("summaryFeedback.className = 'video-ai-feedback is-working'")
+  })
+
+  it('renders profile controls, bilingual tabs, escaped output, history, and preferred actions', async () => {
+    const id = env.seed()
+    env.db.run(`INSERT INTO video_transcripts
+      (video_id, status, language, requested_at, fetched_at, updated_at)
+      VALUES (?, 'ready', 'en', '2026-07-16T00:00:00Z', '2026-07-16T00:00:01Z', '2026-07-16T00:00:01Z')`, [id])
+    env.db.run(`INSERT INTO video_transcript_segments
+      (video_id, position, start_ms, duration_ms, text) VALUES (?, 0, 65000, 1000, 'Use SQLite')`, [id])
+    const profile = env.db.get<{ snapshot: string }>(`SELECT json_object(
+      'id', id, 'built_in_key', built_in_key, 'name', name, 'description', description,
+      'instructions', instructions, 'options', json(options_json), 'revision', revision) snapshot
+      FROM summary_profiles WHERE id = 'builtin-detailed'`)!
+    const output = (language: 'en' | 'nl', text: string) => ({ language, tldr: text,
+      keyPoints: [{ text, startMs: 65000 }], worthWatching: text, actionItems: [], mentioned: ['SQLite'],
+      sections: [{ id: 'arguments', title: language === 'nl' ? 'Argumenten' : 'Arguments',
+        items: [{ claimId: 'claim-1', text, startMs: 65000 }] }],
+    })
+    env.db.run(`INSERT INTO video_summary_runs
+      (id, video_id, status, profile_id, profile_snapshot_json, prompt_revision, focus_instruction,
+       output_language, transcript_fingerprint, model, research_status, evidence_json, outputs_json,
+       requested_at, generated_at, updated_at)
+      VALUES ('run-both', ?, 'ready', 'builtin-detailed', ?, 1, 'Focus <carefully>', 'en_nl',
+       'sha256:test', 'MiniMax-M2.7', 'disabled', '{}', ?, '2026-07-16T00:00:00Z',
+       '2026-07-16T00:01:00Z', '2026-07-16T00:01:00Z')`,
+    [id, profile.snapshot, JSON.stringify({ en: output('en', 'Safe <English>'), nl: output('nl', 'Veilig <Nederlands>') })])
+    env.db.run(`INSERT INTO video_preferred_summary_runs (video_id, run_id) VALUES (?, 'run-both')`, [id])
+    const passwordHash = await bcrypt.hash(PASSWORD, 4)
+    const app = new Hono<{ Variables: AuthVariables }>()
+    app.use('*', auth({ passwordHash, tokenStore: new InMemoryTokenStore() }))
+    app.route('/videos', youtubeVideoDetailView({ db: env.db, summaryConfigured: true }))
+    const { body } = await getText(app, `/videos/${id}`)
+    expect(body).toContain('data-summary-form')
+    expect(body).toContain('Detailed</option>')
+    expect(body).toContain('English + Nederlands')
+    expect(body).toContain('data-summary-language-tab="nl"')
+    expect(body).toContain('Safe &lt;English&gt;')
+    expect(body).toContain('Veilig &lt;Nederlands&gt;')
+    expect(body).not.toContain('Safe <English>')
+    expect(body).toContain('Previous runs')
+    expect(body).toContain('Preferred')
+  })
+
+  it('renders research controls, web citations, source metadata, and escaped provider content', async () => {
+    const id = env.seed()
+    env.db.run(`INSERT INTO video_transcripts (video_id,status,language,requested_at,fetched_at,updated_at)
+      VALUES (?,'ready','en','2026-07-16','2026-07-16','2026-07-16')`, [id])
+    env.db.run(`INSERT INTO video_transcript_segments (video_id,position,start_ms,duration_ms,text) VALUES (?,0,0,1,'Fact')`, [id])
+    const profile = env.db.get<{ snapshot: string }>(`SELECT json_object('id',id,'built_in_key',built_in_key,'name',name,
+      'description',description,'instructions',instructions,'options',json(options_json),'revision',revision) snapshot
+      FROM summary_profiles WHERE id='builtin-detailed'`)!
+    const output = { language: 'en', tldr: 'Fact', keyPoints: [{ text: 'Fact', startMs: 0 }], worthWatching: 'Yes',
+      actionItems: [], mentioned: [], sections: [{ id: 'facts', title: 'Facts', items: [{ claimId: 'c1', text: 'Fact', startMs: 0 }] }],
+      research: { supportingContext: [{ text: 'Current <context>', sourceIds: ['run-research:source-1'] }], contradictionsUpdates: [], unresolvedItems: [] } }
+    env.db.run(`INSERT INTO video_summary_runs (id,video_id,status,profile_id,profile_snapshot_json,prompt_revision,output_language,
+      transcript_fingerprint,model,research_status,research_country,research_language,research_query_limit,evidence_json,outputs_json,
+      requested_at,generated_at,updated_at) VALUES ('run-research',?,'pending','builtin-detailed',?,1,'en','sha256:x','MiniMax-M2.7',
+      'pending','NL','nl',3,'{}',?,'2026-07-16','2026-07-16','2026-07-16')`, [id, profile.snapshot, JSON.stringify({ en: output })])
+    env.db.run(`INSERT INTO video_summary_sources (id,summary_run_id,position,query,title,url,domain,snippet,retrieved_at)
+      VALUES ('run-research:source-1','run-research',1,'unsafe <query>','Source <title>','https://example.com/path','example.com',
+      'Snippet <script>alert(1)</script>','2026-07-16')`)
+    env.db.run(`UPDATE video_summary_runs SET status='ready',research_status='ready' WHERE id='run-research'`)
+    env.db.run(`INSERT INTO video_preferred_summary_runs (video_id,run_id) VALUES (?,'run-research')`, [id])
+    const passwordHash = await bcrypt.hash(PASSWORD, 4); const app = new Hono<{ Variables: AuthVariables }>()
+    app.use('*', auth({ passwordHash, tokenStore: new InMemoryTokenStore() }))
+    app.route('/videos', youtubeVideoDetailView({ db: env.db, summaryConfigured: true, researchConfigured: true }))
+    const { body } = await getText(app, `/videos/${id}`)
+    expect(body).toContain('Web research · up to 3 queries')
+    expect(body).toContain('data-summary-research checked')
+    expect(body).toContain('Current &lt;context&gt;')
+    expect(body).toContain('Source &lt;title&gt;')
+    expect(body).toContain('Snippet &lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(body).not.toContain('<script>alert(1)</script>')
+    expect(body).toContain('Research metadata')
+  })
 })
 
 // ─── Channel-included flag ──────────────────────────────────────────────

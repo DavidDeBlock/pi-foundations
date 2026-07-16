@@ -177,8 +177,12 @@ export function youtubeVideosApi(
     const playlistId = c.req.query('playlist_id') || undefined
     const watchedRaw = c.req.query('watched')
     const unwatchedRaw = c.req.query('unwatched')
+    const excludeShortsRaw = c.req.query('exclude_shorts')
     if ((watchedRaw !== undefined && watchedRaw !== 'true') || (unwatchedRaw !== undefined && unwatchedRaw !== 'true')) {
       return c.json({ error: 'watched and unwatched must be true when provided' }, 400)
+    }
+    if (excludeShortsRaw !== undefined && excludeShortsRaw !== 'true') {
+      return c.json({ error: 'exclude_shorts must be true when provided' }, 400)
     }
     if (watchedRaw === 'true' && unwatchedRaw === 'true') {
       return c.json({ error: 'watched and unwatched filters are contradictory' }, 400)
@@ -202,6 +206,7 @@ export function youtubeVideosApi(
             ...(playlistId !== undefined ? { playlistId } : {}),
             ...(watchedRaw === 'true' ? { watched: true } : {}),
             ...(unwatchedRaw === 'true' ? { unwatched: true } : {}),
+            ...(excludeShortsRaw === 'true' ? { excludeShorts: true } : {}),
             ...discovery.value,
             page,
             limit: limitRaw,
@@ -215,6 +220,7 @@ export function youtubeVideosApi(
               ...(playlistId !== undefined ? { playlistId } : {}),
               ...(watchedRaw === 'true' ? { watched: true } : {}),
               ...(unwatchedRaw === 'true' ? { unwatched: true } : {}),
+              ...(excludeShortsRaw === 'true' ? { excludeShorts: true } : {}),
               ...discovery.value,
               page,
               limit: limitRaw,
@@ -227,6 +233,7 @@ export function youtubeVideosApi(
               ...(playlistId !== undefined ? { playlistId } : {}),
               ...(watchedRaw === 'true' ? { watched: true } : {}),
               ...(unwatchedRaw === 'true' ? { unwatched: true } : {}),
+              ...(excludeShortsRaw === 'true' ? { excludeShorts: true } : {}),
               ...discovery.value,
               page,
               limit: limitRaw,

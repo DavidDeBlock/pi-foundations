@@ -78,6 +78,17 @@ From PRD: [PRD-005](../35-prds/PRD-005-youtube-discovery-tags-and-focus-player.m
 | [YT-016](./YT-016-new-videos-sort-date-range.md) | New Videos sorting and published-date range | AFK | YT-005, YT-013 |
 | [YT-017](./YT-017-youtube-focus-player.md) | Embedded and pop-out YouTube focus player | AFK (manual smoke) | YT-005 |
 
+## v3.3 — YouTube configurable AI summaries + web research (PRD-006)
+
+From PRD: [PRD-006](../35-prds/PRD-006-youtube-ai-summary-profiles-web-research.md)
+
+| # | Title | Type | Blocked by |
+|---|-------|------|------------|
+| [YT-018](./YT-018-versioned-ai-summary-profiles.md) | Versioned AI summary profiles and bilingual output | AFK | YT-007 |
+| [YT-019](./YT-019-ai-research-settings-prompt-studio.md) | AI & Research settings and Prompt Studio | AFK | YT-018 |
+| [YT-020](./YT-020-serper-web-research-citations.md) | Serper web research and source citations | AFK (external API smoke) | YT-018, YT-019 |
+| [YT-021](./YT-021-subscription-auto-summary-policies.md) | Subscription automatic summary policies and usage limits | AFK (scheduler/provider smoke) | YT-018, YT-019, YT-020 |
+
 ## v4 — Email mirror (PRD-002)
 
 From PRD: [PRD-002](../35-prds/PRD-002-email-mirror.md)
@@ -174,6 +185,20 @@ Notes on parallelism:
 - YT-015 and YT-016 both touch the canonical video query and filter bar, so they
   should land sequentially even though their product behavior is independent.
 - YT-017 is isolated to video detail, player routing, CSP, and browser behavior.
+
+## v3.3 (YouTube configurable AI summaries) dependency graph
+
+```text
+YT-007 ── YT-018 ── YT-019 ── YT-020 ── YT-021
+```
+
+Notes on sequencing:
+- YT-018 replaces the single-summary foundation with versioned runs, profiles,
+  long-transcript handling, and English/Dutch/Both output.
+- YT-019 owns non-secret settings and prompt management. YT-020 builds on those
+  settings with bounded Serper research and persisted citations.
+- YT-021 lands last because subscription automation must resolve and snapshot
+  the profile, language, research, and usage-limit behavior from earlier slices.
 
 ## Slicing rationale
 

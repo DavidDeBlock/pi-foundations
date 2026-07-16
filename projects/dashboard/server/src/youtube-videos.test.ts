@@ -439,6 +439,21 @@ describe('searchVideos — publication date range', () => {
 })
 
 describe('searchVideos — filters', () => {
+  it('can exclude canonical YouTube Shorts while retaining regular videos', () => {
+    insertVideo(env.db, makeInput({
+      videoId: 'short-video',
+      link: 'https://www.youtube.com/shorts/short-video',
+    }))
+    insertVideo(env.db, makeInput({
+      videoId: 'regular-video',
+      link: 'https://www.youtube.com/watch?v=regular-video',
+    }))
+
+    expect(searchVideos(env.db).total).toBe(2)
+    expect(searchVideos(env.db, { excludeShorts: true }).items.map((video) => video.videoId))
+      .toEqual(['regular-video'])
+  })
+
   it('excludes videos from subscriptions that are currently excluded', () => {
     insertVideo(env.db, makeInput({ videoId: 'aaaa' }))
     env.db.run(

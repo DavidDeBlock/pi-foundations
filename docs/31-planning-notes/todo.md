@@ -1270,3 +1270,23 @@ Maybe it's a good idea to create the plans first so you can implement them indiv
  2. On the new video sections, I want some sorting options, and I also want to select from to date. 
 
  3.I want to have an embedded YouTube player so I only see the movie or the video without anything else. And I also want to open it in a separate window so I can full-screen it as well or have it smaller or resizable, but I don't want anything else. I don't want to see the comments. I don't want to see the new video feed on the right, just the video. 
+
+ I want to get into more detail on how we summarize a transcript of a video. I want to have control over the prompt that is used, maybe in a separate compartment where we can adjust those settings. Plus, I want to be able to get a very detailed summary and maybe add some web searching as well. Let's use some different options, like:
+- quick summary
+- very detailed summary
+- maybe a medium summary
+What do you suggest? I have access to the SERPR API, so we can use that to search the internet.
+The SERPR API is included in the .env file. 
+
+
+Lets add some default settings for the new videos filters (or persist the settings even with refresh): 
+1.Last 30 days and sort by Newest published
+2.add an option to filter out yt shorts
+
+
+
+https://192.168.0.136.nip.io:8080/videos/1eb1686e-fc86-4098-8b52-405d06464c97
+
+The Insight Card could not be generated. Adjust the controls above and create a new run; the failed attempt stays in history.
+
+Can you review why it could not generate a summary? 

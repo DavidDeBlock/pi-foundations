@@ -169,8 +169,8 @@ export function searchYouTubePlaylistVideos(
   }
   if (filters.transcript === 'ready') where.push(`EXISTS (SELECT 1 FROM video_transcripts vt WHERE vt.video_id = v.id AND vt.status = 'ready')`)
   if (filters.transcript === 'missing') where.push(`NOT EXISTS (SELECT 1 FROM video_transcripts vt WHERE vt.video_id = v.id AND vt.status = 'ready')`)
-  if (filters.summary === 'ready') where.push(`EXISTS (SELECT 1 FROM video_summaries vs WHERE vs.video_id = v.id AND vs.status = 'ready')`)
-  if (filters.summary === 'missing') where.push(`NOT EXISTS (SELECT 1 FROM video_summaries vs WHERE vs.video_id = v.id AND vs.status = 'ready')`)
+  if (filters.summary === 'ready') where.push(`(EXISTS (SELECT 1 FROM video_summary_runs vsr WHERE vsr.video_id = v.id AND vsr.status = 'ready') OR EXISTS (SELECT 1 FROM video_summaries vs WHERE vs.video_id = v.id AND vs.status = 'ready'))`)
+  if (filters.summary === 'missing') where.push(`NOT EXISTS (SELECT 1 FROM video_summary_runs vsr WHERE vsr.video_id = v.id AND vsr.status = 'ready') AND NOT EXISTS (SELECT 1 FROM video_summaries vs WHERE vs.video_id = v.id AND vs.status = 'ready')`)
   if (watchedAvailable && filters.watched === 'watched') {
     where.push('EXISTS (SELECT 1 FROM youtube_watch_events we WHERE we.video_id = v.id)')
   }
@@ -198,7 +198,11 @@ export function searchYouTubePlaylistVideos(
        v.published_at, v.thumbnail_url, v.link, v.folder_id, f.name AS folder_name,
        yc.title AS channel_title,
        (SELECT status FROM video_transcripts WHERE video_id = v.id) AS transcript_status,
-       (SELECT status FROM video_summaries WHERE video_id = v.id) AS summary_status,
+       COALESCE(
+         (SELECT vsr.status FROM video_summary_runs vsr LEFT JOIN video_preferred_summary_runs psr ON psr.run_id = vsr.id
+           WHERE vsr.video_id = v.id ORDER BY CASE WHEN psr.run_id IS NOT NULL THEN 0 ELSE 1 END, vsr.requested_at DESC LIMIT 1),
+         (SELECT status FROM video_summaries WHERE video_id = v.id)
+       ) AS summary_status,
        ${watchedSql} AS watched, ${watchCountSql} AS watch_count,
        ${lastWatchedSql} AS last_watched_at
        FROM youtube_playlist_items pi

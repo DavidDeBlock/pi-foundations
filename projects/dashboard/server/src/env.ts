@@ -132,6 +132,10 @@ export interface Config {
   readonly missingYoutubeEnv: MissingYouTubeEnv
   /** MiniMax (or another OpenAI-compatible provider), when configured. */
   readonly llm: LlmConfig | null
+  /** Whether the environment contains a Serper credential. The key itself never leaves config. */
+  readonly serperConfigured: boolean
+  /** Server-only Serper credential, or null when research is disabled. */
+  readonly serperApiKey: string | null
   /**
    * Initial-sync lookback window in days. When a Gmail account is
    * synced for the first time, the worker fetches messages newer than
@@ -324,6 +328,8 @@ export async function loadConfig(): Promise<Config> {
         model: process.env.LLM_MODEL?.trim() || 'MiniMax-M2.7',
       }
     : null
+  const serperApiKey = process.env.SERPER_API_KEY?.trim() || null
+  const serperConfigured = serperApiKey !== null
 
   // Initial-sync lookback window (issue #021). Optional — defaults
   // to 90 days when missing or malformed. Negative / zero / non-
@@ -406,6 +412,8 @@ export async function loadConfig(): Promise<Config> {
     youtube,
     missingYoutubeEnv,
     llm,
+    serperConfigured,
+    serperApiKey,
   }
 }
 

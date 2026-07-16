@@ -27,6 +27,7 @@ import {
   renderSidebarFooter,
 } from './view-shared.js'
 import {
+  countVideos,
   searchVideos,
   type VideoSort,
   type VideoSortOrder,
@@ -71,13 +72,22 @@ export function youtubeVideosView(
     const source: 'playlist' | 'history' | undefined = playlistId ? 'playlist'
       : sourceRaw === 'playlist' || sourceRaw === 'history' ? sourceRaw : undefined
     const unwatched = c.req.query('unwatched') === 'true'
+    const excludeShorts = c.req.query('exclude_shorts') === 'true'
     const page = parsePositiveInt(c.req.query('page')) ?? 1
     const limitRaw = parsePositiveInt(c.req.query('limit')) ?? 50
+    const publishedFromRaw = c.req.query('published_from')
+    const publishedToRaw = c.req.query('published_to')
+    const explicitAllDates = c.req.query('date_range') === 'all'
+      && !publishedFromRaw && !publishedToRaw
+    const defaultDiscovery = !source && !explicitAllDates
+      && !publishedFromRaw && !publishedToRaw
+      ? lastThirtyDays()
+      : undefined
     const discoveryResult = parseVideoDiscoveryQuery({
-      sort: c.req.query('sort'),
-      order: c.req.query('order'),
-      publishedFrom: c.req.query('published_from'),
-      publishedTo: c.req.query('published_to'),
+      sort: c.req.query('sort') ?? (!source ? 'published_at' : undefined),
+      order: c.req.query('order') ?? (!source ? 'desc' : undefined),
+      publishedFrom: publishedFromRaw ?? defaultDiscovery?.publishedFrom,
+      publishedTo: publishedToRaw ?? defaultDiscovery?.publishedTo,
     })
     const discovery: VideoDiscoveryQuery = discoveryResult.ok
       ? discoveryResult.value
@@ -98,6 +108,7 @@ export function youtubeVideosView(
             ...(source ? { source } : {}),
             ...(playlistId ? { playlistId } : {}),
             ...(unwatched ? { unwatched: true } : {}),
+            ...(excludeShorts ? { excludeShorts: true } : {}),
             ...discovery,
             page,
             limit: limitRaw,
@@ -110,6 +121,7 @@ export function youtubeVideosView(
               ...(source ? { source } : {}),
               ...(playlistId ? { playlistId } : {}),
               ...(unwatched ? { unwatched: true } : {}),
+              ...(excludeShorts ? { excludeShorts: true } : {}),
               ...discovery,
               page,
               limit: limitRaw,
@@ -121,6 +133,7 @@ export function youtubeVideosView(
               ...(source ? { source } : {}),
               ...(playlistId ? { playlistId } : {}),
               ...(unwatched ? { unwatched: true } : {}),
+              ...(excludeShorts ? { excludeShorts: true } : {}),
               ...discovery,
               page,
               limit: limitRaw,
@@ -139,6 +152,7 @@ export function youtubeVideosView(
     const tags = listAllTagsWithUsage(deps.db)
     const html = renderPage({
         items: r.items,
+        hasAnyVideos: countVideos(deps.db) > 0,
         total: r.total,
         page: r.page,
         limit: r.limit,
@@ -148,6 +162,8 @@ export function youtubeVideosView(
         source,
         playlistId,
         unwatched,
+        excludeShorts,
+        allDates: explicitAllDates,
         sort: discovery.sort,
         order: discovery.order,
         publishedFrom: discoveryResult.ok ? discovery.publishedFrom : c.req.query('published_from') || undefined,
@@ -168,6 +184,7 @@ export function youtubeVideosView(
 
 interface RenderPageOptions {
   readonly items: VideoListItem[]
+  readonly hasAnyVideos: boolean
   readonly total: number
   readonly page: number
   readonly limit: number
@@ -177,6 +194,8 @@ interface RenderPageOptions {
   readonly source: 'playlist' | 'history' | undefined
   readonly playlistId: string | undefined
   readonly unwatched: boolean
+  readonly excludeShorts: boolean
+  readonly allDates: boolean
   readonly sort: VideoSort
   readonly order: VideoSortOrder
   readonly publishedFrom: string | undefined
@@ -296,6 +315,8 @@ ${COMMON_HEAD}
           <a href="/videos" class="videos-clear-all" data-videos-clear-all>Clear all</a>
         </div>
         <label class="videos-unwatched-toggle"><input type="checkbox" name="unwatched" value="true" ${opts.unwatched ? 'checked' : ''} data-videos-unwatched> <span>Unwatched only</span></label>
+        <label class="videos-unwatched-toggle"><input type="checkbox" name="exclude_shorts" value="true" ${opts.excludeShorts ? 'checked' : ''} data-videos-exclude-shorts> <span>Hide Shorts</span></label>
+        ${opts.allDates ? '<input type="hidden" name="date_range" value="all">' : ''}
         <div class="videos-date-quick" aria-label="Quick publication date ranges">
           <span>Quick range</span>
           <button type="button" data-videos-quick-days="7">Last 7 days</button>
@@ -359,22 +380,26 @@ function renderRow(v: VideoListItem): string {
 
 function renderEmpty(opts: RenderPageOptions): string {
   if (opts.total !== 0) return ''
+  if (!opts.hasAnyVideos) {
+    return `<div class="videos-empty">
+  <p>No videos yet.</p>
+  <p>After YouTube is connected, the RSS poller runs every 15 minutes and discovers new uploads from your <a href="/subscriptions">included channels</a>.</p>
+  <p>To kick a poll now: <button type="button" data-videos-poll>Poll now</button></p>
+  <p data-videos-poll-result></p>
+</div>`
+  }
   // Distinct message when filters are active vs not.
   const filtersActive =
     opts.channelId || opts.folderIdRaw !== 'all' || opts.tagId || opts.source || opts.playlistId || opts.unwatched
-    || opts.publishedFrom || opts.publishedTo || opts.sort !== 'discovered_at' || opts.order !== 'desc'
+    || opts.excludeShorts || opts.publishedFrom || opts.publishedTo
+    || opts.sort !== 'discovered_at' || opts.order !== 'desc'
   if (filtersActive) {
     return `<div class="videos-empty">
   <p>No videos match those filters.</p>
   <p><a href="/videos">Clear filters</a></p>
 </div>`
   }
-  return `<div class="videos-empty">
-  <p>No videos yet.</p>
-  <p>After YouTube is connected, the RSS poller runs every 15 minutes and discovers new uploads from your <a href="/subscriptions">included channels</a>.</p>
-  <p>To kick a poll now: <button type="button" data-videos-poll>Poll now</button></p>
-  <p data-videos-poll-result></p>
-</div>`
+  return `<div class="videos-empty"><p>No videos match those filters.</p></div>`
 }
 
 function renderPagination(
@@ -428,12 +453,14 @@ function videoListParams(opts: RenderPageOptions): URLSearchParams {
   if (opts.source) sp.set('source', opts.source)
   if (opts.playlistId) sp.set('playlist_id', opts.playlistId)
   if (opts.unwatched) sp.set('unwatched', 'true')
+  if (opts.excludeShorts) sp.set('exclude_shorts', 'true')
   if (opts.sort !== 'discovered_at' || opts.order !== 'desc') {
     sp.set('sort', opts.sort)
     sp.set('order', opts.order)
   }
   if (opts.publishedFrom) sp.set('published_from', opts.publishedFrom)
   if (opts.publishedTo) sp.set('published_to', opts.publishedTo)
+  if (opts.allDates && !opts.publishedFrom && !opts.publishedTo) sp.set('date_range', 'all')
   if (opts.limit !== 50) sp.set('limit', String(opts.limit))
   return sp
 }
@@ -442,6 +469,7 @@ function clearDatesUrl(opts: RenderPageOptions): string {
   const sp = videoListParams(opts)
   sp.delete('published_from')
   sp.delete('published_to')
+  sp.set('date_range', 'all')
   return `/videos${sp.size > 0 ? `?${sp.toString()}` : ''}`
 }
 
@@ -478,6 +506,16 @@ function parsePositiveInt(raw: string | undefined): number | null {
   const n = Number.parseInt(raw, 10)
   if (Number.isNaN(n)) return null
   return n
+}
+
+function lastThirtyDays(now = new Date()): { readonly publishedFrom: string; readonly publishedTo: string } {
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const start = new Date(end)
+  start.setUTCDate(start.getUTCDate() - 29)
+  return {
+    publishedFrom: start.toISOString().slice(0, 10),
+    publishedTo: end.toISOString().slice(0, 10),
+  }
 }
 
 function escapeHtml(value: string): string {
@@ -583,16 +621,25 @@ const VIDEOS_VIEW_STYLES = `
 
 export const VIDEOS_FILTER_SCRIPT = `(function(){
   var box=document.querySelector('[data-videos-unwatched]');
+  var shortsBox=document.querySelector('[data-videos-exclude-shorts]');
   var form=document.querySelector('[data-videos-filters]');
-  if(!box||!form)return;
+  if(!box||!shortsBox||!form)return;
   var key='dashboard.youtube.unwatched-only';
+  var shortsKey='dashboard.youtube.exclude-shorts';
   var params=new URLSearchParams(window.location.search);
   if(!params.has('unwatched') && localStorage.getItem(key)==='true'){
     params.set('unwatched','true'); window.location.replace('/videos?'+params.toString()); return;
   }
+  if(!params.has('exclude_shorts') && localStorage.getItem(shortsKey)==='true'){
+    params.set('exclude_shorts','true'); window.location.replace('/videos?'+params.toString()); return;
+  }
   box.addEventListener('change',function(){
     localStorage.setItem(key,box.checked?'true':'false');
     if(box.form)box.form.submit();
+  });
+  shortsBox.addEventListener('change',function(){
+    localStorage.setItem(shortsKey,shortsBox.checked?'true':'false');
+    if(shortsBox.form)shortsBox.form.submit();
   });
   var choice=form.querySelector('[data-videos-sort-choice]');
   var sort=form.querySelector('[data-videos-sort]');
@@ -605,6 +652,13 @@ export const VIDEOS_FILTER_SCRIPT = `(function(){
   form.addEventListener('submit',syncSort);
   var from=form.querySelector('[data-videos-published-from]');
   var to=form.querySelector('[data-videos-published-to]');
+  function syncDateRange(){
+    if(!from||!to)return;
+    var all=form.querySelector('input[name="date_range"]');
+    if(from.value||to.value){ if(all)all.remove(); return; }
+    if(!all){ all=document.createElement('input'); all.type='hidden'; all.name='date_range'; all.value='all'; form.appendChild(all); }
+  }
+  form.addEventListener('submit',syncDateRange);
   form.querySelectorAll('[data-videos-quick-days]').forEach(function(button){
     button.addEventListener('click',function(){
       if(!from||!to)return;
@@ -613,12 +667,13 @@ export const VIDEOS_FILTER_SCRIPT = `(function(){
       var end=new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate()));
       var start=new Date(end.getTime()); start.setUTCDate(start.getUTCDate()-(days-1));
       from.value=start.toISOString().slice(0,10); to.value=end.toISOString().slice(0,10);
+      syncDateRange();
     });
   });
   var clearDates=form.querySelector('[data-videos-clear-dates]');
-  if(clearDates)clearDates.addEventListener('click',function(){ if(from)from.value=''; if(to)to.value=''; });
+  if(clearDates)clearDates.addEventListener('click',function(){ if(from)from.value=''; if(to)to.value=''; syncDateRange(); });
   var clearAll=form.querySelector('[data-videos-clear-all]');
-  if(clearAll)clearAll.addEventListener('click',function(){ localStorage.removeItem(key); });
+  if(clearAll)clearAll.addEventListener('click',function(){ localStorage.removeItem(key); localStorage.removeItem(shortsKey); });
 })();`
 
 // Inline script for the "Poll now" button on the empty-state copy.

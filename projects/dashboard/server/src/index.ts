@@ -25,6 +25,8 @@ import {
 } from './youtube-rss-scheduler.js'
 import { YouTubeTranscriptService } from './youtube-transcripts.js'
 import { OpenAiCompatibleLlmClient } from './llm-client.js'
+import { SerperSearchClient } from './serper-search-client.js'
+import { readDefaults } from './ai-research-settings.js'
 import {
   MiniMaxVideoSummarizer,
   YouTubeVideoSummaryService,
@@ -70,6 +72,7 @@ async function main(): Promise<void> {
         config.youtube.youtubeOauthRedirectUri,
         db,
         config.llm,
+        config.serperApiKey,
       )
     : undefined
 
@@ -149,6 +152,7 @@ async function main(): Promise<void> {
     email,
     youtube,
     youtubeHistory,
+    ai: { minimaxConfigured: config.llm !== null, serperConfigured: config.serperConfigured },
   })
 
   // HTTPS when DASHBOARD_TLS_CERT + DASHBOARD_TLS_KEY are set;
@@ -248,6 +252,7 @@ function buildYouTubeDeps(
   youtubeOauthRedirectUri: string,
   db: Database,
   llm: LlmConfig | null,
+  serperApiKey: string | null,
 ): Parameters<typeof createApp>[0]['youtube'] {
   // The cipher + state signer share the same 32-byte key (same
   // rationale as the email slice above).
@@ -299,7 +304,13 @@ function buildYouTubeDeps(
           apiKey: llm.apiKey,
           baseUrl: llm.baseUrl,
           model: llm.model,
-        })),
+        }), { limits: () => { const settings = readDefaults(db); return { maxInputChars: settings.maxInputChars, maxOutputTokens: settings.maxOutputTokens } } }),
+        ...(serperApiKey ? { research: {
+          client: new SerperSearchClient({ apiKey: serperApiKey }),
+          settings: () => { const settings = readDefaults(db); return {
+            country: settings.searchCountry, language: settings.searchLanguage, maxQueries: settings.maxSearchQueries,
+          } },
+        } } : {}),
       })
     : undefined
   summaryService?.resumePending()

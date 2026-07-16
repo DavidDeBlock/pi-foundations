@@ -222,6 +222,7 @@ describe('GET /api/videos', () => {
     ['/api/videos?published_from=2025-02-29', 'published_from must be a valid date'],
     ['/api/videos?published_to=2026-13-01', 'published_to must be a valid date'],
     ['/api/videos?published_from=2026-07-10&published_to=2026-07-01', 'published_from must be on or before'],
+    ['/api/videos?exclude_shorts=false', 'exclude_shorts must be true'],
   ])('rejects invalid discovery query %s', async (path, message) => {
     const response = await req(env.app, path, { headers: { authorization: basic(PASSWORD) } })
     expect(response.status).toBe(400)
@@ -250,6 +251,17 @@ describe('GET /api/videos', () => {
     })
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ items: [], total: 0 })
+  })
+
+  it('filters out canonical Shorts when requested', async () => {
+    env.seed({ videoId: 'short-one', link: 'https://www.youtube.com/shorts/short-one' })
+    env.seed({ videoId: 'regular-one', link: 'https://www.youtube.com/watch?v=regular-one' })
+    const response = await req(env.app, '/api/videos?exclude_shorts=true', {
+      headers: { authorization: basic(PASSWORD) },
+    })
+    const body = await asJson<{ items: Array<{ video_id: string }>; total: number }>(response)
+    expect(body.total).toBe(1)
+    expect(body.items.map((item) => item.video_id)).toEqual(['regular-one'])
   })
 
   it('filters by channel_id', async () => {

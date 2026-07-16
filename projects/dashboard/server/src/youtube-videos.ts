@@ -67,6 +67,8 @@ export interface SearchVideosOptions {
   /** Derived watch-state filters. Callers must not set both. */
   readonly watched?: boolean
   readonly unwatched?: boolean
+  /** Hide videos whose canonical YouTube link identifies them as Shorts. */
+  readonly excludeShorts?: boolean
   /** Allow-listed list ordering. HTTP callers validate raw query values before
    *  constructing these typed options; the query builder still falls back to
    *  the documented defaults if called unsafely at runtime. */
@@ -275,6 +277,9 @@ export function searchVideos(
     where.push('EXISTS (SELECT 1 FROM youtube_watch_events filter_we WHERE filter_we.video_id = v.id)')
   } else if (options.unwatched) {
     where.push('NOT EXISTS (SELECT 1 FROM youtube_watch_events filter_we WHERE filter_we.video_id = v.id)')
+  }
+  if (options.excludeShorts) {
+    where.push("v.link NOT LIKE '%/shorts/%'")
   }
   if (options.publishedFrom) {
     where.push('julianday(v.published_at) >= julianday(?)')
