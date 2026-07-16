@@ -14,14 +14,17 @@ import { runMigrations } from './migrations.js'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import {
+  countIncludedExcluded,
   countSubscriptions,
   deleteSubscriptionsNotInChannelIds,
   getSubscriptionByChannelId,
   getSubscriptionById,
   listSubscriptions,
+  searchSubscriptions,
   touchSubscriptionLastPolledAt,
   updateSubscriptionToggles,
   upsertSubscription,
+  type SubscriptionFilter,
   type UpsertSubscriptionInput,
 } from './youtube-subscriptions.js'
 
@@ -297,5 +300,151 @@ describe('touchSubscriptionLastPolledAt', () => {
   it('is a silent no-op when the id is unknown', () => {
     // Should not throw.
     touchSubscriptionLastPolledAt(db, randomUUID(), '2024-04-01T00:00:00.000Z')
+  })
+})
+// ─── searchSubscriptions (YT-003) ──────────────────────────────────────────
+
+describe('searchSubscriptions', () => {
+  function seed(seedRows: ReadonlyArray<{
+    channelId: string
+    title: string
+    isIncluded?: boolean
+  }>): void {
+    for (const r of seedRows) {
+      upsertSubscription(db, makeInput({
+        googleAccountId: 'acct-1',
+        channelId: r.channelId,
+        channelTitle: r.title,
+      }))
+      if (r.isIncluded === false) {
+        db.run(`UPDATE subscriptions SET is_included = 0 WHERE channel_id = ?`, [r.channelId])
+      }
+    }
+  }
+
+  it('returns all rows when filter is "all" (default)', () => {
+    seed([
+      { channelId: 'UCa', title: 'Alpha' },
+      { channelId: 'UCb', title: 'Beta', isIncluded: false },
+      { channelId: 'UCc', title: 'Gamma' },
+    ])
+    const result = searchSubscriptions(db)
+    expect(result.total).toBe(3)
+    expect(result.items.map((s) => s.channelTitle)).toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(result.page).toBe(1)
+    expect(result.limit).toBe(50)
+    expect(result.invalidFilter).toBeNull()
+  })
+
+  it('filters by "included" (is_included = 1)', () => {
+    seed([
+      { channelId: 'UCa', title: 'Alpha' },
+      { channelId: 'UCb', title: 'Beta', isIncluded: false },
+      { channelId: 'UCc', title: 'Gamma' },
+    ])
+    const result = searchSubscriptions(db, { filter: 'included' })
+    expect(result.total).toBe(2)
+    expect(result.items.map((s) => s.channelTitle)).toEqual(['Alpha', 'Gamma'])
+  })
+
+  it('filters by "excluded" (is_included = 0)', () => {
+    seed([
+      { channelId: 'UCa', title: 'Alpha' },
+      { channelId: 'UCb', title: 'Beta', isIncluded: false },
+      { channelId: 'UCc', title: 'Gamma', isIncluded: false },
+    ])
+    const result = searchSubscriptions(db, { filter: 'excluded' })
+    expect(result.total).toBe(2)
+    expect(result.items.map((s) => s.channelTitle)).toEqual(['Beta', 'Gamma'])
+  })
+
+  it('filters by search (case-insensitive substring on title)', () => {
+    seed([
+      { channelId: 'UCa', title: 'CoolChannel' },
+      { channelId: 'UCb', title: 'Booring' },
+      { channelId: 'UCc', title: 'Another Cool One' },
+    ])
+    const result = searchSubscriptions(db, { search: 'cool' })
+    expect(result.total).toBe(2)
+    expect(result.items.map((s) => s.channelTitle)).toEqual([
+      'Another Cool One',
+      'CoolChannel',
+    ])
+  })
+
+  it('combines filter + search', () => {
+    seed([
+      { channelId: 'UCa', title: 'CoolChannel' },
+      { channelId: 'UCb', title: 'CoolerMusic', isIncluded: false },
+      { channelId: 'UCc', title: 'Booring' },
+    ])
+    const result = searchSubscriptions(db, {
+      filter: 'included',
+      search: 'cool',
+    })
+    expect(result.total).toBe(1)
+    expect(result.items.map((s) => s.channelTitle)).toEqual(['CoolChannel'])
+  })
+
+  it('paginates with offset (1-based page, default limit 50)', () => {
+    // Seed 5 rows; ask for limit=2, page=2 → second pair of items.
+    seed([
+      { channelId: 'UC1', title: 'A' },
+      { channelId: 'UC2', title: 'B' },
+      { channelId: 'UC3', title: 'C' },
+      { channelId: 'UC4', title: 'D' },
+      { channelId: 'UC5', title: 'E' },
+    ])
+    const page1 = searchSubscriptions(db, { page: 1, limit: 2 })
+    const page2 = searchSubscriptions(db, { page: 2, limit: 2 })
+    const page3 = searchSubscriptions(db, { page: 3, limit: 2 })
+    expect(page1.items.map((s) => s.channelTitle)).toEqual(['A', 'B'])
+    expect(page2.items.map((s) => s.channelTitle)).toEqual(['C', 'D'])
+    expect(page3.items.map((s) => s.channelTitle)).toEqual(['E'])
+    expect(page1.total).toBe(5)
+    expect(page2.total).toBe(5)
+  })
+
+  it('returns an empty page when offset exceeds total', () => {
+    seed([{ channelId: 'UC1', title: 'Only' }])
+    const result = searchSubscriptions(db, { page: 5, limit: 10 })
+    expect(result.items).toEqual([])
+    expect(result.total).toBe(1)
+  })
+
+  it('flags an invalid filter without throwing', () => {
+    seed([{ channelId: 'UC1', title: 'A' }])
+    const result = searchSubscriptions(db, {
+      filter: 'bogus' as SubscriptionFilter,
+    })
+    expect(result.invalidFilter).toBe('bogus')
+    expect(result.items).toEqual([])
+  })
+
+  it('clamps limit to a sane range (1..200)', () => {
+    seed([{ channelId: 'UC1', title: 'A' }])
+    expect(searchSubscriptions(db, { limit: 0 }).limit).toBe(1)
+    expect(searchSubscriptions(db, { limit: 999 }).limit).toBe(200)
+    expect(searchSubscriptions(db, { limit: -5 }).limit).toBe(1)
+  })
+
+  it('clamps page to >= 1', () => {
+    seed([{ channelId: 'UC1', title: 'A' }])
+    expect(searchSubscriptions(db, { page: 0 }).page).toBe(1)
+    expect(searchSubscriptions(db, { page: -3 }).page).toBe(1)
+  })
+})
+
+describe('countIncludedExcluded', () => {
+  it('returns zeros when the table is empty', () => {
+    expect(countIncludedExcluded(db)).toEqual({ included: 0, excluded: 0 })
+  })
+
+  it('returns the right counts after seeding', () => {
+    upsertSubscription(db, makeInput({ googleAccountId: 'acct-1', channelId: 'UCa' }))
+    upsertSubscription(db, makeInput({ googleAccountId: 'acct-1', channelId: 'UCb' }))
+    upsertSubscription(db, makeInput({ googleAccountId: 'acct-1', channelId: 'UCc' }))
+    db.run(`UPDATE subscriptions SET is_included = 0 WHERE channel_id = 'UCb'`)
+    expect(countIncludedExcluded(db)).toEqual({ included: 2, excluded: 1 })
   })
 })

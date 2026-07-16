@@ -10,18 +10,18 @@ David can see and manage his subscriptions from `/subscriptions`. The page shows
 
 ## Acceptance criteria
 
-- [ ] `GET /api/subscriptions?filter=included|excluded|all&search=&page=&limit=` returns paginated `{ items: [...], total, page, limit }`; defaults `filter=all`, `limit=50`, sorted by `title ASC`
-- [ ] Each item: `{ id, channel_id, title, thumbnail_url, subscribed_at, is_included, is_important, last_polled_at }`
-- [ ] `PATCH /api/subscriptions/:id` accepts `{ is_included?, is_important? }` (both optional; only updates provided fields); returns updated row
-- [ ] Toggling `is_included` updates DB and is visible in next GET within 1s; the change is consumed by the RSS poller (YT-004) within the next poll cycle
-- [ ] Toggling `is_important` updates DB; **no behavior change in v3.0** (column is reserved for the future LLM job)
-- [ ] `/subscriptions` page renders server-side HTML with the list, filter chips, search input, and "Sync now" button — reuses the existing card + sidebar patterns from v1
-- [ ] Toggling `is_included` or `is_important` updates via PATCH using fetch + DOM patch (no full page reload), matching v1's categorize UI behavior
-- [ ] Filter chips change the URL query (`?filter=included`) and re-render the list
-- [ ] Search filters by channel title (case-insensitive substring)
-- [ ] "Sync now" button posts to `/api/youtube/sync` and shows the result counts (`added / updated / removed / unchanged`) in an inline message
-- [ ] Page shows total counts: included N, excluded M, all N+M
-- [ ] Tests: API contract for list (filters, search, pagination) + PATCH (validates payload); UI smoke test for toggle persistence + filter chips + sync-now flow
+- [x] `GET /api/subscriptions?filter=included|excluded|all&search=&page=&limit=` returns paginated `{ items: [...], total, page, limit }`; defaults `filter=all`, `limit=50`, sorted by `title ASC`
+- [x] Each item: `{ id, channel_id, title, thumbnail_url, subscribed_at, is_included, is_important, last_polled_at }`
+- [x] `PATCH /api/subscriptions/:id` accepts `{ is_included?, is_important? }` (both optional; only updates provided fields); returns updated row
+- [x] Toggling `is_included` updates DB and is visible in next GET within 1s; the change is consumed by the RSS poller (YT-004) within the next poll cycle
+- [x] Toggling `is_important` updates DB; **no behavior change in v3.0** (column is reserved for the future LLM job)
+- [x] `/subscriptions` page renders server-side HTML with the list, filter chips, search input, and "Sync now" button — reuses the existing card + sidebar patterns from v1
+- [x] Toggling `is_included` or `is_important` updates via PATCH using fetch + DOM patch (no full page reload), matching v1's categorize UI behavior
+- [x] Filter chips change the URL query (`?filter=included`) and re-render the list
+- [x] Search filters by channel title (case-insensitive substring)
+- [x] "Sync now" button posts to `/api/youtube/sync` and shows the result counts (`added / updated / removed / unchanged`) in an inline message
+- [x] Page shows total counts: included N, excluded M, all N+M
+- [x] Tests: API contract for list (filters, search, pagination) + PATCH (validates payload); UI smoke test for toggle persistence + filter chips + sync-now flow
 - [ ] Manual smoke: load `/subscriptions`, toggle a channel off, reload page, see it under "Excluded"; click sync-now, see counts inline
 
 ## Blocked by

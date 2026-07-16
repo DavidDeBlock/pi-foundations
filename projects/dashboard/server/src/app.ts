@@ -22,6 +22,8 @@ import { youtubeApi, type YouTubeOAuthClient } from './youtube-oauth.js'
 import { youtubeSettingsView, youtubeSettingsSetupOnly } from './youtube-settings.js'
 import type { YouTubeSubscriptionsSync } from './youtube-subscriptions-sync.js'
 import { youtubeSyncApi } from './youtube-subscriptions-api.js'
+import { subscriptionsApi } from './youtube-subscriptions-list-api.js'
+import { subscriptionsViewApi } from './youtube-subscriptions-view.js'
 
 export interface EmailDeps {
   /** AES-256-GCM cipher for OAuth tokens at rest. */
@@ -224,12 +226,24 @@ export function createApp({
       }),
     )
     app.route(
+      '/api/subscriptions',
+      subscriptionsApi({ db }),
+    )
+    app.route(
       '/settings/youtube',
       youtubeSettingsView({
         db,
         cipher: youtube.tokenCipher,
         client: youtube.client,
       }),
+    )
+    // Subscriptions list page (issue YT-003). Mounted at
+    // `/subscriptions` — the URL is the resource, so Hono's
+    // path match resolves unambiguously even with `/api/subscriptions`
+    // also in play.
+    app.route(
+      '/subscriptions',
+      subscriptionsViewApi({ db }),
     )
   } else {
     app.route('/settings/youtube', youtubeSettingsSetupOnly())

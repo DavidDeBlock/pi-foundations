@@ -20,6 +20,24 @@ import type { Database } from './db.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
+/** UI-side filter for the subscriptions list. Maps to the
+ *  `?filter=` query parameter on `GET /api/subscriptions`:
+ *   * `'all'`      → every row (default)
+ *   * `'included'` → `is_included = 1`
+ *   * `'excluded'` → `is_included = 0`
+ *  The PRD calls this the "filter chip" state. The list endpoint
+ *  rejects unknown values with a 400 (defense in depth: a typo
+ *  on the URL shouldn't silently return `all`). */
+export type SubscriptionFilter = 'all' | 'included' | 'excluded'
+
+/** Returns the union of valid filter strings. Used by the API
+ *  layer to validate `?filter=` before passing it down. */
+export const SUBSCRIPTION_FILTERS: ReadonlyArray<SubscriptionFilter> = [
+  'all',
+  'included',
+  'excluded',
+] as const
+
 /**
  * Public view of one subscription. Title and thumbnail are the
  * fields the UI renders; `is_included` / `is_important` are the
@@ -86,6 +104,129 @@ export function listSubscriptions(
       ORDER BY channel_title COLLATE NOCASE ASC, id ASC`,
   )
   return rows.map(rowToSubscription)
+}
+
+/** Options for the filtered + paginated list used by `GET
+ *  /api/subscriptions`. Pagination is offset-based (vs. the
+ *  cursor-based pattern used by the email API) because the
+ *  subscriptions page doesn't grow forever — David has ~100
+ *  subscriptions, the dashboard has one user, and the page is
+ *  the operator's only entry. Offset semantics make "go to
+ *  page 3" trivial at the cost of an O(N) `OFFSET` for large
+ *  datasets. We don't care about large datasets.
+ *  `filter` defaults to `'all'`; an invalid value is rejected by
+ *  `searchSubscriptions` (returns an empty result + an error flag). */
+export interface SearchSubscriptionsOptions {
+  readonly filter?: SubscriptionFilter
+  /** Case-insensitive substring match against `channel_title`.
+   *  Empty / undefined → no filter. */
+  readonly search?: string
+  /** 1-based page number. Out-of-range values return an empty
+   *  array. Default `1`. */
+  readonly page?: number
+  /** Page size. Default `50`. */
+  readonly limit?: number
+}
+
+export interface SearchSubscriptionsResult {
+  readonly items: readonly Subscription[]
+  readonly total: number
+  readonly page: number
+  readonly limit: number
+  /** Set when the supplied `filter` is not one of the recognised
+   *  values. UI / API converts to a 400 in that case. */
+  readonly invalidFilter: SubscriptionFilter | null
+}
+
+/**
+ * Filtered, searched, paginated subscription list. Returns the
+ * slice of rows matching `filter` + `search`, plus the total
+ * count BEFORE pagination so the UI can render "X of Y" footers.
+ *
+ * Sort is the same title-ASC order as `listSubscriptions` —
+ * the filter chips and search bar don't change the user-facing
+ * sort order.
+ */
+export function searchSubscriptions(
+  db: Database,
+  options: SearchSubscriptionsOptions = {},
+): SearchSubscriptionsResult {
+  const filter: SubscriptionFilter = options.filter ?? 'all'
+  if (!SUBSCRIPTION_FILTERS.includes(filter)) {
+    return { items: [], total: 0, page: 1, limit: 50, invalidFilter: filter }
+  }
+  const limit = clampLimit(options.limit)
+  const page = clampPage(options.page)
+  const offset = (page - 1) * limit
+  const search = (options.search ?? '').trim()
+
+  const where: string[] = []
+  const params: Array<string | number> = []
+  if (filter === 'included') where.push('is_included = 1')
+  else if (filter === 'excluded') where.push('is_included = 0')
+  if (search !== '') {
+    where.push('channel_title LIKE ? COLLATE NOCASE')
+    params.push(`%${search}%`)
+  }
+  const whereSql = where.length === 0 ? '' : `WHERE ${where.join(' AND ')}`
+
+  // Total count: a separate `SELECT COUNT(*)` over the same WHERE
+  // clause. Cheap because `subscriptions` is small.
+  const totalRow = db.get<{ n: number | bigint }>(
+    `SELECT COUNT(*) AS n FROM subscriptions ${whereSql}`,
+    params,
+  )
+  const total = Number(totalRow?.n ?? 0)
+
+  // Page slice. `LIMIT` + `OFFSET` against the canonical
+  // title-ASC sort so the UI can render "page 1, page 2, …"
+  // deterministically (no shifting rows between pages on a
+  // concurrent sync because re-sorts are idempotent for a
+  // given title).
+  const rows = db.all<SubscriptionRow>(
+    `SELECT * FROM subscriptions ${whereSql}
+      ORDER BY channel_title COLLATE NOCASE ASC, id ASC
+      LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  )
+  return {
+    items: rows.map(rowToSubscription),
+    total,
+    page,
+    limit,
+    invalidFilter: null,
+  }
+}
+
+/** Count by `is_included` state. Cheap (two index lookups); used
+ *  by the page header so the operator can see "12 included, 88
+ *  excluded" at a glance without scanning the table. */
+export function countIncludedExcluded(db: Database): {
+  readonly included: number
+  readonly excluded: number
+} {
+  const row = db.get<{ included: number | bigint; excluded: number | bigint }>(
+    `SELECT
+       SUM(CASE WHEN is_included = 1 THEN 1 ELSE 0 END) AS included,
+       SUM(CASE WHEN is_included = 0 THEN 1 ELSE 0 END) AS excluded
+     FROM subscriptions`,
+  )
+  return {
+    included: Number(row?.included ?? 0),
+    excluded: Number(row?.excluded ?? 0),
+  }
+}
+
+function clampLimit(value: number | undefined): number {
+  if (value === undefined) return 50
+  if (!Number.isFinite(value)) return 50
+  return Math.max(1, Math.min(200, Math.floor(value)))
+}
+
+function clampPage(value: number | undefined): number {
+  if (value === undefined) return 1
+  if (!Number.isFinite(value)) return 1
+  return Math.max(1, Math.floor(value))
 }
 
 /**
