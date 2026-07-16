@@ -91,6 +91,7 @@ describe('Migrations runner', () => {
       '005_email_search',
       '006_email_tags',
       '007_email_sync_debounce',
+      '008_youtube_accounts',
     ])
 
     // Spot-check that every table from the PRD schema now exists.
@@ -126,11 +127,11 @@ describe('Migrations runner', () => {
   it('is idempotent — running twice does NOT re-apply', async () => {
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const firstApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(firstApplied).toHaveLength(7)
+    expect(firstApplied).toHaveLength(8)
 
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const secondApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(secondApplied).toHaveLength(7)
+    expect(secondApplied).toHaveLength(8)
     // applied_at should be unchanged on re-run (still the original timestamps).
     expect(secondApplied.map((r) => r.name).sort()).toEqual(
       firstApplied.map((r) => r.name).sort(),

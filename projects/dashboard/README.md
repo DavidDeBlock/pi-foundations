@@ -21,7 +21,8 @@ Personal dashboard for Chrome bookmarks, browsing history, and YouTube saves —
 |-------|-------|
 | **v1** | Read-only Chrome bookmarks + categorize (folders + tags) + search |
 | **v2** | Chrome write-back + browsing history (bulk import + ongoing) |
-| **v3** | YouTube saves (Data API) + watch history (Takeout) |
+| **v3.0** | YouTube subscriptions + RSS-based new-video detection (PRD-003, YT-001..YT-006) |
+| **v3.1** | YouTube saves (Data API) + watch history (Takeout) + user playlists |
 
 ## Repository layout
 

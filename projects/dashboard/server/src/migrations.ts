@@ -41,6 +41,10 @@ const MIGRATIONS = [
     name: '007_email_sync_debounce',
     filename: '007_email_sync_debounce.sql',
   },
+  {
+    name: '008_youtube_accounts',
+    filename: '008_youtube_accounts.sql',
+  },
 ] as const
 
 export interface RunMigrationsOptions {

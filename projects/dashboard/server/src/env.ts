@@ -45,6 +45,46 @@ export type EmailEnvName =
   | 'GOOGLE_OAUTH_CLIENT_SECRET'
   | 'EMAIL_OAUTH_REDIRECT_URI'
 
+/**
+ * YouTube slice (issue YT-001) requires four additional env vars:
+ *   * `youtubeTokenEncryptionKey` — hex-encoded 32-byte key for
+ *     AES-256-GCM at-rest encryption of OAuth tokens.
+ *   * `youtubeOauthClientId` / `youtubeOauthClientSecret` — created
+ *     in the Google Cloud Console. Separate from the Gmail OAuth
+ *     client (different env-var prefix) so the operator can use
+ *     distinct OAuth apps per slice; in practice both can live on
+ *     the same Google Cloud project.
+ *   * `youtubeOauthRedirectUri` — full callback URL the dashboard
+ *     serves.
+ *
+ * These are OPTIONAL at boot. The server starts without them and
+ * logs a clear banner listing what's missing so the operator can
+ * visit `/settings/youtube` for the one-time setup steps. YouTube
+ * routes return 503 until the deps are present. Same pattern as
+ * the email slice above (chicken-and-egg: docs page is unreachable
+ * without the env vars; without the docs page the operator can't
+ * set the env vars).
+ */
+export interface YouTubeConfig {
+  readonly youtubeTokenEncryptionKey: Buffer
+  readonly youtubeOauthClientId: string
+  readonly youtubeOauthClientSecret: string
+  readonly youtubeOauthRedirectUri: string
+}
+
+/**
+ * The set of YouTube env vars that were missing at boot. Captured
+ * so the `/settings/youtube` page can highlight exactly what's
+ * needed; an empty array means YouTube is fully configured.
+ */
+export type MissingYouTubeEnv = ReadonlyArray<YouTubeEnvName>
+
+export type YouTubeEnvName =
+  | 'YOUTUBE_TOKEN_ENCRYPTION_KEY'
+  | 'YOUTUBE_OAUTH_CLIENT_ID'
+  | 'YOUTUBE_OAUTH_CLIENT_SECRET'
+  | 'YOUTUBE_OAUTH_REDIRECT_URI'
+
 export interface Config {
   readonly port: number
   readonly hostname: string
@@ -72,6 +112,15 @@ export interface Config {
    */
   readonly email: EmailConfig | null
   readonly missingEmailEnv: MissingEmailEnv
+  /**
+   * YouTube slice deps (issue YT-001), or null when one or more
+   * required env vars are missing. When null, no `/api/youtube/*`
+   * route is mounted and the `/settings/youtube` page renders a
+   * setup-instructions-only mode with the missing var list
+   * highlighted.
+   */
+  readonly youtube: YouTubeConfig | null
+  readonly missingYoutubeEnv: MissingYouTubeEnv
   /**
    * Initial-sync lookback window in days. When a Gmail account is
    * synced for the first time, the worker fetches messages newer than
@@ -204,6 +253,54 @@ export async function loadConfig(): Promise<Config> {
     }
   }
 
+  // ─── YouTube OAuth setup ───────────────────────────────────────────
+  // Optional at boot (issue YT-001). Mirrors the email slice's
+  // pattern: missing env vars downgrade YouTube to setup-only mode
+  // instead of failing fast. See the email config above for the
+  // rationale.
+  const youtubeTokenEncryptionKeyRaw = process.env.YOUTUBE_TOKEN_ENCRYPTION_KEY
+  const youtubeOauthClientId = process.env.YOUTUBE_OAUTH_CLIENT_ID
+  const youtubeOauthClientSecret = process.env.YOUTUBE_OAUTH_CLIENT_SECRET
+  const youtubeOauthRedirectUri = process.env.YOUTUBE_OAUTH_REDIRECT_URI
+
+  const missingYoutubeEnv: YouTubeEnvName[] = []
+  let youtube: YouTubeConfig | null = null
+
+  // Validate the encryption key in isolation: a malformed key is a
+  // startup failure, since it's almost certainly a copy/paste mistake.
+  // The other three "missing" cases (unset vars) just downgrade.
+  let youtubeTokenEncryptionKey: Buffer | null = null
+  if (youtubeTokenEncryptionKeyRaw) {
+    try {
+      youtubeTokenEncryptionKey = parseEncryptionKey(youtubeTokenEncryptionKeyRaw)
+    } catch (err: unknown) {
+      throw new Error(
+        `YOUTUBE_TOKEN_ENCRYPTION_KEY is invalid: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  } else {
+    missingYoutubeEnv.push('YOUTUBE_TOKEN_ENCRYPTION_KEY')
+  }
+
+  if (!youtubeOauthClientId) missingYoutubeEnv.push('YOUTUBE_OAUTH_CLIENT_ID')
+  if (!youtubeOauthClientSecret) missingYoutubeEnv.push('YOUTUBE_OAUTH_CLIENT_SECRET')
+  if (!youtubeOauthRedirectUri) missingYoutubeEnv.push('YOUTUBE_OAUTH_REDIRECT_URI')
+
+  // Only assemble `youtube` when ALL four are present.
+  if (
+    youtubeTokenEncryptionKey !== null &&
+    youtubeOauthClientId !== undefined &&
+    youtubeOauthClientSecret !== undefined &&
+    youtubeOauthRedirectUri !== undefined
+  ) {
+    youtube = {
+      youtubeTokenEncryptionKey,
+      youtubeOauthClientId,
+      youtubeOauthClientSecret,
+      youtubeOauthRedirectUri,
+    }
+  }
+
   // Initial-sync lookback window (issue #021). Optional — defaults
   // to 90 days when missing or malformed. Negative / zero / non-
   // numeric values fall back to 90 so a stale `0` doesn't crash a
@@ -282,6 +379,8 @@ export async function loadConfig(): Promise<Config> {
     missingEmailEnv,
     emailSyncHistoryDays,
     emailSyncIntervalMin,
+    youtube,
+    missingYoutubeEnv,
   }
 }
 

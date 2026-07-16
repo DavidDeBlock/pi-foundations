@@ -18,6 +18,8 @@ import { emailSyncApi } from './email-sync.js'
 import { emailReadApi } from './email-read.js'
 import { emailViewApi } from './email-view.js'
 import type { EmailSyncWorker } from './email-sync-worker.js'
+import { youtubeApi, type YouTubeOAuthClient } from './youtube-oauth.js'
+import { youtubeSettingsView, youtubeSettingsSetupOnly } from './youtube-settings.js'
 
 export interface EmailDeps {
   /** AES-256-GCM cipher for OAuth tokens at rest. */
@@ -43,11 +45,33 @@ export interface EmailDeps {
   readonly syncWorker: EmailSyncWorker
 }
 
+export interface YouTubeDeps {
+  /** AES-256-GCM cipher for OAuth tokens at rest. */
+  readonly tokenCipher: TokenCipher
+  /** HMAC-signed state parameter generator for OAuth CSRF protection. */
+  readonly stateSigner: StateSigner
+  /** OAuth client id from the Google Cloud Console (YouTube slice). */
+  readonly oauthClientId: string
+  /** OAuth client secret from the Google Cloud Console (YouTube slice). */
+  readonly oauthClientSecret: string
+  /** Full callback URL, must match the registered redirect URI. */
+  readonly redirectUri: string
+  /**
+   * The shared `YouTubeOAuthClient` deep module. Constructed once in
+   * `index.ts` and reused by both the HTTP layer and the settings
+   * view's Disconnect form. Holds `db` + `cipher` so it can persist
+   * rotated tokens in `refreshIfNeeded` without callers having to
+   * touch the table helpers directly.
+   */
+  readonly client: YouTubeOAuthClient
+}
+
 export interface AppDeps {
   readonly passwordHash: string
   readonly tokenStore: TokenStore
   readonly db: Database
   readonly email?: EmailDeps
+  readonly youtube?: YouTubeDeps
 }
 
 /**
@@ -62,6 +86,7 @@ export function createApp({
   tokenStore,
   db,
   email,
+  youtube,
 }: AppDeps): Hono<{ Variables: AuthVariables }> {
   const app = new Hono<{ Variables: AuthVariables }>()
 
@@ -164,6 +189,33 @@ export function createApp({
     // mounted — calls would 404, which is the right signal: "this
     // surface doesn't exist yet, configure the server first".
     app.route('/settings/email', emailSettingsSetupOnly())
+  }
+
+  // YouTube (issue YT-001): OAuth flow, settings page, disconnect,
+  // connection status. Same two-branch pattern as the email slice
+  // above — full wiring when `youtube` deps are provided, setup-only
+  // fallback otherwise. YT-002's subscriptions sync + videos routes
+  // mount on top of `youtube.client` in a future slice.
+  if (youtube) {
+    app.route(
+      '/api/youtube',
+      youtubeApi({
+        db,
+        cipher: youtube.tokenCipher,
+        stateSigner: youtube.stateSigner,
+        client: youtube.client,
+      }),
+    )
+    app.route(
+      '/settings/youtube',
+      youtubeSettingsView({
+        db,
+        cipher: youtube.tokenCipher,
+        client: youtube.client,
+      }),
+    )
+  } else {
+    app.route('/settings/youtube', youtubeSettingsSetupOnly())
   }
 
   // Logout endpoint — returns 401 with a *new* realm so the browser

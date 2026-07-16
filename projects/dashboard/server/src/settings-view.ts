@@ -82,6 +82,7 @@ ${COMMON_HEAD}
       <a href="/">Home</a>
       <a href="/settings">Settings</a>
       <a href="/settings/email">Email</a>
+      <a href="/settings/youtube">YouTube</a>
     </nav>
 
     ${justCreated ? renderPlaintextOnce(justCreated) : ''}
