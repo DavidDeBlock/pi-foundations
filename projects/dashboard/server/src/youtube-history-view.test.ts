@@ -100,6 +100,10 @@ describe('History UI and API', () => {
     expect(html).toContain('id="history-channel"')
     expect(html).toContain('id="history-tag"')
     expect(html).toContain('class="history-grid"')
+    expect(html).toContain('src="https://i.ytimg.com/vi/knownVideo1/hqdefault.jpg"')
+    expect(html).toContain('loading="lazy" decoding="async"')
+    expect(html).toContain("onerror=\"this.style.display='none'\"")
+    expect(html).toContain('class="history-thumb-fallback"')
     expect(html).toContain('.history-main { display:block;')
     expect(html).toContain('grid-template-columns:repeat(auto-fill,minmax(min(270px,100%),1fr))')
 
