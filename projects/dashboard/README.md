@@ -23,6 +23,7 @@ Personal dashboard for Chrome bookmarks, browsing history, and YouTube saves —
 | **v2** | Chrome write-back + browsing history (bulk import + ongoing) |
 | **v3.0** | YouTube subscriptions + RSS-based new-video detection (PRD-003, YT-001..YT-006) |
 | **v3.1** | YouTube saves (Data API) + watch history (Takeout) + user playlists |
+| **v5.0** | News & Weather — Belgian feeds (VRT NWS, De Tijd, CCB) + Open-Meteo forecast for Ghent (PRD-008, NW-001..NW-005) |
 
 ## Repository layout
 
@@ -75,3 +76,16 @@ Then load `extension/` unpacked in `chrome://extensions` and paste the API token
 For a production-style deployment (systemd unit, backups, firewall), see [`docs/deployment.md`](./docs/deployment.md).
 
 For full v1 scope, see [`docs/35-prds/PRD-001-v1-chrome-bookmarks.md`](./docs/35-prds/PRD-001-v1-chrome-bookmarks.md).
+
+## News & Weather
+
+Since v5.0 the dashboard renders a `/news-weather` page with Belgian news and a 7-day Ghent weather forecast at the top. Sources are configured in the `news_sources` table (seeded by migration `025_news.sql`):
+
+- **VRT NWS** (General) — VRT's general news feed
+- **De Tijd — General** (Economy) — De Tijd's general feed
+- **CCB News** + **CCB Advisories** (Technology and Cybersecurity) — Belgian Centre for Cybersecurity
+- **Open-Meteo Ghent** (Weather) — public weather API for 51.0543°N, 3.7174°E
+
+Adding a new source is a migration, not a code change. See [PRD-008](./docs/35-prds/PRD-008-news-weather.md) for the full design (parallel ingestion pipeline, per-source due-check, failure isolation). The pipeline is covered by `pnpm smoke:news`.
+
+Manual refresh is exposed at `POST /api/news/refresh` (auth-gated) for forcing a tick outside the 60s cadence.

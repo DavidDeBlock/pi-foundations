@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "smoke": "bash scripts/smoke.sh",
+    "smoke:news": "bash scripts/news-smoke.sh",
     "keygen": "tsx scripts/keygen.ts",
     "certgen": "tsx scripts/certgen.ts"
   },
@@ -20,6 +21,7 @@
     "better-sqlite3": "^12.11.1",
     "fast-xml-parser": "^5.10.0",
     "hono": "^4.6.14",
+    "rss-parser": "^3.13.0",
     "youtube-transcript": "^1.3.1"
   },
   "devDependencies": {

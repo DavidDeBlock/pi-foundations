@@ -41,6 +41,10 @@ import { YouTubeHistoryImports } from './youtube-history-imports.js'
 import { getMostRecentYouTubeAccountId, getYouTubeAccount } from './youtube-accounts.js'
 import { YouTubeVideoDescriptionService } from './youtube-video-descriptions.js'
 import { YouTubeVideoDurationFetcher } from './youtube-video-duration-fetcher.js'
+import { NewsStore } from './news/news-store.js'
+import { NewsFetchJob } from './news/news-fetch-job.js'
+import { NewsSchedulerOrchestrator } from './news/news-scheduler-orchestrator.js'
+import { NewsScheduler } from './news/news-scheduler.js'
 
 async function main(): Promise<void> {
   const config = await loadConfig()
@@ -146,6 +150,42 @@ async function main(): Promise<void> {
     : null
   if (youtubeRssSched) youtubeRssSched.start()
 
+  // News & Weather scheduler (issue NW-005). Mirrors the YouTube
+  // scheduler pattern: in-process, `.unref()`-ed timers, idempotent
+  // start/stop. The store and job are constructed once at boot
+  // and reused for every tick (they're stateless wrappers around
+  // the DB + fetcher instances). The scheduler's interval is
+  // configurable via `DASHBOARD_NEWS_INTERVAL_MIN`; `0` disables
+  // the auto-tick (manual `POST /api/news/refresh` is the only
+  // path). The `serverUrl` on the fetchers is used for the
+  // User-Agent header (`Dashboard/1.0 (+<serverUrl>)`) — feeds
+  // often log the UA so operators can identify their instance.
+  const newsStore = new NewsStore(db)
+  const newsFetchJob = new NewsFetchJob({ store: newsStore })
+  const newsOrchestrator = new NewsSchedulerOrchestrator({
+    store: newsStore,
+    job: newsFetchJob,
+  })
+  const newsScheduler = new NewsScheduler({
+    orchestrator: newsOrchestrator,
+    intervalMin: config.newsIntervalMin,
+  })
+  // Log the in-flight count at startup as a sanity check. Should
+  // always be 0 in a fresh boot; a non-zero value would indicate
+  // the orchestrator was reused across processes (which it isn't).
+  if (newsScheduler.isEnabled()) {
+    newsScheduler.start()
+    // eslint-disable-next-line no-console
+    console.log(
+      `[dashboard] news scheduler started (interval=${config.newsIntervalMin}min, inFlightCount=${newsOrchestrator.inFlightCount()})`,
+    )
+  } else {
+    // eslint-disable-next-line no-console
+    console.log(
+      '[dashboard] news scheduler disabled (DASHBOARD_NEWS_INTERVAL_MIN=0); manual /api/news/refresh is the only path',
+    )
+  }
+
   // Graceful shutdown. Best-effort cleanup of the timer so a
   // deployed dashboard doesn't keep ticking after `pm2 stop`.
   const shutdown = (signal: NodeJS.Signals): void => {
@@ -155,6 +195,7 @@ async function main(): Promise<void> {
     if (youtubeSyncScheduler) youtubeSyncScheduler.stop()
     if (youtubePlaylistsScheduler) youtubePlaylistsScheduler.stop()
     if (youtubeRssSched) youtubeRssSched.stop()
+    if (newsScheduler.isEnabled()) newsScheduler.stop()
     db.close()
     process.exit(0)
   }
@@ -169,6 +210,7 @@ async function main(): Promise<void> {
     youtube,
     youtubeHistory,
     ai: { minimaxConfigured: config.llm !== null, serperConfigured: config.serperConfigured },
+    newsScheduler,
   })
 
   // HTTPS when DASHBOARD_TLS_CERT + DASHBOARD_TLS_KEY are set;

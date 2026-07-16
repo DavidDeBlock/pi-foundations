@@ -109,6 +109,7 @@ describe('Migrations runner', () => {
       '022_youtube_video_descriptions',
       '023_youtube_description_resources',
       '024_youtube_history_html_shorts',
+      '025_news',
     ])
 
     // Spot-check that every table from the PRD schema now exists.
@@ -160,6 +161,10 @@ describe('Migrations runner', () => {
     expect(names).toContain('video_summary_sources')
     expect(names).toContain('video_descriptions')
     expect(names).toContain('video_description_resources')
+    // News & Weather (issue NW-001): source registry + articles + weather.
+    expect(names).toContain('news_sources')
+    expect(names).toContain('news_articles')
+    expect(names).toContain('weather_snapshots')
     expect(db.all<{ id: string }>('SELECT id FROM summary_profiles ORDER BY id').map((row) => row.id)).toEqual([
       'builtin-detailed', 'builtin-quick', 'builtin-standard',
     ])
@@ -173,15 +178,168 @@ describe('Migrations runner', () => {
   it('is idempotent — running twice does NOT re-apply', async () => {
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const firstApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(firstApplied).toHaveLength(24)
+    expect(firstApplied).toHaveLength(25)
 
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const secondApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(secondApplied).toHaveLength(24)
+    expect(secondApplied).toHaveLength(25)
     // applied_at should be unchanged on re-run (still the original timestamps).
     expect(secondApplied.map((r) => r.name).sort()).toEqual(
       firstApplied.map((r) => r.name).sort(),
     )
+  })
+
+  it('creates the news & weather schema (NW-001) with seeded sources', async () => {
+    await runMigrations(db, { dir: MIGRATIONS_DIR })
+
+    // Schema: news_sources — every column from the PRD is present with
+    // the right type and DEFAULT.
+    const sourceCols = db.all<{ name: string; type: string; dflt_value: string | null; pk: number }>(
+      'PRAGMA table_info(news_sources)',
+    )
+    const sourceColNames = sourceCols.map((c) => c.name)
+    expect(sourceColNames).toEqual([
+      'id',
+      'name',
+      'category',
+      'type',
+      'url',
+      'enabled',
+      'refresh_interval_min',
+      'last_fetched_at',
+      'last_successful_fetch_at',
+      'last_error',
+      'created_at',
+    ])
+    const enabledCol = sourceCols.find((c) => c.name === 'enabled')!
+    expect(enabledCol.dflt_value).toBe('1')
+    const refreshCol = sourceCols.find((c) => c.name === 'refresh_interval_min')!
+    expect(refreshCol.dflt_value).toBe('30')
+    const idCol = sourceCols.find((c) => c.name === 'id')!
+    expect(idCol.pk).toBe(1)
+
+    // Index on (enabled, last_fetched_at) for the due-check query.
+    const sourceIndexes = db.all<{ name: string; sql: string | null }>(
+      "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'news_sources' AND name NOT LIKE 'sqlite_%'",
+    )
+    expect(sourceIndexes.some((i) => i.name === 'idx_news_sources_due')).toBe(true)
+
+    // Schema: news_articles — composite PK (source_id, id), FK to
+    // news_sources, and the published_at DESC index.
+    const articleCols = db.all<{ name: string; pk: number }>(
+      'PRAGMA table_info(news_articles)',
+    )
+    const articleColNames = articleCols.map((c) => c.name)
+    expect(articleColNames).toEqual([
+      'id',
+      'source_id',
+      'title',
+      'description',
+      'url',
+      'published_at',
+      'fetched_at',
+    ])
+    // Composite PK shows up as two rows with pk > 0 on `id` and `source_id`.
+    expect(articleCols.filter((c) => c.pk > 0).map((c) => c.name).sort()).toEqual([
+      'id',
+      'source_id',
+    ])
+    const articleFks = db.all<{ table: string; from: string; to: string }>(
+      'PRAGMA foreign_key_list(news_articles)',
+    )
+    expect(articleFks).toContainEqual(
+      expect.objectContaining({ table: 'news_sources', from: 'source_id', to: 'id' }),
+    )
+    const articleIndexes = db.all<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'news_articles' AND name NOT LIKE 'sqlite_%'",
+    )
+    expect(articleIndexes.some((i) => i.name === 'idx_news_articles_published')).toBe(true)
+
+    // Schema: weather_snapshots — PK on source_id, FK CASCADE.
+    const weatherCols = db.all<{ name: string; pk: number; notnull: number }>(
+      'PRAGMA table_info(weather_snapshots)',
+    )
+    expect(weatherCols.map((c) => c.name)).toEqual([
+      'source_id',
+      'fetched_at',
+      'current_json',
+      'daily_json',
+      'hourly_json',
+    ])
+    expect(weatherCols.find((c) => c.name === 'source_id')!.pk).toBe(1)
+    // All non-PK columns are explicitly NOT NULL; the PK column is implicitly NOT NULL.
+    expect(weatherCols.filter((c) => c.pk === 0).every((c) => c.notnull === 1)).toBe(true)
+    const weatherFks = db.all<{ table: string; from: string; on_delete: string }>(
+      'PRAGMA foreign_key_list(weather_snapshots)',
+    )
+    expect(weatherFks).toContainEqual(
+      expect.objectContaining({
+        table: 'news_sources',
+        from: 'source_id',
+        on_delete: 'CASCADE',
+      }),
+    )
+
+    // Seed: exactly 5 sources, all enabled, all 30-min refresh, one per
+    // category from PRD-008, URLs match the PRD byte-for-byte.
+    const sources = db.all<{
+      id: number
+      name: string
+      category: string
+      type: string
+      url: string
+      enabled: number
+      refresh_interval_min: number
+      created_at: string
+    }>(
+      'SELECT id, name, category, type, url, enabled, refresh_interval_min, created_at FROM news_sources ORDER BY id',
+    )
+    expect(sources).toHaveLength(5)
+    for (const s of sources) {
+      expect(s.enabled).toBe(1)
+      expect(s.refresh_interval_min).toBe(30)
+      expect(typeof s.created_at).toBe('string')
+      // ISO 8601: YYYY-MM-DDTHH:MM:SS.fffZ (24 chars) — same shape as strftime default.
+      expect(s.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    }
+    expect(sources.map((s) => s.name)).toEqual([
+      'VRT NWS',
+      'De Tijd — General',
+      'CCB News',
+      'CCB Advisories',
+      'Open-Meteo Ghent',
+    ])
+    expect(sources.map((s) => s.category)).toEqual([
+      'General',
+      'Economy',
+      'Technology and Cybersecurity',
+      'Technology and Cybersecurity',
+      'Weather',
+    ])
+    expect(sources.map((s) => s.type)).toEqual(['rss', 'rss', 'rss', 'rss', 'json_api'])
+    // URLs must match the PRD-008 seed spec verbatim (the Open-Meteo URL
+    // is the long one; the timezone is URL-encoded as %2F).
+    expect(sources.map((s) => s.url)).toEqual([
+      'https://www.vrt.be/vrtnws/nl.rss.articles.xml',
+      'https://www.tijd.be/rss/nieuws.xml',
+      'https://ccb.belgium.be/news.xml',
+      'https://ccb.belgium.be/advisories.xml',
+      'https://api.open-meteo.com/v1/forecast?latitude=51.0543&longitude=3.7174&current=temperature_2m,apparent_temperature,precipitation,rain,weather_code,wind_speed_10m,wind_gusts_10m&hourly=temperature_2m,precipitation_probability,precipitation,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=Europe%2FBrussels&forecast_days=7',
+    ])
+  })
+
+  it('is idempotent at the SQL level — re-running 025_news.sql directly does not duplicate seed rows', async () => {
+    await runMigrations(db, { dir: MIGRATIONS_DIR })
+    expect(db.all<unknown>('SELECT id FROM news_sources')).toHaveLength(5)
+
+    // Re-execute the same SQL. With CREATE TABLE IF NOT EXISTS and the
+    // WHERE NOT EXISTS guard on the seed INSERT, this must be a no-op.
+    const sql = await readFile(resolve(MIGRATIONS_DIR, '025_news.sql'), 'utf8')
+    db.transaction(() => {
+      db.exec(sql)
+    })
+
+    expect(db.all<unknown>('SELECT id FROM news_sources')).toHaveLength(5)
   })
 
   it('upgrades a populated migration-013 database without changing video ids or enrichment', async () => {

@@ -46,6 +46,9 @@ import { aiResearchApi, type AiProviderStatus } from './ai-research-settings.js'
 import { aiResearchSettingsView } from './ai-research-settings-view.js'
 import { youtubeVideoDescriptionsApi } from './youtube-video-descriptions-api.js'
 import type { YouTubeVideoDescriptionService } from './youtube-video-descriptions.js'
+import { newsWeatherRoute } from './news/news-weather-route.js'
+import type { NewsScheduler } from './news/news-scheduler.js'
+import { newsRefreshApi } from './news/news-refresh-route.js'
 
 export interface EmailDeps {
   /** AES-256-GCM cipher for OAuth tokens at rest. */
@@ -128,6 +131,17 @@ export interface AppDeps {
   /** Private, local-only Google Takeout watch-history importer (YT-012). */
   readonly youtubeHistory?: YouTubeHistoryImports
   readonly ai?: AiProviderStatus
+  /**
+   * News & Weather scheduler (issue NW-005). Required for the
+   * `POST /api/news/refresh` manual trigger; the scheduler's
+   * lifecycle (start / stop) is owned by `main()` and threaded
+   * through here so the route can invoke `runOnce()` without
+   * needing to know about timers. Optional: when absent, the
+   * refresh endpoint is not mounted and the page renders
+   * whatever data is in the DB (still useful for read-only
+   * inspection during migration rollouts).
+   */
+  readonly newsScheduler?: NewsScheduler
 }
 
 /**
@@ -145,6 +159,7 @@ export function createApp({
   youtube,
   youtubeHistory,
   ai,
+  newsScheduler,
 }: AppDeps): Hono<{ Variables: AuthVariables }> {
   const app = new Hono<{ Variables: AuthVariables }>()
 
@@ -216,6 +231,23 @@ export function createApp({
   // server-rendered HTML page for direct navigation and deep links.
   app.route('/api/search', searchApi(db))
   app.route('/search', searchViewApi(db))
+
+  // News & Weather page (issue NW-004). Server-rendered HTML;
+  // reads from the `news_*` tables via `NewsStore`. Auth is
+  // already enforced by the global middleware above. No
+  // background scheduler required — the page renders from
+  // whatever data is in the DB.
+  app.route('/news-weather', newsWeatherRoute({ db }))
+
+  // News & Weather manual refresh (issue NW-005). The scheduler
+  // is constructed once in `index.ts`; the route reuses it for
+  // `POST /api/news/refresh`. When the scheduler isn't wired
+  // (e.g. a unit test that only cares about the page), the
+  // endpoint is unmounted — `POST` returns 404, which is the
+  // right signal that the surface is not configured.
+  if (newsScheduler) {
+    app.route('/api/news', newsRefreshApi({ scheduler: newsScheduler }))
+  }
 
   // v2 visual preview — single page that mocks up the future
   // dashboard compartments (Bookmarks / YouTube / Projects / Email)

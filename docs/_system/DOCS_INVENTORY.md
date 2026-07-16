@@ -2,7 +2,11 @@
 
 **Purpose:** Central state file containing YAML blocks per file with stable IDs. Source of truth for all reorganization state.
 **Updated By:** Phase 1 scan script, then agent during classification
+<<<<<<< Updated upstream
 **Last Scan:** 2026-07-01T19:11:49.299Z
+=======
+**Last Scan:** 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 
 ---
 
@@ -13,7 +17,11 @@
 | docs/20-architecture | 1 | 0.14 |
 | docs/25-system-specs | 3 | 6.61 |
 | docs/30-vertical-flows | 1 | 0.22 |
+<<<<<<< Updated upstream
 | docs/31-planning-notes | 3 | 30 |
+=======
+| docs/31-planning-notes | 3 | 13.36 |
+>>>>>>> Stashed changes
 | docs/35-prds | 12 | 248.09 |
 | docs/40-decisions | 3 | 12.38 |
 | docs/50-agent-workflows | 1 | 0.16 |
@@ -46,7 +54,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ### docs/25-system-specs
@@ -69,7 +81,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -90,7 +106,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -111,7 +131,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ### docs/30-vertical-flows
@@ -134,7 +158,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ### docs/31-planning-notes
@@ -157,7 +185,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -178,15 +210,24 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
 id: F0008
 path: docs/31-planning-notes/todo.md
 folder: docs/31-planning-notes
+<<<<<<< Updated upstream
 size_kb: 20.62
 lines: 322
+=======
+size_kb: 3.98
+lines: 62
+>>>>>>> Stashed changes
 status: scanned
 class: null
 confidence: null
@@ -199,7 +240,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ### docs/35-prds
@@ -222,7 +267,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -243,7 +292,11 @@ related_files: []
 target_path: null
 current_step: classified
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -264,7 +317,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -285,7 +342,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -306,7 +367,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -327,7 +392,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -348,7 +417,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -369,7 +442,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -390,7 +467,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -411,7 +492,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -432,7 +517,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -453,7 +542,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ### docs/40-decisions
@@ -476,7 +569,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -497,7 +594,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -518,7 +619,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ### docs/50-agent-workflows
@@ -541,7 +646,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ### docs/90-archive
@@ -564,7 +673,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ### docs/90-archive/04-operations
@@ -587,7 +700,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -608,7 +725,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -629,7 +750,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ### docs/90-archive/react-guides
@@ -652,7 +777,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ### docs/90-archive/react-router-tutorials
@@ -675,7 +804,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -696,7 +829,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -717,7 +854,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ### docs/agents
@@ -740,7 +881,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -761,7 +906,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -782,7 +931,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 
 ```yaml
@@ -803,6 +956,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
+<<<<<<< Updated upstream
 last_updated: 2026-07-01T19:11:49.299Z
 ```
 
@@ -848,5 +1002,8 @@ target_path: null
 current_step: null
 blocker: null
 last_updated: 2026-07-01T19:11:49.299Z
+=======
+last_updated: 2026-06-16T22:18:17.323Z
+>>>>>>> Stashed changes
 ```
 

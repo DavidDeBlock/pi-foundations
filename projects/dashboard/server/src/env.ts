@@ -155,6 +155,18 @@ export interface Config {
    * config.
    */
   readonly emailSyncIntervalMin: number
+  /**
+   * News & Weather scheduler tick interval, in minutes (issue NW-005).
+   * The scheduler in `news-scheduler.ts` runs `tick()` at this
+   * interval; each tick re-evaluates the per-source due-check inside
+   * the orchestrator. Defaults to 1 minute (the design doc says
+   * "re-evaluate every 60s"). Set to `0` to disable the automatic
+   * scheduler — the manual `POST /api/news/refresh` route is the
+   * only way news gets ingested in that mode. Negative / non-numeric
+   * values fall back to 1; `0` is honored literally so operators can
+   * opt out without editing config (smoke script uses this).
+   */
+  readonly newsIntervalMin: number
 }
 
 /**
@@ -360,6 +372,21 @@ export async function loadConfig(): Promise<Config> {
     }
   }
 
+  // News & Weather scheduler interval (issue NW-005). Mirrors the
+  // email-sync pattern above: optional env var, defaults to 1 minute,
+  // `0` honored literally so smoke scripts + offline installs can
+  // disable auto-fetching. Negative / non-numeric values fall back to
+  // the default. The manual `POST /api/news/refresh` route is the
+  // only path when this is `0`.
+  const rawNewsIntervalMin = process.env.DASHBOARD_NEWS_INTERVAL_MIN
+  let newsIntervalMin = 1
+  if (rawNewsIntervalMin !== undefined && rawNewsIntervalMin !== '') {
+    const parsed = Number.parseInt(rawNewsIntervalMin, 10)
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      newsIntervalMin = parsed
+    }
+  }
+
   // ─── Optional TLS (issue #021 follow-up) ──────────────────────────────────────
   // Load cert + key from disk when both env vars point at readable
   // files. A typo (e.g. wrong path, partial pair) is a startup error
@@ -409,6 +436,7 @@ export async function loadConfig(): Promise<Config> {
     missingEmailEnv,
     emailSyncHistoryDays,
     emailSyncIntervalMin,
+    newsIntervalMin,
     youtube,
     missingYoutubeEnv,
     llm,

@@ -1,7 +1,11 @@
 {
   "issue": 43,
   "created_at": "2026-06-16T13:07:39.928769+00:00",
+<<<<<<< Updated upstream
   "updated_at": "2026-06-16T22:20:45.062200+00:00",
+=======
+  "updated_at": "2026-06-16T22:18:39.619304+00:00",
+>>>>>>> Stashed changes
   "repo_path": "/home/david/projects/pi-foundations/.pi/maestro",
   "git_sha": "7e864220e6b80db2add6e7c14983a526abda89db",
   "scout": {

@@ -144,7 +144,7 @@ export function renderHeader(opts: HeaderOptions = {}): string {
   </header>`
 }
 
-export type AppSpace = 'bookmarks' | 'email' | 'youtube'
+export type AppSpace = 'bookmarks' | 'email' | 'youtube' | 'news-weather'
 export type AppContext = 'inbox' | 'hidden' | 'videos' | 'playlists' | 'history' | 'subscriptions' | 'youtube-settings'
 
 export interface AppNavigationOptions {
@@ -161,6 +161,9 @@ function navigationIcon(space: AppSpace): string {
   if (space === 'email') {
     return `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14v10H3zM3.5 5.5 10 11l6.5-5.5"/></svg>`
   }
+  if (space === 'news-weather') {
+    return `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 9a4 4 0 1 1 7.5 1.9 3 3 0 0 1-.5 5.9h-7a3 3 0 0 1 0-6 4 4 0 0 1 0-1.8z"/></svg>`
+  }
   return `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5A2.5 2.5 0 0 1 5.5 3h9A2.5 2.5 0 0 1 17 5.5v9a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 3 14.5z"/><path class="icon-fill" d="m8 7 5 3-5 3z"/></svg>`
 }
 
@@ -170,6 +173,7 @@ export function renderAppNavigation(opts: AppNavigationOptions): string {
     { space: 'bookmarks', label: 'Bookmarks', href: '/' },
     { space: 'email', label: 'Email', href: '/email' },
     { space: 'youtube', label: 'YouTube', href: '/videos' },
+    { space: 'news-weather', label: 'News & Weather', href: '/news-weather' },
   ]
   const primary = spaces.map(({ space, label, href }) => {
     const active = opts.active === space ? ' compartment-button-active' : ''
