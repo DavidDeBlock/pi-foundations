@@ -55,48 +55,41 @@ function renderPage(
   <head>
 ${COMMON_HEAD}
     <title>Dashboard — Settings</title>
-    <style>
-      body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
-      h1 { font-weight: 500; }
-      h2 { font-weight: 500; margin-top: 2rem; }
-      h3 { font-weight: 500; margin-top: 2rem; }
-      nav a { margin-right: 1rem; color: #06c; }
-      table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
-      th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #eee; vertical-align: middle; }
-      th { font-weight: 500; color: #666; font-size: 0.9rem; }
-      code { background: #f4f4f4; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.85rem; }
-      .plaintext { background: #fffbe6; border: 1px solid #f0c000; padding: 1rem; margin: 1rem 0; }
-      .plaintext code { background: transparent; padding: 0; font-size: 0.95rem; word-break: break-all; }
-      form { margin: 1rem 0; }
-      input[type="text"] { padding: 0.4rem; width: 20rem; max-width: 100%; }
-      button { padding: 0.4rem 0.8rem; cursor: pointer; }
-      .revoke-form { display: inline; margin: 0; }
-      .empty { color: #888; }
-    </style>
   </head>
   <body>
-    ${renderHeader({ showSearch: false })}
+    ${renderHeader({ showSearch: false, showSidebarToggle: false })}
     <main class="settings-main">
-      <h1>Settings</h1>
-    <nav>
-      <a href="/">Home</a>
-      <a href="/settings">Settings</a>
-      <a href="/settings/email">Email</a>
-      <a href="/settings/youtube">YouTube</a>
-    </nav>
+      <header class="page-heading">
+        <span class="page-eyebrow">Dashboard</span>
+        <h1>Settings</h1>
+        <p>Manage integrations, access tokens, and connected services.</p>
+      </header>
+      <nav class="settings-tabs" aria-label="Settings sections">
+        <a href="/settings" class="settings-tab settings-tab-active" aria-current="page">API tokens</a>
+        <a href="/settings/email">Email</a>
+        <a href="/settings/youtube" class="settings-tab">YouTube</a>
+      </nav>
 
     ${justCreated ? renderPlaintextOnce(justCreated) : ''}
 
-    <h2>API tokens</h2>
-    ${tokens.length === 0
-      ? '<p class="empty">No tokens yet. Generate one to use with the Chrome extension.</p>'
-      : renderTokenList(tokens)}
-
-    <h3>Generate new token</h3>
-    <form method="post" action="/settings/tokens">
-      <input type="text" name="label" placeholder="Label (e.g. 'Chrome extension — home desktop')" maxlength="100" />
-      <button type="submit">Generate</button>
-    </form>
+    <section class="settings-panel">
+      <div class="settings-panel-heading">
+        <div>
+          <h2>API tokens</h2>
+          <p>Tokens let browser extensions and trusted clients sync with this dashboard.</p>
+        </div>
+      </div>
+      <form method="post" action="/settings/tokens" class="token-create-form">
+        <label>
+          <span>Token label</span>
+          <input type="text" name="label" placeholder="Chrome extension — home desktop" maxlength="100" />
+        </label>
+        <button type="submit" class="button button-primary">Generate token</button>
+      </form>
+      ${tokens.length === 0
+        ? '<div class="settings-empty"><p>No tokens yet.</p><span>Generate one above to connect the Chrome extension.</span></div>'
+        : renderTokenList(tokens)}
+    </section>
     ${CLIPBOARD_SCRIPT_TAG}
     ${THEME_SCRIPT_TAG}
     ${HAMBURGER_SCRIPT_TAG}
@@ -106,11 +99,12 @@ ${COMMON_HEAD}
 }
 
 function renderPlaintextOnce(result: CreateTokenResult): string {
-  return `<div class="plaintext">
-      <strong>New token created.</strong> Copy it now — you will not see it again.
-      <p>Label: <em>${escapeHtml(result.record.label)}</em></p>
-      <p><code>${escapeHtml(result.plaintext)}</code></p>
-      <p><a href="/settings">← Back to settings</a></p>
+  return `<div class="plaintext" role="status">
+      <div><strong>New token created</strong><p>Copy it now — it will not be shown again.</p></div>
+      <span class="plaintext-label">${escapeHtml(result.record.label)}</span>
+      <div class="plaintext-value"><code>${escapeHtml(result.plaintext)}</code>
+        <button type="button" class="button button-secondary" data-action="copy" data-url="${escapeHtml(result.plaintext)}">Copy token</button>
+      </div>
     </div>`
 }
 
@@ -124,18 +118,18 @@ function renderTokenList(tokens: readonly TokenRecord[]): string {
       <td>${t.lastUsedAt ? escapeHtml(formatDate(t.lastUsedAt)) : '<em class="empty">never</em>'}</td>
       <td>
         <form method="post" action="/settings/tokens/${escapeHtml(t.id)}/revoke" class="revoke-form">
-          <button type="submit">Revoke</button>
+          <button type="submit" class="button button-danger">Revoke</button>
         </form>
       </td>
     </tr>`,
     )
     .join('')
-  return `<table>
+  return `<div class="settings-table-wrap"><table class="settings-table">
     <thead>
       <tr><th>Label</th><th>ID</th><th>Created</th><th>Last used</th><th></th></tr>
     </thead>
     <tbody>${rows}</tbody>
-  </table>`
+  </table></div>`
 }
 
 function formatDate(iso: string): string {

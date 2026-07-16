@@ -347,10 +347,18 @@ ${COMMON_HEAD}
     <style>${STYLES}</style>
   </head>
   <body>
-    ${renderHeader({ showSearch: true })}
+    ${renderHeader({ showSearch: true, showSidebarToggle: false })}
     <main class="email-settings-main">
-      <nav class="breadcrumb"><a href="/settings">\u2190 Settings</a></nav>
-      <h1>Email</h1>
+      <header class="page-heading">
+        <span class="page-eyebrow">Integration</span>
+        <h1>Email</h1>
+        <p>Connect Gmail and manage synchronization with the dashboard.</p>
+      </header>
+      <nav class="settings-tabs" aria-label="Settings sections">
+        <a href="/settings" class="settings-tab">API tokens</a>
+        <a href="/settings/email" class="settings-tab settings-tab-active" aria-current="page">Email</a>
+        <a href="/settings/youtube" class="settings-tab">YouTube</a>
+      </nav>
 
       ${inSetupMode ? renderSetupRequiredBanner(args.setupMissing!) : ''}
       ${args.flash ? renderFlash(args.flash) : ''}
@@ -792,7 +800,7 @@ const STYLES = `
    * light and dark themes. Hardcoded hex values are only used for
    * subtle accents that need a specific hue in each mode — those are
    * defined via the same theme tokens. */
-  .email-settings-main { max-width: 56rem; margin: 0 auto; padding: 0 1rem; color: var(--text); }
+  .email-settings-main { width: min(100% - 2rem, 1040px); margin: 0 auto; padding: 2.25rem 0 4rem; color: var(--text); }
   .email-settings-main h1 { font-weight: 600; }
   .email-settings-main h2 { font-weight: 600; margin-top: 2.5rem; color: var(--text); }
   .email-settings-main nav.breadcrumb { font-size: 0.9rem; margin-bottom: 1rem; }
@@ -901,4 +909,15 @@ const STYLES = `
   .setup-docs dd { color: var(--muted); line-height: 1.5; margin-left: 1rem; }
   .setup-docs a { color: var(--accent); text-decoration: none; }
   .setup-docs a:hover { text-decoration: underline; }
+  @media (max-width: 640px) {
+    .email-settings-main { padding-top: 1.5rem; }
+    .connect-prompt, .setup-mode-prompt, .setup-required { padding: 1rem; }
+    .account-row { align-items: flex-start; flex-direction: column; gap: 1rem; }
+    .account-info { align-items: flex-start; min-width: 0; }
+    .account-meta { overflow-wrap: anywhere; }
+    .account-actions { width: 100%; flex-wrap: wrap; }
+    .refresh-form, .disconnect-form { flex: 1; }
+    .account-actions button { width: 100%; justify-content: center; min-height: 42px; }
+    .setup-docs dd { margin-left: 0; }
+  }
 `

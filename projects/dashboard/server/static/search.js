@@ -56,6 +56,10 @@ async function apiSearch(params) {
  * (or appends if none). Also updates the status line.
  */
 function renderResults(panel, response) {
+  const emptyState = panel.querySelector('.empty-state')
+  if (emptyState) emptyState.remove()
+  const pagination = panel.querySelector('.pagination')
+  if (pagination) pagination.remove()
   // Update the status line (replacing whatever was there).
   const status = panel.querySelector('[data-search-status]')
   if (status) {

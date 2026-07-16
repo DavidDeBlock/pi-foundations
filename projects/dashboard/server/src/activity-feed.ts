@@ -561,9 +561,13 @@ function renderFeedItem(item: FeedItem, categorize?: CategorizeContext): string 
       </div>
       <div class="feed-item-actions">
         <a class="action-button" href="${escapeHtml(item.url)}" target="_blank" rel="noopener" data-action="open" title="Open in new tab" aria-label="Open in new tab">↗</a>
-        <${editTag} class="action-button" ${editAttr} data-action="edit" title="${categorize ? 'Edit title inline' : 'View details'}" aria-label="${categorize ? 'Edit title' : 'View details'}">${categorize ? '✏' : 'ⓘ'}</${editTag}>
         <button type="button" class="action-button" data-action="copy" title="Copy URL" aria-label="Copy URL">📋</button>
-        ${categorize ? renderCategorizeControls(item, categorize) : ''}
+        ${categorize
+          ? `<details class="card-menu">
+              <summary class="action-button" title="Manage bookmark" aria-label="Manage bookmark">•••</summary>
+              ${renderCategorizeControls(item, categorize)}
+            </details>`
+          : `<${editTag} class="action-button" ${editAttr} data-action="edit" title="View details" aria-label="View details">ⓘ</${editTag}>`}
       </div>
     </article>
   `
@@ -619,12 +623,21 @@ function renderTagList(
 
 function renderCategorizeControls(item: FeedItem, ctx: CategorizeContext): string {
   const folderSelect = renderFolderSelect(item.id, ctx.folderOptions)
-  return `
-    <select class="folder-select action-select" data-folder-select title="Move to folder" aria-label="Move to folder">
-      ${folderSelect}
-    </select>
-    <button type="button" class="action-button" data-delete-bookmark title="Delete this bookmark" aria-label="Delete">🗑</button>
-    <span class="actions-status" data-actions-status></span>
+  return `<div class="card-menu-popover">
+    <button type="button" class="card-menu-item" data-edit-title="true" data-action="edit">
+      <span aria-hidden="true">✎</span> Edit title
+    </button>
+    <label class="card-menu-field">
+      <span>Move to folder</span>
+      <select class="folder-select action-select" data-folder-select>
+        ${folderSelect}
+      </select>
+    </label>
+    <button type="button" class="card-menu-item card-menu-item-danger" data-delete-bookmark>
+      <span aria-hidden="true">⌫</span> Delete bookmark
+    </button>
+    <span class="actions-status" data-actions-status aria-live="polite"></span>
+  </div>
   `
 }
 
@@ -718,7 +731,7 @@ ${COMMON_HEAD}
     <style>${styles}</style>
   </head>
   <body>
-    ${renderHeader()}
+    ${renderHeader({ showSidebarToggle: false })}
     <div class="layout">
       <main class="detail-main">
     <h1><a href="${escapeHtml(detail.url)}" target="_blank" rel="noopener">${escapeHtml(detail.title)}</a></h1>
@@ -772,7 +785,7 @@ ${COMMON_HEAD}
     <style>body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem; color: #1a1a1a; } h1 { font-weight: 500; } nav { margin-top: 2rem; } nav a { color: #06c; text-decoration: none; }</style>
   </head>
   <body>
-    ${renderHeader()}
+    ${renderHeader({ showSidebarToggle: false })}
     <main class="detail-main">
       <h1>Bookmark not found</h1>
       <p>That bookmark doesn't exist (or was deleted).</p>

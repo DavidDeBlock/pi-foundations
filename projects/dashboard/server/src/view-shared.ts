@@ -92,6 +92,9 @@ function escapeHtml(value: string): string {
 export interface HeaderOptions {
   readonly initialQuery?: string
   readonly showSearch?: boolean
+  /** Render the mobile sidebar trigger. Pages without a sidebar should
+   * leave this false so they do not expose a control with no target. */
+  readonly showSidebarToggle?: boolean
 }
 
 /**
@@ -118,14 +121,20 @@ export function renderHeader(opts: HeaderOptions = {}): string {
       <button type="submit" class="search-button">Search</button>
     </form>`
     : ''
+  const sidebarToggle = opts.showSidebarToggle !== false
+    ? `<button type="button" class="hamburger" data-hamburger aria-label="Toggle navigation" aria-expanded="false" title="Open navigation"><span aria-hidden="true">\u2630</span></button>`
+    : ''
   return `<header class="site-header">
-    <button type="button" class="hamburger" data-hamburger aria-label="Toggle navigation" title="Toggle navigation">\u2630</button>
-    <a class="brand" href="/">
-      <span class="brand-icon" aria-hidden="true">\u229e</span>
-      <span class="brand-name">Dashboard</span>
-    </a>
+    <div class="header-left">
+      ${sidebarToggle}
+      <a class="brand" href="/">
+        <span class="brand-icon" aria-hidden="true">\u229e</span>
+        <span class="brand-name">Dashboard</span>
+      </a>
+    </div>
     <div class="header-right">
       ${searchForm}
+      <a class="mobile-search-link" href="/search" aria-label="Search" title="Search"><span aria-hidden="true">\u2315</span></a>
       ${renderThemeToggle()}
       <a class="settings-link" href="/settings" title="Settings">Settings</a>
       <a class="logout-link" href="/api/logout" title="Sign out">Logout</a>
@@ -211,14 +220,37 @@ export function renderEmptyState(state: EmptyState): string {
  */
 export const HAMBURGER_SCRIPT_TAG = `<script>
 (function () {
+  var body = document.body
+  var sidebar = document.querySelector('.sidebar')
+  var btn = document.querySelector('[data-hamburger]')
+  if (!sidebar || !btn) return
+
+  function setOpen(open) {
+    sidebar.setAttribute('data-open', open ? 'true' : 'false')
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false')
+    btn.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation')
+    body.classList.toggle('sidebar-open', open)
+  }
+
   document.addEventListener('click', function (e) {
-    var btn = e.target && e.target.closest && e.target.closest('[data-hamburger]')
-    if (!btn) return
-    var sidebar = document.querySelector('.sidebar')
-    if (!sidebar) return
-    var open = sidebar.getAttribute('data-open') === 'true'
-    sidebar.setAttribute('data-open', open ? 'false' : 'true')
-    btn.setAttribute('aria-expanded', open ? 'false' : 'true')
+    var target = e.target && e.target.closest ? e.target : null
+    if (!target) return
+    var toggle = target.closest('[data-hamburger]')
+    if (toggle) {
+      setOpen(sidebar.getAttribute('data-open') !== 'true')
+      return
+    }
+    if (body.classList.contains('sidebar-open') && !target.closest('.sidebar')) {
+      setOpen(false)
+    }
+    if (target.closest('.sidebar a')) setOpen(false)
+  })
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && body.classList.contains('sidebar-open')) {
+      setOpen(false)
+      btn.focus()
+    }
   })
 })()
 </script>`

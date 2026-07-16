@@ -376,36 +376,6 @@ function pageToOffset(page: string | undefined, perPage: number | undefined): nu
 
 // ─── HTML page (server-rendered) ──────────────────────────────────────────
 
-const SEARCH_PAGE_STYLES = `
-  body { font-family: system-ui, sans-serif; max-width: 56rem; margin: 4rem auto; padding: 0 1rem; color: #1a1a1a; }
-  h1 { font-weight: 500; }
-  .user { color: #666; font-size: 0.9rem; }
-  .search-form { margin: 1.5rem 0; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
-  .search-form input[type=search] { font-size: 1rem; padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 0.25rem; min-width: 18rem; }
-  .search-form select { font-size: 0.9rem; padding: 0.3rem 0.4rem; border: 1px solid #ccc; border-radius: 0.25rem; }
-  .search-form input[type=date] { font-size: 0.9rem; padding: 0.25rem 0.4rem; border: 1px solid #ccc; border-radius: 0.25rem; }
-  .search-form button { font-size: 0.9rem; padding: 0.4rem 0.8rem; border: 1px solid #06c; background: #06c; color: #fff; border-radius: 0.25rem; cursor: pointer; }
-  .search-form button.secondary { background: #f6f6f6; color: #333; border-color: #ccc; }
-  .search-status { color: #666; font-size: 0.85rem; margin: 1rem 0; }
-  .search-status .fuzzy { color: #b85c00; }
-  ul.results { list-style: none; padding: 0; margin: 0; }
-  .result { padding: 1rem 0; border-bottom: 1px solid #eee; }
-  .result:last-child { border-bottom: none; }
-  .result h3 { margin: 0 0 0.25rem; font-size: 1rem; font-weight: 500; }
-  .result h3 a { color: #1a1a1a; text-decoration: none; }
-  .result h3 a:hover { text-decoration: underline; }
-  .result .snippet { color: #444; font-size: 0.9rem; margin: 0.25rem 0; }
-  .result .snippet mark { background: #fff3a8; padding: 0 0.15rem; border-radius: 0.1rem; }
-  .result .meta { color: #666; font-size: 0.85rem; }
-  .tag { display: inline-block; background: #eef; color: #335; padding: 0.1rem 0.5rem; border-radius: 0.25rem; font-size: 0.8rem; margin-right: 0.25rem; }
-  nav { margin-top: 1.5rem; }
-  nav a { margin-right: 1rem; color: #06c; }
-  .pagination { display: flex; justify-content: space-between; align-items: center; padding: 1rem 0; color: #666; font-size: 0.9rem; }
-  .pagination a { color: #06c; text-decoration: none; }
-  .pagination .disabled { color: #bbb; }
-  .empty { color: #999; font-style: italic; padding: 2rem 0; text-align: center; }
-`
-
 /**
  * HTML search results page (deep-linkable, server-rendered).
  * Mounted at `/search` by `app.ts`. Mirrors `activityFeedApi`'s pattern
@@ -481,10 +451,10 @@ function renderSearchPage(
   //   3. Query with N>0 results    → status line + result list
   const statusHtml =
     response.mode === 'empty'
-      ? `<p class="search-status">Type a query above to search bookmarks.</p>`
+      ? `<p class="search-status" data-search-status>Type a query above to search bookmarks.</p>`
       : response.results.length === 0
-        ? renderEmptyState({ kind: 'no-results', query: response.query })
-        : `<p class="search-status">${response.results.length} result${response.results.length === 1 ? '' : 's'} for <strong>${escapeHtml(response.query)}</strong>${response.mode === 'fuzzy' ? ' <span class="fuzzy">(fuzzy match)</span>' : ''}</p>`
+        ? `<p class="search-status sr-only" data-search-status>No matches for ${escapeHtml(response.query)}.</p>${renderEmptyState({ kind: 'no-results', query: response.query })}`
+        : `<p class="search-status" data-search-status>${response.results.length} result${response.results.length === 1 ? '' : 's'} for <strong>${escapeHtml(response.query)}</strong>${response.mode === 'fuzzy' ? ' <span class="fuzzy">(fuzzy match)</span>' : ''}</p>`
 
   const resultsHtml =
     response.results.length === 0
@@ -498,15 +468,21 @@ function renderSearchPage(
   <head>
 ${COMMON_HEAD}
     <title>Search — Dashboard</title>
-    <style>${SEARCH_PAGE_STYLES}</style>
   </head>
   <body data-user="${escapeHtml(user)}">
-    ${renderHeader({ initialQuery: opts.query })}
+    ${renderHeader({ showSearch: false, showSidebarToggle: false })}
     <main class="search-main">
+      <header class="page-heading">
+        <span class="page-eyebrow">Bookmarks</span>
+        <h1>Search your library</h1>
+        <p>Find bookmarks by title, URL, folder, tag, or date.</p>
+      </header>
       ${renderSearchForm(opts)}
-      ${statusHtml}
-      ${resultsHtml}
-      ${paginationHtml}
+      <div class="search-results-panel" data-search-panel>
+        ${statusHtml}
+        ${resultsHtml}
+        ${paginationHtml}
+      </div>
     </main>
     <script src="/static/search.js" defer></script>
     ${CLIPBOARD_SCRIPT_TAG}
@@ -532,19 +508,26 @@ function renderSearchForm(opts: SearchPageRenderOpts): string {
 
   return `
     <form class="search-form" data-search-form method="get" action="/search">
-      <input type="search" name="q" placeholder="Search bookmarks\u2026" value="${escapeHtml(opts.query)}" autofocus data-search-input>
-      <select name="folder" data-search-folder>
-        <option value="">All folders</option>
-        ${folderOptions}
-      </select>
-      <select name="tag" data-search-tag>
-        <option value="">All tags</option>
-        ${tagOptions}
-      </select>
-      <input type="date" name="from" value="${escapeHtml(opts.fromDate)}" title="From date">
-      <input type="date" name="to" value="${escapeHtml(opts.toDate)}" title="To date">
-      <button type="submit">Search</button>
-      <a href="/search" class="button secondary">Clear</a>
+      <div class="search-query-row">
+        <label class="search-query-field">
+          <span class="sr-only">Search bookmarks</span>
+          <input type="search" name="q" placeholder="Search titles and URLs\u2026" value="${escapeHtml(opts.query)}" autofocus data-search-input>
+        </label>
+        <button type="submit" class="button button-primary">Search</button>
+      </div>
+      <div class="search-filter-row" aria-label="Search filters">
+        <label><span>Folder</span><select name="folder" data-search-folder>
+          <option value="">All folders</option>
+          ${folderOptions}
+        </select></label>
+        <label><span>Tag</span><select name="tag" data-search-tag>
+          <option value="">All tags</option>
+          ${tagOptions}
+        </select></label>
+        <label><span>From</span><input type="date" name="from" value="${escapeHtml(opts.fromDate)}"></label>
+        <label><span>To</span><input type="date" name="to" value="${escapeHtml(opts.toDate)}"></label>
+        <a href="/search" class="button button-secondary">Clear filters</a>
+      </div>
     </form>
   `
 }
