@@ -61,6 +61,8 @@ import {
   HAMBURGER_SCRIPT_TAG,
   renderHeader,
   renderEmptyState,
+  renderAppNavigation,
+  renderSidebarFooter,
 } from './view-shared.js'
 
 // ─── Public types ─────────────────────────────────────────────────────────
@@ -854,40 +856,10 @@ function queryInboxTeaser(db: Database): InboxTeaser {
  *  is missing or `connected: false`, the Email and Account
  *  sections are suppressed — Bookmarks is the only entry. */
 function renderSidebarTopSections(teaser: InboxTeaser | undefined): string {
-  const bookmarksActive = ' compartment-button-active'
-  const emailActive = ''
-  const dashboard = `
-    <div class="sidebar-section">
-      <h2 class="sidebar-title">Dashboard</h2>
-      <ul class="compartment-nav">
-        <li>
-          <a class="compartment-button${bookmarksActive}" href="/" data-sidebar-nav="bookmarks">
-            <span class="compartment-icon" aria-hidden="true">\u25a3</span>
-            <span class="compartment-label">Bookmarks</span>
-          </a>
-        </li>
-      </ul>
-    </div>`
-  if (!teaser || !teaser.connected) {
-    return dashboard
-  }
-  const emailSection = `
-    <div class="sidebar-section">
-      <h2 class="sidebar-title">Email</h2>
-      <ul class="compartment-nav">
-        <li>
-          <a class="compartment-button${emailActive}" href="/email" data-sidebar-nav="email">
-            <span class="compartment-icon" aria-hidden="true">\u2709\ufe0f</span>
-            <span class="compartment-label">Inbox${teaser.unreadCount > 0 ? ` (${teaser.unreadCount})` : ''}</span>
-          </a>
-        </li>
-      </ul>
-    </div>
-    <div class="sidebar-section sidebar-folder-section">
-      <h2 class="sidebar-title">Account</h2>
-      <p class="sidebar-account-note" data-sidebar-account>${escapeHtml(teaser.accountEmail ?? '')}${teaser.lastSyncAt ? ` \u2014 last sync ${escapeHtml(formatRelativeTime(teaser.lastSyncAt))}` : ' \u2014 never synced'}</p>
-    </div>`
-  return dashboard + emailSection
+  return renderAppNavigation({
+    active: 'bookmarks',
+    emailUnread: teaser?.connected ? teaser.unreadCount : 0,
+  })
 }
 
 /** Categorize-mode sidebar: adds the "+ New folder" button + form. */
@@ -912,6 +884,7 @@ function renderFolderSidebarCategorize(
         <button type="button" data-cancel-add-folder>cancel</button>
         <span class="actions-status" data-actions-status></span>
       </form>
+      ${renderSidebarFooter()}
     </aside>
   `
 }
@@ -931,6 +904,7 @@ function renderFolderSidebar(
       <div class="sidebar-tree">
         <ul>${renderFolderTree(tree, false, activeFolderId, 0)}</ul>
       </div>
+      ${renderSidebarFooter()}
     </aside>
   `
 }

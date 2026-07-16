@@ -54,6 +54,16 @@ describe('static asset handler', () => {
 // ── Issue #011: styling foundation assets ────────────────────────────────
 
 describe('static asset handler (issue #011: styling foundation)', () => {
+  it('serves the dashboard site icon as SVG', async () => {
+    const app = new Hono()
+    app.route('/static', staticAssets())
+
+    const res = await app.request('/static/site-icon.svg')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('image/svg+xml; charset=utf-8')
+    expect(await res.text()).toContain('<svg')
+  })
+
   it('serves /static/styles.css with the file contents and correct content-type', async () => {
     const app = new Hono()
     app.route('/static', staticAssets())

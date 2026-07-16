@@ -31,6 +31,8 @@ import { THEME_BOOTSTRAP_SCRIPT } from './theme.js'
  */
 export const COMMON_HEAD = `    <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#101827">
+    <link rel="icon" href="/static/site-icon.svg" type="image/svg+xml">
     <link rel="preload" href="/static/fonts/Inter-Regular.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/static/fonts/Inter-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/static/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
@@ -128,8 +130,8 @@ export function renderHeader(opts: HeaderOptions = {}): string {
     <div class="header-left">
       ${sidebarToggle}
       <a class="brand" href="/">
-        <span class="brand-icon" aria-hidden="true">\u229e</span>
-        <span class="brand-name">Dashboard</span>
+        <span class="brand-icon" aria-hidden="true"><img src="/static/site-icon.svg" alt=""></span>
+        <span class="brand-name">David&rsquo;s Space</span>
       </a>
     </div>
     <div class="header-right">
@@ -140,6 +142,81 @@ export function renderHeader(opts: HeaderOptions = {}): string {
       <a class="logout-link" href="/api/logout" title="Sign out">Logout</a>
     </div>
   </header>`
+}
+
+export type AppSpace = 'bookmarks' | 'email' | 'youtube'
+export type AppContext = 'inbox' | 'hidden' | 'videos' | 'subscriptions' | 'youtube-settings'
+
+export interface AppNavigationOptions {
+  readonly active: AppSpace
+  readonly context?: AppContext
+  readonly emailUnread?: number
+  readonly footerNote?: string
+}
+
+function navigationIcon(space: AppSpace): string {
+  if (space === 'bookmarks') {
+    return `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3.5h10v13l-5-3-5 3z"/></svg>`
+  }
+  if (space === 'email') {
+    return `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14v10H3zM3.5 5.5 10 11l6.5-5.5"/></svg>`
+  }
+  return `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5A2.5 2.5 0 0 1 5.5 3h9A2.5 2.5 0 0 1 17 5.5v9a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 3 14.5z"/><path class="icon-fill" d="m8 7 5 3-5 3z"/></svg>`
+}
+
+/** Shared two-level sidebar used by every product space. */
+export function renderAppNavigation(opts: AppNavigationOptions): string {
+  const spaces: ReadonlyArray<{ space: AppSpace; label: string; href: string }> = [
+    { space: 'bookmarks', label: 'Bookmarks', href: '/' },
+    { space: 'email', label: 'Email', href: '/email' },
+    { space: 'youtube', label: 'YouTube', href: '/videos' },
+  ]
+  const primary = spaces.map(({ space, label, href }) => {
+    const active = opts.active === space ? ' compartment-button-active' : ''
+    const count = space === 'email' && (opts.emailUnread ?? 0) > 0
+      ? `<span class="space-count" aria-label="${opts.emailUnread} unread">${opts.emailUnread}</span>`
+      : ''
+    return `<li><a class="compartment-button space-${space}${active}" href="${href}" data-sidebar-nav="${space}">
+      <span class="compartment-icon">${navigationIcon(space)}</span>
+      <span class="compartment-label">${label}</span>${count}
+    </a></li>`
+  }).join('')
+
+  let context = ''
+  if (opts.active === 'email') {
+    context = `<div class="sidebar-section sidebar-context">
+      <h2 class="sidebar-title">Email</h2>
+      <ul class="compartment-nav">
+        <li><a class="context-link${opts.context === 'inbox' ? ' context-link-active' : ''}" href="/email" data-email-nav="inbox">Inbox</a></li>
+        <li><a class="context-link${opts.context === 'hidden' ? ' context-link-active' : ''}" href="/email/hidden" data-email-nav="hidden">Hidden</a></li>
+      </ul>
+    </div>`
+  } else if (opts.active === 'youtube') {
+    context = `<div class="sidebar-section sidebar-context">
+      <h2 class="sidebar-title">YouTube</h2>
+      <ul class="compartment-nav">
+        <li><a class="context-link${opts.context === 'videos' ? ' context-link-active' : ''}" href="/videos" data-sidebar-nav="videos"${opts.context === 'videos' ? ' aria-current="page"' : ''}>New videos</a></li>
+        <li><a class="context-link${opts.context === 'subscriptions' ? ' context-link-active' : ''}" href="/subscriptions" data-sidebar-nav="subscriptions"${opts.context === 'subscriptions' ? ' aria-current="page"' : ''}>Subscriptions</a></li>
+        <li><a class="context-link${opts.context === 'youtube-settings' ? ' context-link-active' : ''}" href="/settings/youtube" data-sidebar-nav="youtube-settings">YouTube settings</a></li>
+      </ul>
+    </div>`
+  }
+
+  return `<nav class="app-navigation" aria-label="Dashboard navigation">
+    <div class="sidebar-section spaces-section">
+      <h2 class="sidebar-title">Spaces</h2>
+      <ul class="compartment-nav">${primary}</ul>
+    </div>
+    ${context}
+  </nav>`
+}
+
+export function renderSidebarFooter(note = 'Your personal home space'): string {
+  return `<footer class="sidebar-footer">
+    <span class="sidebar-footer-dot" aria-hidden="true"></span>
+    <span class="sidebar-footer-copy">${escapeHtml(note)}</span>
+    <a href="/settings" aria-label="Settings" title="Settings">Settings</a>
+  </footer>`
 }
 
 /**

@@ -26,6 +26,10 @@ interface Asset {
 }
 
 const ASSETS: Record<string, Asset> = {
+  '/site-icon.svg': {
+    path: resolve(STATIC_DIR, 'site-icon.svg'),
+    contentType: 'image/svg+xml; charset=utf-8',
+  },
   '/categorize.js': {
     path: resolve(STATIC_DIR, 'categorize.js'),
     contentType: 'application/javascript; charset=utf-8',

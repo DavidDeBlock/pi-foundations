@@ -137,7 +137,7 @@ describe('GET /videos', () => {
 
   it('renders the YouTube sidebar with Videos active + links to /subscriptions + /settings/youtube', async () => {
     const html = await getText(await get(env.app, '/videos'))
-    expect(html).toContain('class="sidebar-active"')
+    expect(html).toMatch(/class="context-link context-link-active"[^>]*href="\/videos"/)
     expect(html).toContain('href="/videos"')
     expect(html).toContain('href="/subscriptions"')
     expect(html).toContain('href="/settings/youtube"')

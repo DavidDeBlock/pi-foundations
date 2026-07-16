@@ -39,6 +39,8 @@ import {
   THEME_SCRIPT_TAG,
   HAMBURGER_SCRIPT_TAG,
   renderHeader,
+  renderAppNavigation,
+  renderSidebarFooter,
 } from './view-shared.js'
 import {
   searchSubscriptions,
@@ -121,8 +123,8 @@ ${COMMON_HEAD}
     <meta name="robots" content="noindex">
     <style>${STYLES}</style>
   </head>
-  <body>
-    ${renderHeader({ showSearch: false })}
+  <body class="space-youtube-page">
+    ${renderHeader({ showSearch: false, showSidebarToggle: true })}
     <div class="layout">
       ${renderSidebar({ active: 'subscriptions' })}
       <main class="subscriptions-main">
@@ -152,55 +154,9 @@ ${COMMON_HEAD}
 }
 
 function renderSidebar(_args: { readonly active: 'subscriptions' }): string {
-  // Lightweight sidebar mirroring the home page's top sections.
-  // No folder tree here — the subscriptions page has no folders
-  // (folders belong to bookmarks). Bookmarks + Email + YouTube
-  // sections, with "Subscriptions" active under YouTube. (Videos
-  // gets its own active class on the `/videos` route.)
-  const bookmarksActive = ''
-  const emailActive = ''
-  const videosActive = ''
-  const subscriptionsActive = ' compartment-button-active'
   return `<aside class="sidebar" data-sidebar>
-      <div class="sidebar-section">
-        <h2 class="sidebar-title">Dashboard</h2>
-        <ul class="compartment-nav">
-          <li>
-            <a class="compartment-button${bookmarksActive}" href="/">
-              <span class="compartment-icon" aria-hidden="true">\u25a3</span>
-              <span class="compartment-label">Bookmarks</span>
-            </a>
-          </li>
-        </ul>
-      </div>
-      <div class="sidebar-section">
-        <h2 class="sidebar-title">Email</h2>
-        <ul class="compartment-nav">
-          <li>
-            <a class="compartment-button${emailActive}" href="/email">
-              <span class="compartment-icon" aria-hidden="true">\u2709\ufe0f</span>
-              <span class="compartment-label">Inbox</span>
-            </a>
-          </li>
-        </ul>
-      </div>
-      <div class="sidebar-section">
-        <h2 class="sidebar-title">YouTube</h2>
-        <ul class="compartment-nav">
-          <li>
-            <a class="compartment-button${videosActive}" href="/videos" data-sidebar-nav="videos">
-              <span class="compartment-icon" aria-hidden="true">\u25b6</span>
-              <span class="compartment-label">Videos</span>
-            </a>
-          </li>
-          <li>
-            <a class="compartment-button${subscriptionsActive}" href="/subscriptions" data-sidebar-nav="subscriptions">
-              <span class="compartment-icon" aria-hidden="true">\u25cb</span>
-              <span class="compartment-label">Subscriptions</span>
-            </a>
-          </li>
-        </ul>
-      </div>
+      ${renderAppNavigation({ active: 'youtube', context: 'subscriptions' })}
+      ${renderSidebarFooter('YouTube · subscriptions synced')}
     </aside>`
 }
 
@@ -528,7 +484,7 @@ const SUBSCRIPTIONS_PAGE_SCRIPT = `(function(){
 
 const STYLES = `
 .layout { display: flex; min-height: calc(100vh - 56px); align-items: stretch; }
-.subscriptions-main { flex: 1; min-width: 0; padding: 1.5rem 2rem 4rem; max-width: 1080px; }
+.subscriptions-main { flex: 1; min-width: 0; padding: 1.5rem 2rem 4rem; max-width: 1100px; }
 .page-heading { margin-bottom: 0.75rem; }
 .page-eyebrow { display: inline-block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; margin-bottom: 0.25rem; }
 .page-heading h1 { margin: 0 0 0.4rem; font-size: 1.6rem; font-weight: 600; }
@@ -563,11 +519,11 @@ const STYLES = `
 .subscriptions-counts strong { color: var(--text); font-weight: 600; }
 
 .subscriptions-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
-.subscription-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 1rem; align-items: center; padding: 0.7rem 0.9rem; background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem; }
-.subscription-row:hover { border-color: var(--accent); }
+.subscription-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 1rem; align-items: center; padding: 0.8rem 1rem; background: color-mix(in srgb, var(--surface) 94%, transparent); border: 1px solid var(--border); border-radius: 0.8rem; transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease; }
+.subscription-row:hover { transform: translateX(3px); border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: var(--surface); }
 .channel-link { display: flex; align-items: center; gap: 0.7rem; min-width: 0; color: var(--text); text-decoration: none; }
 .channel-link:hover .channel-title { color: var(--accent); }
-.channel-thumb { width: 48px; height: 48px; border-radius: 999px; background: var(--surface-hover); object-fit: cover; flex-shrink: 0; display: inline-block; }
+.channel-thumb { width: 52px; height: 52px; border-radius: 999px; background: var(--surface-hover); object-fit: cover; flex-shrink: 0; display: inline-block; border: 2px solid color-mix(in srgb, var(--accent) 25%, var(--border)); }
 .channel-thumb-fallback { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); font-weight: 600; font-size: 1.1rem; }
 .channel-title { font-weight: 500; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 

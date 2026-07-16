@@ -28,6 +28,8 @@ import {
   THEME_SCRIPT_TAG,
   HAMBURGER_SCRIPT_TAG,
   renderHeader,
+  renderAppNavigation,
+  renderSidebarFooter,
 } from './view-shared.js'
 import { getVideoDetail, type VideoDetail } from './youtube-videos.js'
 import { listAllFoldersWithCounts } from './folders.js'
@@ -89,7 +91,7 @@ ${COMMON_HEAD}
   <meta name="robots" content="noindex">
   <style>${VIDEO_DETAIL_STYLES}</style>
 </head>
-<body>
+<body class="space-youtube-page">
   ${renderHeader()}
   <div class="layout">
     ${renderDetailSidebar({ active: 'videos' })}
@@ -191,20 +193,10 @@ function renderTagChip(
 }
 
 function renderDetailSidebar(opts: { active: 'videos' | 'subscriptions' | 'settings' }): string {
-  return `<aside class="sidebar">
-  <nav>
-    <h3 class="sidebar-heading">YouTube</h3>
-    <ul class="sidebar-list">
-      <li><a href="/videos"${opts.active === 'videos' ? ' class="sidebar-active"' : ''}>Videos</a></li>
-      <li><a href="/subscriptions"${opts.active === 'subscriptions' ? ' class="sidebar-active"' : ''}>Subscriptions</a></li>
-      <li><a href="/settings/youtube"${opts.active === 'settings' ? ' class="sidebar-active"' : ''}>Settings</a></li>
-    </ul>
-    <h3 class="sidebar-heading">Other</h3>
-    <ul class="sidebar-list">
-      <li><a href="/">Bookmarks</a></li>
-      <li><a href="/email">Email</a></li>
-    </ul>
-  </nav>
+  const context = opts.active === 'subscriptions' ? 'subscriptions' : 'videos'
+  return `<aside class="sidebar" data-sidebar>
+  ${renderAppNavigation({ active: 'youtube', context })}
+  ${renderSidebarFooter('YouTube · video library')}
 </aside>`
 }
 
@@ -234,7 +226,7 @@ const VIDEO_DETAIL_STYLES = `
 .video-detail-main { flex: 1; padding: 24px clamp(12px, 4vw, 48px); max-width: 980px; }
 .video-detail-breadcrumb { margin: 0 0 16px; font-size: 0.9rem; }
 .video-detail-breadcrumb a { color: var(--accent); text-decoration: none; }
-.video-detail { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 24px; }
+.video-detail { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: clamp(18px, 4vw, 30px); box-shadow: var(--shadow); }
 .video-detail-header { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 16px; align-items: start; }
 .video-detail-title { margin: 0; font-size: 1.4rem; line-height: 1.3; }
 .video-detail-title-input { width: 100%; font-size: 1.4rem; font-weight: 600; padding: 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); }
@@ -246,7 +238,7 @@ const VIDEO_DETAIL_STYLES = `
 .video-detail-meta a { color: var(--accent); text-decoration: none; }
 .video-detail-channel-flag { display: inline-block; margin-left: 8px; padding: 2px 6px; background: var(--surface-2, rgba(127,127,127,0.1)); color: var(--muted); border-radius: 4px; font-size: 0.78rem; }
 .video-detail-thumb { margin: 16px 0 24px; }
-.video-detail-thumb img { width: 100%; max-width: 480px; aspect-ratio: 16/9; object-fit: cover; border-radius: 6px; }
+.video-detail-thumb img { width: 100%; max-width: 560px; aspect-ratio: 16/9; object-fit: cover; border-radius: 12px; box-shadow: 0 14px 35px rgba(3,8,20,.24); }
 .video-detail-thumb-fallback { width: 100%; max-width: 480px; aspect-ratio: 16/9; background: var(--surface-2, rgba(127,127,127,0.1)); border-radius: 6px; }
 .video-detail-folder h2, .video-detail-tags h2 { margin: 24px 0 8px; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 .video-detail-folder-select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font: inherit; min-width: 240px; }

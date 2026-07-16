@@ -526,9 +526,10 @@ describe('GET /email — sidebar nav', () => {
     })
     const res = await authed(env, '/email')
     const html = await res.text()
-    // The Inbox nav entry links to /email and carries the active class.
-    expect(html).toMatch(/<a[^>]*class="compartment-button compartment-button-active"[^>]*href="\/email"/)
-    expect(html).toContain('>Inbox</span>')
+    // Email is the active primary space; Inbox is active context.
+    expect(html).toMatch(/<a[^>]*class="[^"]*space-email[^"]*compartment-button-active[^"]*"[^>]*href="\/email"/)
+    expect(html).toMatch(/<a[^>]*class="context-link context-link-active"[^>]*href="\/email"/)
+    expect(html).toContain('>Inbox</a>')
   })
 
   it('sidebar has a "Bookmarks" link pointing to / (dashboard cross-link)', async () => {
@@ -543,10 +544,9 @@ describe('GET /email — sidebar nav', () => {
     // /email/* pages can navigate back to the activity feed without
     // typing `/`. It lives in a "Dashboard" section above "Email".
     expect(html).toContain('>Bookmarks</span>')
-    expect(html).toMatch(/<a[^>]*class="compartment-button"[^>]*href="\/"[^>]*data-email-nav="bookmarks"/)
-    // The "Dashboard" section title appears before the "Email" section
-    // title in the sidebar.
-    const dashboardIdx = html.indexOf('>Dashboard<')
+    expect(html).toMatch(/<a[^>]*class="[^"]*compartment-button[^"]*"[^>]*href="\/"[^>]*data-sidebar-nav="bookmarks"/)
+    // Primary Spaces appear before Email's contextual navigation.
+    const dashboardIdx = html.indexOf('>Spaces<')
     const emailIdx = html.indexOf('>Email<')
     expect(dashboardIdx).toBeGreaterThan(-1)
     expect(emailIdx).toBeGreaterThan(-1)
@@ -1148,9 +1148,7 @@ describe('GET /email/hidden (#024)', () => {
     const res = await authed(env, '/email/hidden')
     const html = await res.text()
     // The Hidden link exists and points at /email/hidden.
-    expect(html).toMatch(/<a[^>]*class="compartment-button[^"]*"[^>]*href="\/email\/hidden"/)
-    // The Hidden link is marked active on /email/hidden (active class added).
-    expect(html).toMatch(/<a[^>]*class="compartment-button compartment-button-active"[^>]*href="\/email\/hidden"/)
-    expect(html).toContain('>Hidden</span>')
+    expect(html).toMatch(/<a[^>]*class="context-link context-link-active"[^>]*href="\/email\/hidden"/)
+    expect(html).toContain('>Hidden</a>')
   })
 })

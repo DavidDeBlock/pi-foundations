@@ -551,7 +551,7 @@ describe('GET / — email cross-link (slice #026)', () => {
     })
     const html = await res.text()
     // Bookmarks is the active compartment on the activity feed page.
-    expect(html).toMatch(/<a[^>]*class="compartment-button compartment-button-active"[^>]*href="\/"/)
+    expect(html).toMatch(/<a[^>]*class="[^"]*compartment-button-active[^"]*"[^>]*href="\/"/)
     expect(html).toContain('>Bookmarks</span>')
   })
 
@@ -563,10 +563,8 @@ describe('GET / — email cross-link (slice #026)', () => {
     })
     const html = await res.text()
     // Sidebar Email link with the unread badge.
-    expect(html).toMatch(/<a[^>]*class="compartment-button"[^>]*href="\/email"/)
-    expect(html).toContain('Inbox (3)')
-    // Account sub-line shows the connected email.
-    expect(html).toContain('me@gmail.com')
+    expect(html).toMatch(/<a[^>]*class="[^"]*compartment-button[^"]*"[^>]*href="\/email"/)
+    expect(html).toContain('aria-label="3 unread"')
   })
 
   it('renders the inbox teaser line with the correct unread count', async () => {
@@ -597,13 +595,14 @@ describe('GET / — email cross-link (slice #026)', () => {
     expect(html).not.toContain('2 unread emails')
   })
 
-  it('omits the Email section + teaser when no account is connected', async () => {
+  it('keeps Email discoverable but omits the teaser when no account is connected', async () => {
     const app = createApp({ passwordHash: HASH, tokenStore, db })
     const res = await app.request('/', {
       headers: { authorization: basicHeader('david', PASSWORD) },
     })
     const html = await res.text()
-    expect(html).not.toContain('>Email<')
+    expect(html).toContain('>Email</span>')
+    expect(html).toContain('data-sidebar-nav="email"')
     expect(html).not.toContain('data-inbox-teaser')
     // Bookmarks is always present.
     expect(html).toContain('>Bookmarks</span>')

@@ -56,6 +56,8 @@ import {
   THEME_SCRIPT_TAG,
   HAMBURGER_SCRIPT_TAG,
   renderHeader,
+  renderAppNavigation,
+  renderSidebarFooter,
 } from './view-shared.js'
 
 // ─── HTTP sub-app ─────────────────────────────────────────────────────────
@@ -811,42 +813,11 @@ interface EmailSidebarArgs {
  * state matches the existing styling.
  */
 function renderEmailSidebar(args: EmailSidebarArgs): string {
-  const inboxActive = args.active === 'inbox' ? ' compartment-button-active' : ''
-  const hiddenActive = args.active === 'hidden' ? ' compartment-button-active' : ''
+  const context = args.active === 'hidden' ? 'hidden' : 'inbox'
   return `
       <aside class="sidebar" data-sidebar>
-        <div class="sidebar-section">
-          <h2 class="sidebar-title">Dashboard</h2>
-          <ul class="compartment-nav">
-            <li>
-              <a class="compartment-button" href="/" data-email-nav="bookmarks">
-                <span class="compartment-icon" aria-hidden="true">\u25a3</span>
-                <span class="compartment-label">Bookmarks</span>
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div class="sidebar-section">
-          <h2 class="sidebar-title">Email</h2>
-          <ul class="compartment-nav">
-            <li>
-              <a class="compartment-button${inboxActive}" href="/email" data-email-nav="inbox">
-                <span class="compartment-icon" aria-hidden="true">\u2709\ufe0f</span>
-                <span class="compartment-label">Inbox</span>
-              </a>
-            </li>
-            <li>
-              <a class="compartment-button${hiddenActive}" href="/email/hidden" data-email-nav="hidden">
-                <span class="compartment-icon" aria-hidden="true">\ud83e\udd75</span>
-                <span class="compartment-label">Hidden</span>
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div class="sidebar-section sidebar-folder-section">
-          <h2 class="sidebar-title">Account</h2>
-          <p class="sidebar-account-note" data-sidebar-account>Gmail &mdash; synced messages only.</p>
-        </div>
+        ${renderAppNavigation({ active: 'email', context })}
+        ${renderSidebarFooter('Gmail · synced messages')}
       </aside>`
 }
 

@@ -1190,31 +1190,27 @@ describe('renderFeedPage — sidebar cross-links (#026)', () => {
     const html = renderFeedPage('david', [], {
       items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
     })
-    expect(html).toMatch(/<a[^>]*class="compartment-button compartment-button-active"[^>]*href="\/"/)
+    expect(html).toMatch(/<a[^>]*class="[^"]*compartment-button-active[^"]*"[^>]*href="\/"/)
     expect(html).toContain('>Bookmarks</span>')
     expect(html).toMatch(/data-sidebar-nav="bookmarks"/)
   })
 
-  it('renders an Email section with an Inbox link when an account is connected', () => {
+  it('renders Email as a primary space with an unread badge when connected', () => {
     const html = renderFeedPage('david', [], {
       items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
     }, undefined, null, teaser({ unreadCount: 3 }))
-    expect(html).toMatch(/<a[^>]*class="compartment-button"[^>]*href="\/email"[^>]*data-sidebar-nav="email"/)
-    // The unread count is rendered inline next to the Inbox label.
-    expect(html).toContain('>Inbox (3)</span>')
-    // The connected email appears under the Account sub-section.
-    expect(html).toContain('me@gmail.com')
+    expect(html).toMatch(/<a[^>]*class="[^"]*compartment-button[^"]*"[^>]*href="\/email"[^>]*data-sidebar-nav="email"/)
+    expect(html).toContain('aria-label="3 unread"')
+    expect(html).toContain('class="space-count"')
   })
 
-  it('omits the Email section when no account is connected', () => {
+  it('keeps the Email space discoverable when no account is connected', () => {
     const html = renderFeedPage('david', [], {
       items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
     }, undefined, null, teaser({ connected: false, accountEmail: null }))
-    // No Email section title.
-    expect(html).not.toContain('>Email<')
-    // No Inbox link in the sidebar.
-    expect(html).not.toMatch(/data-sidebar-nav="email"/)
-    // Bookmarks is still rendered (it's always present).
+    expect(html).toContain('>Email</span>')
+    expect(html).toMatch(/data-sidebar-nav="email"/)
+    expect(html).not.toContain('class="space-count"')
     expect(html).toContain('>Bookmarks</span>')
   })
 
@@ -1222,15 +1218,15 @@ describe('renderFeedPage — sidebar cross-links (#026)', () => {
     const html = renderFeedPage('david', [], {
       items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
     }, undefined, null, teaser({ unreadCount: 12 }))
-    expect(html).toContain('>Inbox (12)</span>')
+    expect(html).toContain('aria-label="12 unread"')
   })
 
-  it('omits the count when zero (Inbox is just "Inbox")', () => {
+  it('omits the unread badge when the count is zero', () => {
     const html = renderFeedPage('david', [], {
       items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
     }, undefined, null, teaser({ unreadCount: 0 }))
-    expect(html).toContain('>Inbox</span>')
-    expect(html).not.toContain('>Inbox (')
+    expect(html).toContain('>Email</span>')
+    expect(html).not.toContain('class="space-count"')
   })
 
   it('renders the inbox teaser line above the feed list when connected', () => {
@@ -1276,10 +1272,10 @@ describe('renderFeedPage — sidebar cross-links (#026)', () => {
     expect(html).toContain('5m ago')
   })
 
-  it('shows "never synced" when the account exists but no sync has run', () => {
+  it('does not show stale sync metadata when no sync has run', () => {
     const html = renderFeedPage('david', [], {
       items: [], page: 1, perPage: 50, totalItems: 0, totalPages: 1,
     }, undefined, null, teaser({ lastSyncAt: null }))
-    expect(html).toContain('never synced')
+    expect(html).not.toContain('never synced')
   })
 })

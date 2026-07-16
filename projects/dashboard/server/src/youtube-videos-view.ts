@@ -23,6 +23,8 @@ import {
   THEME_SCRIPT_TAG,
   HAMBURGER_SCRIPT_TAG,
   renderHeader,
+  renderAppNavigation,
+  renderSidebarFooter,
 } from './view-shared.js'
 import {
   searchVideos,
@@ -152,14 +154,15 @@ ${COMMON_HEAD}
   <meta name="robots" content="noindex">
   <style>${VIDEOS_VIEW_STYLES}</style>
 </head>
-<body>
+<body class="space-youtube-page">
   ${renderHeader()}
   <div class="layout">
     ${renderVideosSidebar()}
     <main class="videos-main">
       <header class="videos-header">
+        <span class="page-eyebrow">YouTube</span>
         <h1>New videos</h1>
-        <p class="videos-subtitle">Reverse-chronological by <em>discovered_at</em> across your included YouTube channels.</p>
+        <p class="videos-subtitle">Fresh uploads from the channels you chose to follow here.</p>
       </header>
 
       <form method="get" class="videos-filters" data-videos-filters>
@@ -297,21 +300,9 @@ function renderPagination(
 }
 
 function renderVideosSidebar(): string {
-  // YouTube compartment (mirrored from subscriptions-view).
-  return `<aside class="sidebar">
-  <nav>
-    <h3 class="sidebar-heading">YouTube</h3>
-    <ul class="sidebar-list">
-      <li><a href="/videos" class="sidebar-active">Videos</a></li>
-      <li><a href="/subscriptions">Subscriptions</a></li>
-      <li><a href="/settings/youtube">Settings</a></li>
-    </ul>
-    <h3 class="sidebar-heading">Other</h3>
-    <ul class="sidebar-list">
-      <li><a href="/">Bookmarks</a></li>
-      <li><a href="/email">Email</a></li>
-    </ul>
-  </nav>
+  return `<aside class="sidebar" data-sidebar>
+  ${renderAppNavigation({ active: 'youtube', context: 'videos' })}
+  ${renderSidebarFooter('YouTube · fresh uploads')}
 </aside>`
 }
 
@@ -359,27 +350,29 @@ function formatDate(iso: string): string {
 
 const VIDEOS_VIEW_STYLES = `
 .layout { display: flex; min-height: calc(100vh - var(--header-h)); }
-.videos-main { flex: 1; padding: 24px clamp(12px, 4vw, 48px); }
-.videos-header h1 { margin: 0 0 4px; font-size: 1.5rem; }
+.videos-main { flex: 1; min-width: 0; padding: 24px clamp(12px, 4vw, 48px) 64px; }
+.videos-header { margin-bottom: 24px; }
+.videos-header h1 { margin: 3px 0 5px; font-size: clamp(1.6rem, 3vw, 2.1rem); }
 .videos-subtitle { margin: 0 0 20px; color: var(--muted); font-size: 0.95rem; }
-.videos-filters { display: flex; gap: 12px; flex-wrap: wrap; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; }
+.videos-filters { display: flex; gap: 12px; flex-wrap: wrap; padding: 14px; background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 16px; box-shadow: var(--shadow); }
 .videos-filter { display: flex; flex-direction: column; gap: 4px; min-width: 180px; }
 .videos-filter label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
-.videos-filter select, .videos-filter button { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+.videos-filter select, .videos-filter button { min-height: 38px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; }
+.videos-filter button { color: var(--accent-text); background: var(--accent); border-color: var(--accent); font-weight: 600; }
 .videos-filter-actions { align-self: end; }
 .videos-counts { margin: 0 0 16px; color: var(--muted); }
-.videos-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
-.videos-row { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
-.videos-row-link { display: grid; grid-template-columns: 160px 1fr; gap: 16px; padding: 12px; color: inherit; text-decoration: none; }
-.videos-row-link:hover { background: var(--surface-2, rgba(127,127,127,0.07)); }
-.videos-row-thumb { width: 160px; aspect-ratio: 16 / 9; background: var(--surface); border-radius: 4px; object-fit: cover; }
+.videos-list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(270px, 100%), 1fr)); gap: 18px; }
+.videos-row { min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 10px 30px rgba(4, 10, 24, 0.13); transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
+.videos-row:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--accent) 65%, var(--border)); box-shadow: 0 18px 42px color-mix(in srgb, var(--accent) 10%, rgba(4, 10, 24, .3)); }
+.videos-row-link { display: flex; height: 100%; flex-direction: column; color: inherit; text-decoration: none; }
+.videos-row-thumb { width: 100%; aspect-ratio: 16 / 9; background: var(--surface-2); object-fit: cover; }
 .videos-row-thumb-fallback { background: var(--surface-2, rgba(127,127,127,0.1)); }
-.videos-row-body { display: flex; flex-direction: column; gap: 6px; }
-.videos-row-title { font-weight: 600; line-height: 1.3; }
+.videos-row-body { display: flex; flex: 1; flex-direction: column; gap: 8px; padding: 14px; }
+.videos-row-title { font-weight: 600; font-size: 1rem; line-height: 1.35; }
 .videos-row-meta { color: var(--muted); font-size: 0.85rem; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .videos-row-channel { color: var(--text); }
 .videos-row-date { color: var(--muted); }
-.videos-row-tags { display: flex; gap: 6px; flex-wrap: wrap; font-size: 0.85rem; }
+.videos-row-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; font-size: 0.8rem; }
 .videos-row-folder { padding: 2px 8px; background: var(--accent-bg, rgba(60, 130, 230, 0.1)); color: var(--accent, #3c82e6); border-radius: 4px; }
 .videos-row-folder-empty { color: var(--muted); background: transparent; border: 1px dashed var(--border); }
 .videos-row-tag { padding: 2px 8px; background: var(--surface-2, rgba(127,127,127,0.1)); border-radius: 4px; color: var(--muted); }
@@ -391,8 +384,7 @@ const VIDEOS_VIEW_STYLES = `
 .videos-pagination a[aria-disabled="true"] { color: var(--muted); pointer-events: none; }
 .videos-pagination-info { color: var(--muted); font-size: 0.85rem; }
 @media (max-width: 720px) {
-  .videos-row-link { grid-template-columns: 1fr; }
-  .videos-row-thumb { width: 100%; }
+  .videos-main { padding: 18px 12px 48px; }
 }
 `
 

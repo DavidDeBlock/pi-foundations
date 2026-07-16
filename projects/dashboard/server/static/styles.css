@@ -63,22 +63,36 @@ a { color: inherit; text-decoration: none; }
   --accent-text:   #FFFFFF;
   --success:       #059669;
   --danger:        #DC2626;
+  --surface-2:     #FFFFFF;
+  --sidebar:       #F4F7FB;
+  --accent-email:  #0891B2;
+  --accent-youtube:#E94B66;
+  --accent-bookmarks:#7C5CE7;
+  --accent-projects:#D99706;
+  --shadow:        0 18px 50px rgba(31, 41, 55, 0.09);
 }
 
 :root[data-theme="dark"] {
   /* Dark theme — applied when [data-theme="dark"] (the default for
      first-time visitors; see theme.ts DEFAULT_THEME). */
-  --bg:            #0E1217;
-  --surface:       #151B23;
-  --surface-hover: #1C232C;
-  --border:        #232B35;
-  --text:          #E6EAF0;
-  --muted:         #8B95A4;
-  --accent:        #22D3EE;
-  --accent-dim:    #155E75;
-  --accent-text:   #0E1217;
-  --success:       #34D399;
-  --danger:        #F87171;
+  --bg:            #101827;
+  --surface:       #192538;
+  --surface-2:     #223149;
+  --surface-hover: #263752;
+  --sidebar:       #151F31;
+  --border:        #30415D;
+  --text:          #F1F5F9;
+  --muted:         #A7B4C8;
+  --accent:        #5CC8FF;
+  --accent-dim:    #173F59;
+  --accent-text:   #0B1624;
+  --accent-email:  #22D3EE;
+  --accent-youtube:#FB7185;
+  --accent-bookmarks:#A78BFA;
+  --accent-projects:#FBBF24;
+  --success:       #4ADE80;
+  --danger:        #FB7185;
+  --shadow:        0 20px 60px rgba(3, 8, 20, 0.32);
 }
 
 /* ─── Typography ──────────────────────────────────────────────────────── */
@@ -90,6 +104,10 @@ body {
   line-height: 1.5;
   color: var(--text);
   background-color: var(--bg);
+  background-image:
+    radial-gradient(circle at 85% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 32rem),
+    radial-gradient(circle at -10% 80%, color-mix(in srgb, var(--accent-bookmarks) 7%, transparent), transparent 30rem);
+  background-attachment: fixed;
   min-height: 100vh;
 }
 
@@ -182,7 +200,8 @@ h4 { font-size: 1rem; }
   align-items: center;
   justify-content: space-between;
   padding: 0 1.5rem;
-  background-color: var(--surface);
+  background-color: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(16px) saturate(140%);
   border-bottom: 1px solid var(--border);
   z-index: 10;
 }
@@ -565,12 +584,11 @@ h4 { font-size: 1rem; }
   justify-content: center;
   width: 1.75rem;
   height: 1.75rem;
-  font-size: 1.1rem;
-  color: var(--accent);
-  background-color: var(--accent-dim);
-  border-radius: 0.375rem;
+  border-radius: 0.5rem;
   line-height: 1;
+  box-shadow: 0 5px 16px rgba(6, 12, 25, 0.22);
 }
+.brand-icon img { width: 100%; height: 100%; }
 
 .header-right {
   display: flex;
@@ -697,11 +715,13 @@ h4 { font-size: 1rem; }
   width: 240px;
   height: calc(100vh - 56px);
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   padding: 1rem 0.75rem;
-  /* Subtle right border keeps the sidebar visually separated from
-     the main feed without using a heavy divider. */
-  border-right: 1px solid var(--border);
-  background-color: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: linear-gradient(165deg, color-mix(in srgb, var(--sidebar) 94%, var(--accent-bookmarks)), var(--sidebar) 42%);
+  box-shadow: var(--shadow);
 }
 
 .sidebar-header {
@@ -1264,8 +1284,9 @@ h4 { font-size: 1rem; }
     height: calc(100vh - 56px);
     transform: translateX(-100%);
     transition: transform 200ms ease;
-    background-color: var(--bg);
-    border-right: 1px solid var(--border);
+    background: var(--sidebar);
+    border-radius: 0 1rem 1rem 0;
+    border-width: 0 1px 0 0;
     z-index: 20;
     box-shadow: 4px 0 12px rgba(0, 0, 0, 0.15);
   }
@@ -1356,13 +1377,12 @@ h4 { font-size: 1rem; }
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.5rem 0.6rem;
+  padding: 0.62rem 0.65rem;
   font-size: 0.875rem;
   color: var(--muted);
   background: transparent;
   border: 1px solid transparent;
-  border-left: 3px solid transparent;
-  border-radius: 0.375rem;
+  border-radius: 0.65rem;
   cursor: pointer;
   text-align: left;
   transition: color 150ms ease, background-color 150ms ease,
@@ -1375,9 +1395,12 @@ h4 { font-size: 1rem; }
 .compartment-button-active {
   color: var(--accent);
   background-color: var(--accent-dim);
-  border-left-color: var(--accent);
-  font-weight: 500;
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  font-weight: 600;
 }
+.space-bookmarks.compartment-button-active { color: var(--accent-bookmarks); background: color-mix(in srgb, var(--accent-bookmarks) 15%, transparent); border-color: color-mix(in srgb, var(--accent-bookmarks) 34%, transparent); }
+.space-email.compartment-button-active { color: var(--accent-email); background: color-mix(in srgb, var(--accent-email) 14%, transparent); border-color: color-mix(in srgb, var(--accent-email) 32%, transparent); }
+.space-youtube.compartment-button-active { color: var(--accent-youtube); background: color-mix(in srgb, var(--accent-youtube) 14%, transparent); border-color: color-mix(in srgb, var(--accent-youtube) 32%, transparent); }
 .compartment-icon {
   flex-shrink: 0;
   font-size: 1rem;
@@ -1385,6 +1408,8 @@ h4 { font-size: 1rem; }
   width: 1.25rem;
   text-align: center;
 }
+.compartment-icon svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+.compartment-icon svg .icon-fill { fill: currentColor; stroke: none; }
 .compartment-label {
   flex: 1;
   min-width: 0;
@@ -1392,6 +1417,49 @@ h4 { font-size: 1rem; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.space-count {
+  min-width: 1.35rem;
+  padding: 0.05rem 0.35rem;
+  color: var(--accent-email);
+  background: color-mix(in srgb, var(--accent-email) 14%, transparent);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.spaces-section { padding-bottom: 0.85rem; border-bottom: 1px solid var(--border); }
+.app-navigation { margin-top: 0 !important; }
+.app-navigation a { margin-right: 0 !important; text-decoration: none !important; }
+.sidebar-context { padding: 0 0.3rem; }
+.context-link {
+  position: relative;
+  display: block;
+  padding: 0.48rem 0.6rem 0.48rem 1.65rem;
+  color: var(--muted);
+  border-radius: 0.5rem;
+  font-size: 0.84rem;
+}
+.context-link::before { content: ''; position: absolute; left: 0.7rem; top: 50%; width: 5px; height: 5px; border-radius: 50%; background: var(--border); transform: translateY(-50%); }
+.context-link:hover { color: var(--text); background: var(--surface-hover); }
+.context-link-active { color: var(--text); background: color-mix(in srgb, var(--accent) 10%, transparent); font-weight: 600; }
+.context-link-active::before { background: currentColor; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent); }
+.space-youtube-page { --accent: var(--accent-youtube); --accent-dim: color-mix(in srgb, var(--accent-youtube) 18%, transparent); }
+.space-youtube-page .context-link-active { color: var(--accent-youtube); }
+.sidebar-footer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding: 0.85rem 0.55rem 0.15rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+.sidebar-footer-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 12%, transparent); }
+.sidebar-footer-copy { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sidebar-footer a { color: var(--text); font-weight: 600; }
+.sidebar-footer a:hover { color: var(--accent); }
 
 /* Sidebar folder tree — extend the existing sidebar-item styles with
    a count badge that lives on the right. (Built on top of the

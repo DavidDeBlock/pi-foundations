@@ -259,7 +259,7 @@ describe('GET /videos/:id — sidebar', () => {
   it('renders YouTube compartment with Videos active + links to /subscriptions + /settings/youtube', async () => {
     const id = env.seed()
     const { body } = await getText(env.app, `/videos/${id}`)
-    expect(body).toContain('class="sidebar-active"')
+    expect(body).toMatch(/class="context-link context-link-active"[^>]*href="\/videos"/)
     expect(body).toContain('href="/videos"')
     expect(body).toContain('href="/subscriptions"')
     expect(body).toContain('href="/settings/youtube"')

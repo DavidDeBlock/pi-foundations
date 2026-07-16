@@ -391,7 +391,8 @@ describe('/subscriptions layout chrome', () => {
     expect(videosTag).toBeTruthy()
     expect(videosTag![0]).not.toContain('compartment-button-active')
     expect(subsTag).toBeTruthy()
-    expect(subsTag![0]).toContain('compartment-button-active')
+    expect(subsTag![0]).toContain('context-link-active')
+    expect(subsTag![0]).toContain('aria-current="page"')
   })
 
   it('escapes HTML in channel titles (defence in depth)', async () => {

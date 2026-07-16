@@ -108,7 +108,8 @@ describe('view-shared: renderHeader (issue #013 slice 5)', () => {
 
   it('puts the brand on the left (links to /)', () => {
     const html = renderHeader()
-    expect(html).toMatch(/<a class="brand" href="\/">[\s\S]*?Dashboard[\s\S]*?<\/a>/)
+    expect(html).toMatch(/<a class="brand" href="\/">[\s\S]*?David&.+?Space[\s\S]*?<\/a>/)
+    expect(html).toContain('/static/site-icon.svg')
   })
 
   it('includes the theme-toggle button', () => {
