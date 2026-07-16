@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { serve } from '@hono/node-server'
-import { loadConfig } from './env.js'
+import { loadConfig, type LlmConfig } from './env.js'
 import { createApp } from './app.js'
 import { JsonTokenStore } from './token-store.js'
 import { Database } from './db.js'
@@ -24,6 +24,11 @@ import {
   DEFAULT_YOUTUBE_RSS_INTERVAL_MIN,
 } from './youtube-rss-scheduler.js'
 import { YouTubeTranscriptService } from './youtube-transcripts.js'
+import { OpenAiCompatibleLlmClient } from './llm-client.js'
+import {
+  MiniMaxVideoSummarizer,
+  YouTubeVideoSummaryService,
+} from './youtube-video-summaries.js'
 
 async function main(): Promise<void> {
   const config = await loadConfig()
@@ -55,6 +60,7 @@ async function main(): Promise<void> {
         config.youtube.youtubeOauthClientSecret,
         config.youtube.youtubeOauthRedirectUri,
         db,
+        config.llm,
       )
     : undefined
 
@@ -222,6 +228,7 @@ function buildYouTubeDeps(
   youtubeOauthClientSecret: string,
   youtubeOauthRedirectUri: string,
   db: Database,
+  llm: LlmConfig | null,
 ): Parameters<typeof createApp>[0]['youtube'] {
   // The cipher + state signer share the same 32-byte key (same
   // rationale as the email slice above).
@@ -251,6 +258,18 @@ function buildYouTubeDeps(
   const transcriptService = new YouTubeTranscriptService({ db })
   transcriptService.resumePending()
 
+  const summaryService = llm
+    ? new YouTubeVideoSummaryService({
+        db,
+        summarizer: new MiniMaxVideoSummarizer(new OpenAiCompatibleLlmClient({
+          apiKey: llm.apiKey,
+          baseUrl: llm.baseUrl,
+          model: llm.model,
+        })),
+      })
+    : undefined
+  summaryService?.resumePending()
+
   const rssPoller = new YouTubeRssPoller({
     db,
     transcriptService,
@@ -269,6 +288,7 @@ function buildYouTubeDeps(
     subscriptionsSync,
     rssPoller,
     transcriptService,
+    ...(summaryService ? { summaryService } : {}),
   }
 }
 

@@ -38,11 +38,17 @@ import {
   getVideoTranscript,
   type VideoTranscript,
 } from './youtube-transcripts.js'
+import {
+  getVideoSummary,
+  type CitedInsight,
+  type VideoSummary,
+} from './youtube-video-summaries.js'
 
 // ─── Hono sub-app ─────────────────────────────────────────────────────────
 
 export interface YouTubeVideoDetailViewDeps {
   readonly db: Database
+  readonly summaryConfigured?: boolean
 }
 
 /**
@@ -63,8 +69,17 @@ export function youtubeVideoDetailView(
     const folders = listAllFoldersWithCounts(deps.db)
     const tags = listAllTagsWithUsage(deps.db)
     const transcript = getVideoTranscript(deps.db, id)
+    const summary = getVideoSummary(deps.db, id)
     return c.html(
-      renderPage({ detail, folders, tags, allTags: tags, transcript }),
+      renderPage({
+        detail,
+        folders,
+        tags,
+        allTags: tags,
+        transcript,
+        summary,
+        summaryConfigured: deps.summaryConfigured === true,
+      }),
     )
   })
 
@@ -82,6 +97,8 @@ interface RenderPageOptions {
   readonly tags: ReadonlyArray<{ readonly id: string; readonly name: string }>
   readonly allTags: ReadonlyArray<{ readonly id: string; readonly name: string }>
   readonly transcript: VideoTranscript | null
+  readonly summary: VideoSummary | null
+  readonly summaryConfigured: boolean
 }
 
 function renderPage(opts: RenderPageOptions): string {
@@ -151,6 +168,7 @@ ${COMMON_HEAD}
           <p class="video-detail-tag-status" data-video-tag-status></p>
         </section>
 
+        ${renderSummarySection(detail, opts.transcript, opts.summary, opts.summaryConfigured)}
         ${renderTranscriptSection(detail, opts.transcript)}
       </article>
     </main>
@@ -161,6 +179,57 @@ ${COMMON_HEAD}
   <script>${VIDEO_DETAIL_SCRIPT}</script>
 </body>
 </html>`
+}
+
+function renderSummarySection(
+  detail: VideoDetail,
+  transcript: VideoTranscript | null,
+  summary: VideoSummary | null,
+  configured: boolean,
+): string {
+  let content: string
+  if (!configured) {
+    content = `<div class="video-ai-empty">
+      <p>Add <code>LLM_API_KEY</code> to <code>server/.env</code> and restart the dashboard to enable MiniMax summaries.</p>
+    </div>`
+  } else if (summary?.status === 'ready') {
+    const points = summary.keyPoints.map((item) => renderCitedInsight(detail, item)).join('')
+    const actions = summary.actionItems.length > 0
+      ? `<div class="video-ai-block"><h3>Action items</h3><ul>${summary.actionItems.map((item) => renderCitedInsight(detail, item)).join('')}</ul></div>`
+      : ''
+    const mentioned = summary.mentioned.length > 0
+      ? `<div class="video-ai-mentioned">${summary.mentioned.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}</div>`
+      : ''
+    content = `<div class="video-ai-ready">
+      <div class="video-ai-tldr"><span>TL;DR</span><p>${escapeHtml(summary.tldr ?? '')}</p></div>
+      <div class="video-ai-block"><h3>Key takeaways</h3><ul>${points}</ul></div>
+      <div class="video-ai-block"><h3>Why watch the full video?</h3><p>${escapeHtml(summary.worthWatching ?? '')}</p></div>
+      ${actions}
+      ${mentioned}
+      <div class="video-ai-footer"><span>Generated with ${escapeHtml(summary.model)}</span><button type="button" class="video-ai-link-button" data-summarize-video data-force="true">Regenerate</button></div>
+    </div>`
+  } else if (summary?.status === 'pending') {
+    content = `<div class="video-ai-working"><span class="video-ai-spark" aria-hidden="true">✦</span><div><strong>Building your Insight Card…</strong><p>MiniMax is reading the timed transcript in the background.</p></div></div>`
+  } else if (summary?.status === 'failed') {
+    content = `<div class="video-ai-empty"><p>The Insight Card could not be generated. You can safely retry without fetching the transcript again.</p><button type="button" class="primary-button" data-summarize-video>Try again</button></div>`
+  } else if (transcript?.status !== 'ready') {
+    content = `<div class="video-ai-empty"><p>Fetch the transcript first, then MiniMax can turn it into a short, timestamped briefing.</p></div>`
+  } else {
+    content = `<div class="video-ai-empty"><p>Turn this transcript into a concise briefing with key points, action items, and links to the exact moments.</p><button type="button" class="primary-button" data-summarize-video>Summarize with MiniMax</button></div>`
+  }
+
+  return `<section class="video-ai-card" data-video-summary data-summary-status="${summary?.status ?? 'not_requested'}">
+    <div class="video-ai-heading"><div class="video-ai-icon" aria-hidden="true">✦</div><div><span class="video-ai-eyebrow">AI insight</span><h2>Video briefing</h2></div></div>
+    <div data-summary-content>${content}</div>
+    <p class="video-ai-feedback" data-summary-feedback aria-live="polite"></p>
+  </section>`
+}
+
+function renderCitedInsight(detail: VideoDetail, insight: CitedInsight): string {
+  const citation = insight.startMs === null
+    ? ''
+    : `<a href="https://www.youtube.com/watch?v=${encodeURIComponent(detail.videoId)}&amp;t=${Math.floor(insight.startMs / 1000)}s" target="_blank" rel="noopener noreferrer">${formatTimestamp(insight.startMs)}</a>`
+  return `<li><span>${escapeHtml(insight.text)}</span>${citation}</li>`
 }
 
 function renderTranscriptSection(
@@ -314,6 +383,37 @@ const VIDEO_DETAIL_STYLES = `
 .video-detail-tag-status { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); }
 .video-detail-tag-status.saved-flash { color: var(--accent); }
 .video-detail-tag-status.error-flash { color: var(--danger); }
+.video-ai-card { position: relative; overflow: hidden; margin-top: 30px; padding: clamp(18px, 3vw, 26px); border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border)); border-radius: 16px; background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 10%, var(--surface)), color-mix(in srgb, #a855f7 7%, var(--surface))); }
+.video-ai-card::after { content: ''; position: absolute; width: 170px; height: 170px; right: -85px; top: -100px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 18%, transparent); filter: blur(28px); pointer-events: none; }
+.video-ai-heading { position: relative; z-index: 1; display: flex; align-items: center; gap: 11px; margin-bottom: 18px; }
+.video-ai-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; color: white; background: linear-gradient(135deg, var(--accent), #a855f7); box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 28%, transparent); }
+.video-ai-eyebrow { display: block; color: var(--accent); font-size: .7rem; font-weight: 750; text-transform: uppercase; letter-spacing: .12em; }
+.video-ai-heading h2 { margin: 2px 0 0; font-size: 1.1rem; }
+.video-ai-empty { position: relative; z-index: 1; }
+.video-ai-empty p { max-width: 680px; margin: 0 0 14px; color: var(--muted); line-height: 1.55; }
+.video-ai-empty code { color: var(--text); font-size: .85em; }
+.video-ai-tldr { padding: 16px 18px; border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--surface) 82%, transparent); }
+.video-ai-tldr > span { color: var(--accent); font-size: .7rem; font-weight: 800; letter-spacing: .11em; }
+.video-ai-tldr p { margin: 7px 0 0; font-size: 1.02rem; line-height: 1.58; }
+.video-ai-block { margin-top: 19px; }
+.video-ai-block h3 { margin: 0 0 9px; font-size: .79rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.video-ai-block p { margin: 0; line-height: 1.55; }
+.video-ai-block ul { list-style: none; display: grid; gap: 9px; margin: 0; padding: 0; }
+.video-ai-block li { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: baseline; line-height: 1.48; }
+.video-ai-block li::before { content: '•'; color: var(--accent); position: absolute; }
+.video-ai-block li > span { padding-left: 14px; }
+.video-ai-block li a { color: var(--accent); text-decoration: none; font-size: .78rem; font-variant-numeric: tabular-nums; }
+.video-ai-mentioned { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 19px; }
+.video-ai-mentioned span { padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 76%, transparent); color: var(--muted); font-size: .77rem; }
+.video-ai-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 20px; padding-top: 13px; border-top: 1px solid color-mix(in srgb, var(--accent) 14%, var(--border)); color: var(--muted); font-size: .75rem; }
+.video-ai-link-button { border: 0; padding: 3px; color: var(--accent); background: transparent; cursor: pointer; font: inherit; }
+.video-ai-working { display: flex; gap: 12px; align-items: center; }
+.video-ai-working .video-ai-spark { color: var(--accent); font-size: 1.4rem; animation: ai-pulse 1.3s ease-in-out infinite; }
+.video-ai-working strong { display: block; }
+.video-ai-working p { margin: 3px 0 0; color: var(--muted); font-size: .88rem; }
+.video-ai-feedback { min-height: 1.15em; margin: 10px 0 0; color: var(--muted); font-size: .82rem; }
+.video-ai-feedback.error-flash { color: var(--danger); }
+@keyframes ai-pulse { 50% { opacity: .4; transform: scale(.85) rotate(18deg); } }
 .video-detail-transcript { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--border); }
 .video-transcript-heading h2 { margin: 0; font-size: 1.05rem; }
 .video-transcript-heading p { margin: 4px 0 16px; color: var(--muted); font-size: .88rem; }
@@ -634,5 +734,71 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
     });
   } else if (transcript && transcript.getAttribute('data-transcript-status') === 'pending') {
     pollTranscript();
+  }
+
+  // ── AI Insight Card request + status polling ────────────────
+  var summary = article.querySelector('[data-video-summary]');
+  var summaryButton = summary && summary.querySelector('[data-summarize-video]');
+  var summaryFeedback = summary && summary.querySelector('[data-summary-feedback]');
+  var summaryPollAttempts = 0;
+  function pollSummary(){
+    summaryPollAttempts++;
+    fetch('/api/videos/' + encodeURIComponent(videoId) + '/summary', { credentials: 'same-origin' })
+      .then(function(res){
+        if (res.status === 401) { window.location.href = '/api/login'; return null; }
+        return res.json().then(function(json){ return { res: res, json: json }; });
+      })
+      .then(function(pair){
+        if (!pair) return;
+        if (!pair.res.ok) throw new Error(pair.json.error || ('HTTP ' + pair.res.status));
+        var value = pair.json.summary;
+        if (value && value.status === 'pending' && summaryPollAttempts < 80) {
+          if (summaryFeedback) summaryFeedback.textContent = 'MiniMax is building the briefing…';
+          setTimeout(pollSummary, 1500);
+          return;
+        }
+        if (value && value.status !== 'pending') window.location.reload();
+        else if (summaryFeedback) summaryFeedback.textContent = 'Still working. You can leave this page and return later.';
+      })
+      .catch(function(err){
+        if (summaryFeedback) {
+          summaryFeedback.textContent = err.message || 'Failed to check summary status.';
+          summaryFeedback.className = 'video-ai-feedback error-flash';
+        }
+      });
+  }
+  if (summaryButton) {
+    summaryButton.addEventListener('click', function(){
+      summaryButton.disabled = true;
+      if (summaryFeedback) summaryFeedback.textContent = 'Adding the Insight Card to the queue…';
+      var force = summaryButton.getAttribute('data-force') === 'true';
+      fetch('/api/videos/' + encodeURIComponent(videoId) + '/summary', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ force: force }),
+      })
+        .then(function(res){
+          if (res.status === 401) { window.location.href = '/api/login'; return null; }
+          return res.json().then(function(json){ return { res: res, json: json }; });
+        })
+        .then(function(pair){
+          if (!pair) return;
+          if (!pair.res.ok) throw new Error(pair.json.error || ('HTTP ' + pair.res.status));
+          if (pair.json.summary && pair.json.summary.status === 'ready') { window.location.reload(); return; }
+          summaryPollAttempts = 0;
+          pollSummary();
+        })
+        .catch(function(err){
+          summaryButton.disabled = false;
+          if (summaryFeedback) {
+            var message = err.message === 'transcript_required' ? 'Fetch the transcript first.' : err.message;
+            summaryFeedback.textContent = message || 'Failed to request summary.';
+            summaryFeedback.className = 'video-ai-feedback error-flash';
+          }
+        });
+    });
+  } else if (summary && summary.getAttribute('data-summary-status') === 'pending') {
+    pollSummary();
   }
 })();`

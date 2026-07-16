@@ -268,6 +268,41 @@ describe('GET /videos/:id — transcript', () => {
   })
 })
 
+describe('GET /videos/:id — AI Insight Card', () => {
+  it('shows the server-side API key location when MiniMax is not configured', async () => {
+    const id = env.seed()
+    const { body } = await getText(env.app, `/videos/${id}`)
+    expect(body).toContain('data-video-summary')
+    expect(body).toContain('LLM_API_KEY')
+    expect(body).toContain('server/.env')
+  })
+
+  it('renders a cached summary with real YouTube timestamp links', async () => {
+    const id = env.seed()
+    env.db.run(
+      `INSERT INTO video_summaries
+         (video_id, status, tldr, key_points_json, worth_watching,
+          action_items_json, mentioned_json, model, prompt_version,
+          requested_at, generated_at, updated_at)
+       VALUES (?, 'ready', ?, ?, ?, '[]', ?, 'MiniMax-M2.7', 1,
+               '2026-07-16T00:00:00Z', '2026-07-16T00:00:01Z', '2026-07-16T00:00:01Z')`,
+      [id, 'A <short> briefing.', JSON.stringify([{ text: 'Use SQLite', startMs: 65000 }]), 'Watch the demo.', JSON.stringify(['SQLite'])],
+    )
+    const passwordHash = await bcrypt.hash(PASSWORD, 4)
+    const app = new Hono<{ Variables: AuthVariables }>()
+    app.use('*', auth({ passwordHash, tokenStore: new InMemoryTokenStore() }))
+    app.route('/videos', youtubeVideoDetailView({ db: env.db, summaryConfigured: true }))
+
+    const { body } = await getText(app, `/videos/${id}`)
+    expect(body).toContain('data-summary-status="ready"')
+    expect(body).toContain('A &lt;short&gt; briefing.')
+    expect(body).toContain('Use SQLite')
+    expect(body).toContain('&amp;t=65s')
+    expect(body).toContain('>1:05</a>')
+    expect(body).toContain('Generated with MiniMax-M2.7')
+  })
+})
+
 // ─── Channel-included flag ──────────────────────────────────────────────
 
 describe('GET /videos/:id — channel flag', () => {

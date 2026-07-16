@@ -48,6 +48,9 @@ is no config file by design.
 | `EMAIL_OAUTH_REDIRECT_URI` | _(required)_ | Full callback URL. **Two rules from Google's Web-app client:** the host must be loopback (`localhost`/`127.0.0.1`) or a publicly resolvable domain (no bare private IPs), and the scheme must be `https://` unless the host is loopback. So same-machine testing uses `http://localhost:8080/api/email/oauth/callback`; LAN testing needs `https://192.168.0.136.nip.io:8080/...` (HTTPS required). See the redirect-URI-rules section below for tunnel (`ngrok` / `cloudflared`) and `trustme`/`mkcert` options. Must match the value registered in the Cloud Console byte-for-byte. |
 | `DASHBOARD_TLS_CERT` | _(optional)_ | Absolute path to a PEM-encoded TLS certificate. Required for non-loopback redirect URIs (HTTPS). Pairs with `DASHBOARD_TLS_KEY`. Both vars must be set together; setting only one is a startup error. Generate cert + key with `trustme` (Python) or `mkcert` (Go binary). |
 | `DASHBOARD_TLS_KEY` | _(optional)_ | Absolute path to a PEM-encoded TLS private key. Pairs with `DASHBOARD_TLS_CERT`. |
+| `LLM_API_KEY` | _(optional)_ | Server-side MiniMax API key. Enables YouTube Insight Cards; never expose this value to browser code. |
+| `LLM_BASE_URL` | `https://api.minimax.io/v1` | OpenAI-compatible text API base URL. |
+| `LLM_MODEL` | `MiniMax-M2.7` | Model used for transcript summaries. |
 
 **Never commit the password** or the encryption key to source control.
 Pass them via systemd's `EnvironmentFile=` directive (see §3) or your
@@ -70,6 +73,11 @@ EMAIL_TOKEN_ENCRYPTION_KEY=$(openssl rand -hex 32)
 GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret
 EMAIL_OAUTH_REDIRECT_URI=http://localhost:8080/api/email/oauth/callback
+
+# Optional: MiniMax-powered YouTube Insight Cards
+LLM_API_KEY=your-minimax-api-key
+LLM_BASE_URL=https://api.minimax.io/v1
+LLM_MODEL=MiniMax-M2.7
 
 # Optional: enable HTTPS for non-loopback redirect URIs (LAN testing, etc.)
 # DASHBOARD_TLS_CERT=/etc/dashboard/certs/server.pem

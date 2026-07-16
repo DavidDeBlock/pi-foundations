@@ -52,6 +52,7 @@ From PRD: [PRD-003](../35-prds/PRD-003-youtube-v3-subscriptions.md)
 | [YT-004](./YT-004-videos-schema-rss-poller.md) | videos + video_tags schema + RssFeedFetcher + VideoIngest + RssPoller (15-min job) | AFK | YT-002 |
 | [YT-005](./YT-005-videos-api-and-ui.md) | Videos API + NewVideosView + VideoDetailView | AFK | YT-004 |
 | [YT-006](./YT-006-youtube-e2e-smoke-and-docs.md) | Tracer-bullet E2E + smoke test + docs | AFK (manual smoke) | YT-003, YT-005 |
+| [YT-007](./YT-007-youtube-ai-insight-cards.md) | MiniMax YouTube AI Insight Cards | AFK | YT-005 |
 
 ## v4 — Email mirror (PRD-002)
 

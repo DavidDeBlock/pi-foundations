@@ -42,6 +42,21 @@ DASHBOARD_PASSWORD=yourpassword \
 
 Defaults: `PORT=8080`, `HOSTNAME=0.0.0.0` (LAN-accessible, matching ADR-001), `DASHBOARD_DATA_DIR=./data`, `DASHBOARD_DB_PATH=./data/dashboard.db` (relative to cwd, created on first boot).
 
+### MiniMax YouTube summaries
+
+Put the MiniMax key in `server/.env` (this directory's `.env`; it is
+git-ignored), then restart the server:
+
+```ini
+LLM_API_KEY=your-minimax-api-key
+LLM_BASE_URL=https://api.minimax.io/v1
+LLM_MODEL=MiniMax-M2.7
+```
+
+In a systemd deployment, put the same variables in
+`/etc/dashboard/dashboard.env` instead. The API key is read only by the
+server and is never included in rendered pages or API responses.
+
 ## Auth model
 
 | Caller | Scheme | Where it's used |

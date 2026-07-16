@@ -85,6 +85,15 @@ export type YouTubeEnvName =
   | 'YOUTUBE_OAUTH_CLIENT_SECRET'
   | 'YOUTUBE_OAUTH_REDIRECT_URI'
 
+/** OpenAI-compatible text model configuration. Optional at boot: the
+ * dashboard remains fully usable without AI, and summary routes surface a
+ * setup message until an API key is present. */
+export interface LlmConfig {
+  readonly apiKey: string
+  readonly baseUrl: string
+  readonly model: string
+}
+
 export interface Config {
   readonly port: number
   readonly hostname: string
@@ -121,6 +130,8 @@ export interface Config {
    */
   readonly youtube: YouTubeConfig | null
   readonly missingYoutubeEnv: MissingYouTubeEnv
+  /** MiniMax (or another OpenAI-compatible provider), when configured. */
+  readonly llm: LlmConfig | null
   /**
    * Initial-sync lookback window in days. When a Gmail account is
    * synced for the first time, the worker fetches messages newer than
@@ -301,6 +312,19 @@ export async function loadConfig(): Promise<Config> {
     }
   }
 
+  // ─── Optional OpenAI-compatible LLM ────────────────────────────────
+  // An API key opts the feature in. MiniMax defaults make the common case
+  // one line in `.env`; base URL and model remain provider-neutral so a
+  // future provider swap is configuration-only.
+  const llmApiKey = process.env.LLM_API_KEY?.trim()
+  const llm: LlmConfig | null = llmApiKey
+    ? {
+        apiKey: llmApiKey,
+        baseUrl: (process.env.LLM_BASE_URL?.trim() || 'https://api.minimax.io/v1').replace(/\/+$/, ''),
+        model: process.env.LLM_MODEL?.trim() || 'MiniMax-M2.7',
+      }
+    : null
+
   // Initial-sync lookback window (issue #021). Optional — defaults
   // to 90 days when missing or malformed. Negative / zero / non-
   // numeric values fall back to 90 so a stale `0` doesn't crash a
@@ -381,6 +405,7 @@ export async function loadConfig(): Promise<Config> {
     emailSyncIntervalMin,
     youtube,
     missingYoutubeEnv,
+    llm,
   }
 }
 

@@ -32,6 +32,8 @@ import { youtubeVideosView } from './youtube-videos-view.js'
 import { youtubeVideoDetailView } from './youtube-video-detail-view.js'
 import { youtubeTranscriptsApi } from './youtube-transcripts-api.js'
 import type { YouTubeTranscriptService } from './youtube-transcripts.js'
+import { youtubeVideoSummariesApi } from './youtube-video-summaries-api.js'
+import type { YouTubeVideoSummaryService } from './youtube-video-summaries.js'
 
 export interface EmailDeps {
   /** AES-256-GCM cipher for OAuth tokens at rest. */
@@ -95,6 +97,8 @@ export interface YouTubeDeps {
   readonly rssPoller: YouTubeRssPoller
   /** Persisted background queue used by automatic and on-demand transcript requests. */
   readonly transcriptService: YouTubeTranscriptService
+  /** Optional MiniMax-backed queue. Absent until LLM_API_KEY is configured. */
+  readonly summaryService?: YouTubeVideoSummaryService
 }
 
 export interface AppDeps {
@@ -269,6 +273,10 @@ export function createApp({
       youtubeTranscriptsApi({ db, service: youtube.transcriptService }),
     )
     app.route(
+      '/api/videos',
+      youtubeVideoSummariesApi({ db, ...(youtube.summaryService ? { service: youtube.summaryService } : {}) }),
+    )
+    app.route(
       '/api/subscriptions',
       subscriptionsApi({ db }),
     )
@@ -298,7 +306,7 @@ export function createApp({
     )
     app.route(
       '/videos',
-      youtubeVideoDetailView({ db }),
+      youtubeVideoDetailView({ db, summaryConfigured: youtube.summaryService !== undefined }),
     )
   } else {
     app.route('/settings/youtube', youtubeSettingsSetupOnly())

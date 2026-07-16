@@ -30,6 +30,9 @@ const RELEVANT_ENV_KEYS = [
   'GOOGLE_OAUTH_CLIENT_SECRET',
   'EMAIL_OAUTH_REDIRECT_URI',
   'EMAIL_SYNC_HISTORY_DAYS',
+  'LLM_API_KEY',
+  'LLM_BASE_URL',
+  'LLM_MODEL',
 ] as const
 
 let savedEnv: Record<string, string | undefined> = {}
