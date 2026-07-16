@@ -145,7 +145,7 @@ export function renderHeader(opts: HeaderOptions = {}): string {
 }
 
 export type AppSpace = 'bookmarks' | 'email' | 'youtube'
-export type AppContext = 'inbox' | 'hidden' | 'videos' | 'subscriptions' | 'youtube-settings'
+export type AppContext = 'inbox' | 'hidden' | 'videos' | 'playlists' | 'history' | 'subscriptions' | 'youtube-settings'
 
 export interface AppNavigationOptions {
   readonly active: AppSpace
@@ -196,6 +196,8 @@ export function renderAppNavigation(opts: AppNavigationOptions): string {
       <h2 class="sidebar-title">YouTube</h2>
       <ul class="compartment-nav">
         <li><a class="context-link${opts.context === 'videos' ? ' context-link-active' : ''}" href="/videos" data-sidebar-nav="videos"${opts.context === 'videos' ? ' aria-current="page"' : ''}>New videos</a></li>
+        <li><a class="context-link${opts.context === 'playlists' ? ' context-link-active' : ''}" href="/playlists" data-sidebar-nav="playlists"${opts.context === 'playlists' ? ' aria-current="page"' : ''}>Playlists</a></li>
+        <li><a class="context-link${opts.context === 'history' ? ' context-link-active' : ''}" href="/history" data-sidebar-nav="history"${opts.context === 'history' ? ' aria-current="page"' : ''}>History</a></li>
         <li><a class="context-link${opts.context === 'subscriptions' ? ' context-link-active' : ''}" href="/subscriptions" data-sidebar-nav="subscriptions"${opts.context === 'subscriptions' ? ' aria-current="page"' : ''}>Subscriptions</a></li>
         <li><a class="context-link${opts.context === 'youtube-settings' ? ' context-link-active' : ''}" href="/settings/youtube" data-sidebar-nav="youtube-settings">YouTube settings</a></li>
       </ul>

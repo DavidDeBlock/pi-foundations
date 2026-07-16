@@ -268,6 +268,53 @@ describe('GET /api/videos', () => {
     expect(body.total).toBe(1)
     expect(body.items[0]!.id).toBe(a)
   })
+
+  it('filters the canonical library by playlist source/id without duplicating cards', async () => {
+    const id = env.seed({ videoId: 'playlist-video' })
+    env.db.run(`UPDATE subscriptions SET is_included = 0`)
+    for (const [playlistId, title] of [['PL-one', 'One'], ['PL-two', 'Two']]) {
+      env.db.run(
+        `INSERT INTO youtube_playlists
+         (google_account_id, playlist_id, title, privacy_status, is_included)
+         VALUES ('acct-1', ?, ?, 'private', 1)`,
+        [playlistId, title],
+      )
+      env.db.run(
+        `INSERT INTO youtube_playlist_items
+         (google_account_id, playlist_id, playlist_item_id, video_id, position, synced_at)
+         VALUES ('acct-1', ?, ?, ?, 0, '2026-07-16T00:00:00Z')`,
+        [playlistId, `item-${playlistId}`, id],
+      )
+    }
+
+    const defaultResult = await req(env.app, '/api/videos', {
+      headers: { authorization: basic(PASSWORD) },
+    })
+    expect((await asJson<{ total: number }>(defaultResult)).total).toBe(0)
+
+    const sourceResult = await req(env.app, '/api/videos?source=playlist', {
+      headers: { authorization: basic(PASSWORD) },
+    })
+    const sourceBody = await asJson<{
+      total: number
+      items: Array<{ id: string; playlists: Array<{ id: string; title: string }> }>
+    }>(sourceResult)
+    expect(sourceBody.total).toBe(1)
+    expect(sourceBody.items).toHaveLength(1)
+    expect(sourceBody.items[0]).toMatchObject({
+      id,
+      playlists: [{ id: 'PL-one', title: 'One' }, { id: 'PL-two', title: 'Two' }],
+    })
+
+    const onePlaylist = await req(env.app, '/api/videos?playlist_id=PL-two', {
+      headers: { authorization: basic(PASSWORD) },
+    })
+    expect((await asJson<{ total: number }>(onePlaylist)).total).toBe(1)
+    const missingPlaylist = await req(env.app, '/api/videos?playlist_id=missing', {
+      headers: { authorization: basic(PASSWORD) },
+    })
+    expect((await asJson<{ total: number }>(missingPlaylist)).total).toBe(0)
+  })
 })
 
 // ─── GET /:id ────────────────────────────────────────────────────────────

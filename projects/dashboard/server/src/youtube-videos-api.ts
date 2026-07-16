@@ -40,10 +40,12 @@ interface ApiVideoItem {
   readonly folder_id: string | null
   readonly folder_name: string | null
   readonly tags: ReadonlyArray<{ readonly id: string; readonly name: string }>
+  readonly playlists: ReadonlyArray<{ readonly id: string; readonly title: string }>
 }
 
 interface ApiVideoDetail extends ApiVideoItem {
   readonly channel_is_included: boolean
+  readonly channel_is_subscribed: boolean
 }
 
 function toApiItem(item: VideoListItem): ApiVideoItem {
@@ -61,6 +63,7 @@ function toApiItem(item: VideoListItem): ApiVideoItem {
     folder_id: item.folderId,
     folder_name: item.folderName,
     tags: item.tags,
+    playlists: item.playlists,
   }
 }
 
@@ -68,6 +71,7 @@ function toApiDetail(detail: VideoDetail): ApiVideoDetail {
   return {
     ...toApiItem(detail),
     channel_is_included: detail.channelIsIncluded,
+    channel_is_subscribed: detail.channelIsSubscribed,
   }
 }
 
@@ -157,6 +161,8 @@ export function youtubeVideosApi(
     const channelId = c.req.query('channel_id') || undefined
     const folder = parseFolderFilter(c.req.query('folder_id'))
     const tagId = c.req.query('tag_id') || undefined
+    const source = c.req.query('source') === 'playlist' ? 'playlist' as const : undefined
+    const playlistId = c.req.query('playlist_id') || undefined
     const page = parsePositiveInt(c.req.query('page')) ?? 1
     const limitRaw = parsePositiveInt(c.req.query('limit')) ?? 50
 
@@ -165,6 +171,8 @@ export function youtubeVideosApi(
         ? {
             ...(channelId !== undefined ? { channelId } : {}),
             ...(tagId !== undefined ? { tagId } : {}),
+            ...(source !== undefined ? { source } : {}),
+            ...(playlistId !== undefined ? { playlistId } : {}),
             page,
             limit: limitRaw,
           }
@@ -173,6 +181,8 @@ export function youtubeVideosApi(
               ...(channelId !== undefined ? { channelId } : {}),
               folderId: folder.id,
               ...(tagId !== undefined ? { tagId } : {}),
+              ...(source !== undefined ? { source } : {}),
+              ...(playlistId !== undefined ? { playlistId } : {}),
               page,
               limit: limitRaw,
             }
@@ -180,6 +190,8 @@ export function youtubeVideosApi(
               ...(channelId !== undefined ? { channelId } : {}),
               unfoldered: true,
               ...(tagId !== undefined ? { tagId } : {}),
+              ...(source !== undefined ? { source } : {}),
+              ...(playlistId !== undefined ? { playlistId } : {}),
               page,
               limit: limitRaw,
             }

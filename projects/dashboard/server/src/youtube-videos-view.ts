@@ -33,6 +33,7 @@ import {
 import { listAllFoldersWithCounts } from './folders.js'
 import { listAllTagsWithUsage } from './tags.js'
 import { searchSubscriptions } from './youtube-subscriptions.js'
+import { listYouTubePlaylists } from './youtube-playlists.js'
 
 // ─── Helper: list subscriptions with thumbnails for the filter dropdown ─
 
@@ -59,6 +60,10 @@ export function youtubeVideosView(
     const channelId = c.req.query('channel_id') || undefined
     const folderIdRaw = c.req.query('folder_id') ?? 'all'
     const tagId = c.req.query('tag_id') || undefined
+    const playlistId = c.req.query('playlist_id') || undefined
+    const source = c.req.query('source') === 'playlist' || playlistId
+      ? 'playlist' as const
+      : undefined
     const page = parsePositiveInt(c.req.query('page')) ?? 1
     const limitRaw = parsePositiveInt(c.req.query('limit')) ?? 50
 
@@ -74,6 +79,8 @@ export function youtubeVideosView(
         ? {
             ...(channelId ? { channelId } : {}),
             ...(tagId ? { tagId } : {}),
+            ...(source ? { source } : {}),
+            ...(playlistId ? { playlistId } : {}),
             page,
             limit: limitRaw,
           }
@@ -82,6 +89,8 @@ export function youtubeVideosView(
               ...(channelId ? { channelId } : {}),
               folderId: folder.id,
               ...(tagId ? { tagId } : {}),
+              ...(source ? { source } : {}),
+              ...(playlistId ? { playlistId } : {}),
               page,
               limit: limitRaw,
             }
@@ -89,6 +98,8 @@ export function youtubeVideosView(
               ...(channelId ? { channelId } : {}),
               unfoldered: true,
               ...(tagId ? { tagId } : {}),
+              ...(source ? { source } : {}),
+              ...(playlistId ? { playlistId } : {}),
               page,
               limit: limitRaw,
             }
@@ -113,9 +124,12 @@ export function youtubeVideosView(
         channelId,
         folderIdRaw,
         tagId,
+        source,
+        playlistId,
         channels,
         folders,
         tags,
+        playlists: listYouTubePlaylists(deps.db),
       }),
     )
   })
@@ -133,6 +147,8 @@ interface RenderPageOptions {
   readonly channelId: string | undefined
   readonly folderIdRaw: string
   readonly tagId: string | undefined
+  readonly source: 'playlist' | undefined
+  readonly playlistId: string | undefined
   readonly channels: Array<{ readonly channelId: string; readonly channelTitle: string | null }>
   readonly folders: ReadonlyArray<{
     readonly id: string
@@ -141,6 +157,7 @@ interface RenderPageOptions {
     readonly videoCount: number
   }>
   readonly tags: Array<{ readonly id: string; readonly name: string }>
+  readonly playlists: ReadonlyArray<{ readonly playlistId: string; readonly title: string }>
 }
 
 function renderPage(opts: RenderPageOptions): string {
@@ -178,6 +195,20 @@ ${COMMON_HEAD}
                   }>${escapeHtml(ch.channelTitle ?? ch.channelId)}</option>`,
               )
               .join('')}
+          </select>
+        </div>
+        <div class="videos-filter">
+          <label for="source">Source</label>
+          <select id="source" name="source" data-videos-source>
+            <option value="">New videos</option>
+            <option value="playlist" ${opts.source === 'playlist' ? 'selected' : ''}>Playlists</option>
+          </select>
+        </div>
+        <div class="videos-filter">
+          <label for="playlist_id">Playlist</label>
+          <select id="playlist_id" name="playlist_id" data-videos-playlist>
+            <option value="">All playlists</option>
+            ${opts.playlists.map((playlist) => `<option value="${escapeHtml(playlist.playlistId)}" ${opts.playlistId === playlist.playlistId ? 'selected' : ''}>${escapeHtml(playlist.title)}</option>`).join('')}
           </select>
         </div>
         <div class="videos-filter">
@@ -241,6 +272,9 @@ function renderRow(v: VideoListItem): string {
     (t) =>
       `<span class="videos-row-tag" data-videos-row-tag="${escapeHtml(t.id)}">${escapeHtml(t.name)}</span>`,
   )
+  const playlistChips = v.playlists.map((playlist) =>
+    `<span class="videos-row-playlist">${escapeHtml(playlist.title)}</span>`,
+  )
   return `<li class="videos-row" data-videos-row data-video-id="${escapeHtml(v.id)}">
   <a class="videos-row-link" href="/videos/${encodeURIComponent(v.id)}">
     ${thumb}
@@ -251,7 +285,7 @@ function renderRow(v: VideoListItem): string {
         <span class="videos-row-dot">\u00b7</span>
         <span class="videos-row-date"><time datetime="${escapeHtml(v.publishedAt)}">${formatDate(v.publishedAt)}</time></span>
       </span>
-      <span class="videos-row-tags">${folder}${tagChips.length > 0 ? `<span class="videos-row-tag-list">${tagChips.join('')}</span>` : ''}</span>
+      <span class="videos-row-tags">${folder}${tagChips.length > 0 ? `<span class="videos-row-tag-list">${tagChips.join('')}</span>` : ''}${playlistChips.join('')}</span>
     </span>
   </a>
 </li>`
@@ -261,7 +295,7 @@ function renderEmpty(opts: RenderPageOptions): string {
   if (opts.total !== 0) return ''
   // Distinct message when filters are active vs not.
   const filtersActive =
-    opts.channelId || opts.folderIdRaw !== 'all' || opts.tagId
+    opts.channelId || opts.folderIdRaw !== 'all' || opts.tagId || opts.source || opts.playlistId
   if (filtersActive) {
     return `<div class="videos-empty">
   <p>No videos match those filters.</p>
@@ -286,6 +320,8 @@ function renderPagination(
     if (opts.channelId) sp.set('channel_id', opts.channelId)
     if (opts.folderIdRaw !== 'all') sp.set('folder_id', opts.folderIdRaw)
     if (opts.tagId) sp.set('tag_id', opts.tagId)
+    if (opts.source) sp.set('source', opts.source)
+    if (opts.playlistId) sp.set('playlist_id', opts.playlistId)
     sp.set('page', String(page))
     return sp.toString()
   }
@@ -377,6 +413,7 @@ const VIDEOS_VIEW_STYLES = `
 .videos-row-folder-empty { color: var(--muted); background: transparent; border: 1px dashed var(--border); }
 .videos-row-tag { padding: 2px 8px; background: var(--surface-2, rgba(127,127,127,0.1)); border-radius: 4px; color: var(--muted); }
 .videos-row-tag-list { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.videos-row-playlist { padding: 2px 8px; border: 1px solid color-mix(in srgb, #8b5cf6 50%, var(--border)); border-radius: 999px; color: #a78bfa; background: color-mix(in srgb, #8b5cf6 10%, transparent); }
 .videos-empty { padding: 32px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; text-align: center; color: var(--muted); }
 .videos-empty button { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); cursor: pointer; }
 .videos-pagination { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; }

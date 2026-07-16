@@ -15,10 +15,11 @@ export interface YouTubeVideoUpsertInput {
   readonly publishedAt: string
   readonly thumbnailUrl: string | null
   readonly link: string
+  /** Rich relationship tables (playlists/history) pass null instead. */
   readonly origin: {
     readonly type: VideoOriginType
     readonly sourceId?: string
-  }
+  } | null
 }
 
 export interface YouTubeVideoUpsertResult {
@@ -107,12 +108,14 @@ export function upsertYouTubeVideo(
       )
     }
 
-    db.run(
-      `INSERT OR IGNORE INTO video_origins
-         (video_id, origin_type, source_id, first_seen_at)
-       VALUES (?, ?, ?, ?)`,
-      [id, input.origin.type, input.origin.sourceId ?? '', now],
-    )
+    if (input.origin) {
+      db.run(
+        `INSERT OR IGNORE INTO video_origins
+           (video_id, origin_type, source_id, first_seen_at)
+         VALUES (?, ?, ?, ?)`,
+        [id, input.origin.type, input.origin.sourceId ?? '', now],
+      )
+    }
     return { outcome, id }
   })
 }

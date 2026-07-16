@@ -78,6 +78,11 @@ export interface YouTubeSubscriptionsSyncDeps {
   readonly fetcher?: YouTubeSubscriptionsFetcher
   /** Injected clock; default `Date.now`. */
   readonly nowMs?: () => number
+  /** Optional persistent backfill queue (YT-009). Kept structural so the
+   *  subscription sync remains independently testable. */
+  readonly backfillService?: {
+    queueAutomatic(subscriptionIds: readonly string[]): void
+  }
 }
 
 // ─── Orchestrator ────────────────────────────────────────────────────────
@@ -88,6 +93,7 @@ export class YouTubeSubscriptionsSync {
   readonly #oauthClient: YouTubeOAuthClient
   readonly #fetcher: YouTubeSubscriptionsFetcher
   readonly #nowMs: () => number
+  readonly #backfillService: YouTubeSubscriptionsSyncDeps['backfillService']
 
   constructor(deps: YouTubeSubscriptionsSyncDeps) {
     this.#db = deps.db
@@ -95,6 +101,7 @@ export class YouTubeSubscriptionsSync {
     this.#oauthClient = deps.oauthClient
     this.#fetcher = deps.fetcher ?? new YouTubeSubscriptionsFetcher()
     this.#nowMs = deps.nowMs ?? (() => Date.now())
+    this.#backfillService = deps.backfillService
   }
 
   /**
@@ -152,10 +159,11 @@ export class YouTubeSubscriptionsSync {
     let updated = 0
     let unchanged = 0
     const seenChannelIds = new Set<string>()
+    const insertedSubscriptionIds: string[] = []
     this.#db.transaction(() => {
       for (const sub of incoming) {
         seenChannelIds.add(sub.channelId)
-        const { outcome } = upsertSubscription(
+        const { outcome, id } = upsertSubscription(
           this.#db,
           {
             googleAccountId: account.id,
@@ -166,7 +174,10 @@ export class YouTubeSubscriptionsSync {
           },
           this.#nowMs,
         )
-        if (outcome === 'inserted') added++
+        if (outcome === 'inserted') {
+          added++
+          insertedSubscriptionIds.push(id)
+        }
         else if (outcome === 'updated') updated++
         else unchanged++
       }
@@ -187,6 +198,10 @@ export class YouTubeSubscriptionsSync {
       account.id,
       seenChannelIds,
     )
+
+    // Queue only rows inserted by this sync. Migration 015 marks all
+    // pre-existing rows initialized, preventing an upgrade-time flood.
+    this.#backfillService?.queueAutomatic(insertedSubscriptionIds)
 
     return {
       added,

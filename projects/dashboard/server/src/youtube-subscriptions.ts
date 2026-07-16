@@ -56,6 +56,13 @@ export interface Subscription {
   readonly isImportant: boolean
   readonly autoFetchTranscripts: boolean
   readonly lastPolledAt: string | null
+  readonly backfillStatus: 'pending' | 'running' | 'completed' | 'failed' | null
+  readonly lastBackfillDays: 7 | 30 | 90 | null
+  readonly lastBackfillCount: number
+  readonly lastBackfillSkippedCount: number
+  readonly lastBackfilledAt: string | null
+  readonly backfillError: string | null
+  readonly backfillRetryable: boolean
   readonly createdAt: string
   readonly updatedAt: string
 }
@@ -73,6 +80,13 @@ interface SubscriptionRow {
   is_important: number | bigint
   auto_fetch_transcripts: number | bigint
   last_polled_at: string | null
+  backfill_status: 'pending' | 'running' | 'completed' | 'failed' | null
+  last_backfill_days: 7 | 30 | 90 | null
+  last_backfill_count: number | bigint
+  last_backfill_skipped_count: number | bigint
+  last_backfilled_at: string | null
+  backfill_error: string | null
+  backfill_retryable: number | bigint
   created_at: string
   updated_at: string
 }
@@ -490,6 +504,13 @@ function rowToSubscription(row: SubscriptionRow): Subscription {
     isImportant: !!row.is_important,
     autoFetchTranscripts: !!row.auto_fetch_transcripts,
     lastPolledAt: row.last_polled_at,
+    backfillStatus: row.backfill_status,
+    lastBackfillDays: row.last_backfill_days,
+    lastBackfillCount: Number(row.last_backfill_count),
+    lastBackfillSkippedCount: Number(row.last_backfill_skipped_count),
+    lastBackfilledAt: row.last_backfilled_at,
+    backfillError: row.backfill_error,
+    backfillRetryable: !!row.backfill_retryable,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

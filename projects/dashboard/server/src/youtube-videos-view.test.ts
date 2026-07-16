@@ -231,6 +231,27 @@ describe('GET /videos — row rendering', () => {
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(html).not.toContain('<script>alert(1)</script>')
   })
+
+  it('shows playlist badges once on canonical cards and supports playlist library filters', async () => {
+    const id = env.seed({ videoId: 'playlist-card', title: 'Playlist card' })
+    env.db.run(
+      `INSERT INTO youtube_playlists
+       (google_account_id, playlist_id, title, privacy_status, is_included)
+       VALUES ('acct-1', 'PL-one', 'Research & notes', 'private', 1)`,
+    )
+    env.db.run(
+      `INSERT INTO youtube_playlist_items
+       (google_account_id, playlist_id, playlist_item_id, video_id, position, synced_at)
+       VALUES ('acct-1', 'PL-one', 'item-one', ?, 0, '2026-07-16T00:00:00Z')`,
+      [id],
+    )
+    const html = await getText(await get(env.app, '/videos?source=playlist&playlist_id=PL-one'))
+    expect(html).toContain('Playlist card')
+    expect(html).toContain('Research &amp; notes')
+    expect(html).toContain('class="videos-row-playlist"')
+    expect(html).toContain('value="playlist" selected')
+    expect(html).toContain('value="PL-one" selected')
+  })
 })
 
 // ─── Filter dropdown state ──────────────────────────────────────────────

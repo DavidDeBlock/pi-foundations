@@ -15,6 +15,7 @@ import {
   countSubscriptions,
   getSubscriptionByChannelId,
   listSubscriptions,
+  upsertSubscription,
 } from './youtube-subscriptions.js'
 import {
   NoYouTubeAccountError,
@@ -105,6 +106,13 @@ function sub(
     isIncluded: true,
     isImportant: false,
     lastPolledAt: null,
+    backfillStatus: overrides.backfillStatus ?? null,
+    lastBackfillDays: overrides.lastBackfillDays ?? null,
+    lastBackfillCount: overrides.lastBackfillCount ?? 0,
+    lastBackfillSkippedCount: overrides.lastBackfillSkippedCount ?? 0,
+    lastBackfilledAt: overrides.lastBackfilledAt ?? null,
+    backfillError: overrides.backfillError ?? null,
+    backfillRetryable: overrides.backfillRetryable ?? false,
     createdAt: '',
     updatedAt: '',
     ...overrides,
@@ -218,6 +226,29 @@ describe('YouTubeSubscriptionsSync.sync — happy paths', () => {
     expect(second.added).toBe(1)
     expect(second.unchanged).toBe(2)
     expect(countSubscriptions(env.db)).toBe(3)
+  })
+
+  it('hands only subscriptions inserted by this sync to the backfill queue', async () => {
+    const accountId = seedAccount()
+    upsertSubscription(env.db, {
+      googleAccountId: accountId,
+      channelId: 'UCexisting',
+      channelTitle: 'Channel UCexisting',
+      channelThumbnailUrl: 'https://example.com/UCexisting.jpg',
+      subscribedAt: '2024-01-01T00:00:00.000Z',
+    }, env.nowMs)
+    const queueAutomatic = vi.fn()
+    env.sync = new YouTubeSubscriptionsSync({
+      db: env.db,
+      cipher: env.cipher,
+      oauthClient: env.oauthClient,
+      fetcher: makeFakeFetcher([[sub('UCexisting'), sub('UCnew')]]),
+      backfillService: { queueAutomatic },
+      nowMs: env.nowMs,
+    })
+    await env.sync.sync(accountId)
+    const newSubscription = getSubscriptionByChannelId(env.db, 'UCnew')
+    expect(queueAutomatic).toHaveBeenCalledWith([newSubscription?.id])
   })
 
   it('detects removed channels (unsubscribed on YouTube)', async () => {

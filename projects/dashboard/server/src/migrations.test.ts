@@ -99,6 +99,8 @@ describe('Migrations runner', () => {
       '012_youtube_transcripts',
       '013_youtube_video_summaries',
       '014_youtube_library_foundation',
+      '015_youtube_subscription_backfill',
+      '016_youtube_playlists',
     ])
 
     // Spot-check that every table from the PRD schema now exists.
@@ -134,6 +136,10 @@ describe('Migrations runner', () => {
     expect(names).toContain('video_summaries')
     expect(names).toContain('youtube_channels')
     expect(names).toContain('video_origins')
+    expect(names).toContain('youtube_preferences')
+    expect(names).toContain('youtube_playlists')
+    expect(names).toContain('youtube_playlist_items')
+    expect(names).toContain('youtube_playlist_sync_state')
     const subscriptionCols = db.all<{ name: string }>('PRAGMA table_info(subscriptions)')
     expect(subscriptionCols.some((c) => c.name === 'auto_fetch_transcripts')).toBe(true)
     // Sync debounce column for the background scheduler (issue #026).
@@ -144,11 +150,11 @@ describe('Migrations runner', () => {
   it('is idempotent — running twice does NOT re-apply', async () => {
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const firstApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(firstApplied).toHaveLength(14)
+    expect(firstApplied).toHaveLength(16)
 
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const secondApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(secondApplied).toHaveLength(14)
+    expect(secondApplied).toHaveLength(16)
     // applied_at should be unchanged on re-run (still the original timestamps).
     expect(secondApplied.map((r) => r.name).sort()).toEqual(
       firstApplied.map((r) => r.name).sort(),
@@ -243,6 +249,14 @@ describe('Migrations runner', () => {
     expect(db.get('SELECT channel_id, title FROM youtube_channels')).toEqual({
       channel_id: 'UClegacy',
       title: 'Legacy Channel',
+    })
+    expect(db.get('SELECT backfill_initialized, backfill_status FROM subscriptions')).toEqual({
+      backfill_initialized: 1,
+      backfill_status: null,
+    })
+    expect(db.get('SELECT google_account_id, new_subscription_backfill_days FROM youtube_preferences')).toEqual({
+      google_account_id: 'acct-1',
+      new_subscription_backfill_days: 30,
     })
 
     const videoFk = db.all<{ table: string; from: string }>('PRAGMA foreign_key_list(videos)')

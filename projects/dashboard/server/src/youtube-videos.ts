@@ -60,6 +60,10 @@ export interface SearchVideosOptions {
    *  `channelId` and `unfoldered: true`. */
   readonly unfoldered?: boolean
   readonly tagId?: string
+  /** Restrict the canonical library to videos mirrored from YouTube playlists. */
+  readonly source?: 'playlist'
+  /** Restrict to one playlist. Implies `source: 'playlist'`. */
+  readonly playlistId?: string
   readonly page?: number
   readonly limit?: number
   /** Optional injected clock to make `discovered_at` ordering
@@ -91,12 +95,14 @@ export interface VideoListItem {
   readonly folderId: string | null
   readonly folderName: string | null
   readonly tags: ReadonlyArray<{ readonly id: string; readonly name: string }>
+  readonly playlists: ReadonlyArray<{ readonly id: string; readonly title: string }>
 }
 
 export interface VideoDetail extends VideoListItem {
   /** `discovered_at` ordering is sensitive to clock skew between
    *  you and YouTube; here for completeness, not used by the UI. */
   readonly channelIsIncluded: boolean
+  readonly channelIsSubscribed: boolean
 }
 
 /** Input to `insertVideo` — the fields the RSS poller supplies.
@@ -189,7 +195,8 @@ export function searchVideos(
   const offset = (page - 1) * limit
 
   // ─── WHERE assembly ────────────────────────────────────────────────
-  const where: string[] = ['(s.is_included = 1 OR s.id IS NULL)']
+  const playlistContext = options.source === 'playlist' || options.playlistId !== undefined
+  const where: string[] = playlistContext ? [] : ['(s.is_included = 1 OR s.id IS NULL)']
   const params: Array<string | number> = []
   if (options.channelId) {
     where.push('v.channel_id = ?')
@@ -206,6 +213,13 @@ export function searchVideos(
     // rows for videos that have multiple tags.
     where.push('EXISTS (SELECT 1 FROM video_tags vt WHERE vt.video_id = v.id AND vt.tag_id = ?)')
     params.push(options.tagId)
+  }
+  if (playlistContext) {
+    where.push(`EXISTS (
+      SELECT 1 FROM youtube_playlist_items source_pi
+      WHERE source_pi.video_id = v.id${options.playlistId ? ' AND source_pi.playlist_id = ?' : ''}
+    )`)
+    if (options.playlistId) params.push(options.playlistId)
   }
   const whereSql = where.length > 0 ? ` WHERE ${where.join(' AND ')}` : ''
 
@@ -246,7 +260,12 @@ export function searchVideos(
     db,
     items.map((it) => it.id),
   )
-  const hydrated = items.map((it) => ({ ...it, tags: tagMap.get(it.id) ?? [] }))
+  const playlistMap = listPlaylistsForVideos(db, items.map((it) => it.id))
+  const hydrated = items.map((it) => ({
+    ...it,
+    tags: tagMap.get(it.id) ?? [],
+    playlists: playlistMap.get(it.id) ?? [],
+  }))
   return { items: hydrated, total, page, limit }
 }
 
@@ -260,13 +279,14 @@ export function searchVideos(
  *     also return `channel_is_included`.
  */
 export function getVideoDetail(db: Database, id: string): VideoDetail | null {
-  const row = db.get<VideoListItemRow & { channel_is_included: number }>(
+  const row = db.get<VideoListItemRow & { channel_is_included: number | null; subscription_id: string | null }>(
     `SELECT v.id, v.video_id, v.channel_id,
             c.title AS channel_title, c.thumbnail_url AS channel_thumbnail_url,
             COALESCE(v.local_title_override, v.title) AS title,
             v.published_at, v.thumbnail_url,
             v.link, v.discovered_at, v.folder_id, f.name AS folder_name,
             s.is_included AS channel_is_included
+            , s.id AS subscription_id
        FROM videos v
             JOIN youtube_channels c ON c.channel_id = v.channel_id
             LEFT JOIN subscriptions s ON s.channel_id = v.channel_id
@@ -280,8 +300,35 @@ export function getVideoDetail(db: Database, id: string): VideoDetail | null {
   return {
     ...item,
     tags,
+    playlists: listPlaylistsForVideos(db, [id]).get(id) ?? [],
     channelIsIncluded: row.channel_is_included === 1,
+    channelIsSubscribed: row.subscription_id !== null,
   }
+}
+
+function listPlaylistsForVideos(
+  db: Database,
+  videoIds: readonly string[],
+): Map<string, Array<{ readonly id: string; readonly title: string }>> {
+  const result = new Map<string, Array<{ readonly id: string; readonly title: string }>>()
+  if (videoIds.length === 0) return result
+  const placeholders = videoIds.map(() => '?').join(',')
+  const rows = db.all<{ video_id: string; playlist_id: string; title: string }>(
+    `SELECT DISTINCT pi.video_id, pi.playlist_id, p.title
+       FROM youtube_playlist_items pi
+       JOIN youtube_playlists p
+         ON p.google_account_id = pi.google_account_id
+        AND p.playlist_id = pi.playlist_id
+      WHERE pi.video_id IN (${placeholders})
+      ORDER BY p.title COLLATE NOCASE, pi.playlist_id`,
+    [...videoIds],
+  )
+  for (const row of rows) {
+    const memberships = result.get(row.video_id) ?? []
+    memberships.push({ id: row.playlist_id, title: row.title })
+    result.set(row.video_id, memberships)
+  }
+  return result
 }
 
 /** List all tags attached to a single video (alphabetical, same
@@ -516,6 +563,7 @@ function rowToVideoListItem(
     folderId: row.folder_id,
     folderName: row.folder_name,
     tags: [],
+    playlists: [],
   }
 }
 

@@ -29,6 +29,12 @@ import {
   MiniMaxVideoSummarizer,
   YouTubeVideoSummaryService,
 } from './youtube-video-summaries.js'
+import { YouTubeSubscriptionBackfillService } from './youtube-subscription-backfill.js'
+import { YouTubePlaylistsSync } from './youtube-playlists-sync.js'
+import {
+  DEFAULT_YOUTUBE_PLAYLIST_SYNC_INTERVAL_HOURS,
+  YouTubePlaylistsScheduler,
+} from './youtube-playlists-scheduler.js'
 
 async function main(): Promise<void> {
   const config = await loadConfig()
@@ -97,6 +103,14 @@ async function main(): Promise<void> {
     : null
   if (youtubeSyncScheduler) youtubeSyncScheduler.start()
 
+  const youtubePlaylistsScheduler = youtube
+    ? new YouTubePlaylistsScheduler({
+        sync: youtube.playlistsSync,
+        intervalHours: DEFAULT_YOUTUBE_PLAYLIST_SYNC_INTERVAL_HOURS,
+      })
+    : null
+  if (youtubePlaylistsScheduler) youtubePlaylistsScheduler.start()
+
   // YouTube RSS scheduler (issue YT-004). 15-min interval, first
   // poll ~15s after boot. The OAuth callback does NOT auto-trigger
   // an RSS poll (subscriber count is small and the next 15-min
@@ -117,6 +131,7 @@ async function main(): Promise<void> {
     console.log(`[dashboard] ${signal} received; stopping scheduler and exiting`)
     if (syncScheduler) syncScheduler.stop()
     if (youtubeSyncScheduler) youtubeSyncScheduler.stop()
+    if (youtubePlaylistsScheduler) youtubePlaylistsScheduler.stop()
     if (youtubeRssSched) youtubeRssSched.stop()
     db.close()
     process.exit(0)
@@ -243,12 +258,27 @@ function buildYouTubeDeps(
     redirectUri: youtubeOauthRedirectUri,
   })
 
-  // Subscriptions sync (issue YT-002). Reuses the same `client`
-  // for token refresh — no separate OAuth plumbing needed.
+  const backfillService = new YouTubeSubscriptionBackfillService({
+    db,
+    cipher: tokenCipher,
+    oauthClient: client,
+  })
+  backfillService.resumePending()
+
+  const playlistsSync = new YouTubePlaylistsSync({
+    db,
+    cipher: tokenCipher,
+    oauthClient: client,
+  })
+  playlistsSync.recoverInterrupted()
+
+  // Subscriptions sync reuses the same client and hands newly discovered
+  // subscriptions to YT-009's persistent backfill queue.
   const subscriptionsSync = new YouTubeSubscriptionsSync({
     db,
     cipher: tokenCipher,
     oauthClient: client,
+    backfillService,
   })
 
   // RSS poller (issue YT-004). Same DB, no OAuth deps needed
@@ -288,6 +318,8 @@ function buildYouTubeDeps(
     subscriptionsSync,
     rssPoller,
     transcriptService,
+    backfillService,
+    playlistsSync,
     ...(summaryService ? { summaryService } : {}),
   }
 }

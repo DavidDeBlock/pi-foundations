@@ -318,6 +318,40 @@ describe('GET /videos/:id — channel flag', () => {
     const { body } = await getText(env.app, `/videos/${id}`)
     expect(body).toContain('channel is excluded from polling')
   })
+
+  it('renders a canonical non-subscribed channel without treating it as excluded', async () => {
+    const id = env.seed({ channelId: 'UC-not-subscribed', videoId: 'playlist-only' })
+    const { body } = await getText(env.app, `/videos/${id}`)
+    expect(body).toContain('UC-not-subscribed')
+    expect(body).toContain('not a subscribed channel')
+    expect(body).not.toContain('channel is excluded from polling')
+    expect(body).toContain('data-video-folder-select')
+    expect(body).toContain('data-video-tag-input')
+    expect(body).toContain('data-video-transcript')
+    expect(body).toContain('data-video-summary')
+  })
+})
+
+describe('GET /videos/:id — playlists', () => {
+  it('shows each playlist membership once and links back to its detail page', async () => {
+    const id = env.seed()
+    env.db.run(
+      `INSERT INTO youtube_playlists
+       (google_account_id, playlist_id, title, privacy_status, is_included)
+       VALUES ('acct-1', 'PL-one', '<Research>', 'private', 1)`,
+    )
+    env.db.run(
+      `INSERT INTO youtube_playlist_items
+       (google_account_id, playlist_id, playlist_item_id, video_id, position, synced_at)
+       VALUES ('acct-1', 'PL-one', 'item-one', ?, 0, '2026-07-16T00:00:00Z')`,
+      [id],
+    )
+    const { body } = await getText(env.app, `/videos/${id}`)
+    expect(body).toContain('Saved in')
+    expect(body).toContain('href="/playlists/PL-one"')
+    expect(body).toContain('&lt;Research&gt;')
+    expect(body).not.toContain('<Research>')
+  })
 })
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────

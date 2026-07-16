@@ -318,6 +318,31 @@ describe('/subscriptions sync-now wiring', () => {
 
 // ─── Pagination ───────────────────────────────────────────────────────────
 
+describe('/subscriptions recent-video backfill', () => {
+  it('renders the global default and a manual action on every row', async () => {
+    seedFixture()
+    const res = await env.app.request('/subscriptions', {
+      headers: { authorization: basic(PASSWORD) },
+    })
+    const html = await res.text()
+    expect(html).toContain('data-backfill-preference')
+    expect(html).toContain('<option value="30" selected>Last 30 days</option>')
+    expect((html.match(/data-backfill-button>/g) ?? [])).toHaveLength(3)
+    expect(html).toContain('Import recent videos')
+  })
+
+  it('wires preference PATCH, backfill POST, and live status polling', async () => {
+    seedFixture()
+    const res = await env.app.request('/subscriptions', {
+      headers: { authorization: basic(PASSWORD) },
+    })
+    const html = await res.text()
+    expect(html).toContain("fetch('/api/youtube/preferences'")
+    expect(html).toContain("'/backfill'")
+    expect(html).toContain('pollBackfill')
+  })
+})
+
 describe('/subscriptions pagination', () => {
   it('omits pagination when the list fits in one page', async () => {
     seedFixture()

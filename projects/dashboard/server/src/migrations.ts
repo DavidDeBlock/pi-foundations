@@ -69,6 +69,14 @@ const MIGRATIONS = [
     name: '014_youtube_library_foundation',
     filename: '014_youtube_library_foundation.sql',
   },
+  {
+    name: '015_youtube_subscription_backfill',
+    filename: '015_youtube_subscription_backfill.sql',
+  },
+  {
+    name: '016_youtube_playlists',
+    filename: '016_youtube_playlists.sql',
+  },
 ] as const
 
 export interface RunMigrationsOptions {

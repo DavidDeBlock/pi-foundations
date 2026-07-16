@@ -132,7 +132,9 @@ ${COMMON_HEAD}
               <a href="/subscriptions?channel_id=${encodeURIComponent(detail.channelId)}" data-video-channel-link>${escapeHtml(detail.channelTitle)}</a>
               ${detail.channelIsIncluded
                 ? ''
-                : '<span class="video-detail-channel-flag">channel is excluded from polling</span>'}
+                : detail.channelIsSubscribed
+                  ? '<span class="video-detail-channel-flag">channel is excluded from polling</span>'
+                  : '<span class="video-detail-channel-flag">not a subscribed channel</span>'}
             </dd>
             <dt>Published</dt>
             <dd><time datetime="${escapeHtml(detail.publishedAt)}">${escapeHtml(formatDateFull(detail.publishedAt))}</time></dd>
@@ -142,6 +144,10 @@ ${COMMON_HEAD}
             <dd><a href="${escapeHtml(detail.link)}" target="_blank" rel="noopener noreferrer">Open on YouTube \u2197</a></dd>
           </dl>
         </header>
+
+        ${detail.playlists.length > 0 ? `<section class="video-detail-playlists" aria-label="Playlist memberships">
+          <span>Saved in</span>${detail.playlists.map((playlist) => `<a href="/playlists/${encodeURIComponent(playlist.id)}">${escapeHtml(playlist.title)}</a>`).join('')}
+        </section>` : ''}
 
         <section class="video-detail-thumb">
           ${detail.thumbnailUrl
@@ -366,6 +372,8 @@ const VIDEO_DETAIL_STYLES = `
 .video-detail-meta dd { margin: 0; color: var(--text); }
 .video-detail-meta a { color: var(--accent); text-decoration: none; }
 .video-detail-channel-flag { display: inline-block; margin-left: 8px; padding: 2px 6px; background: var(--surface-2, rgba(127,127,127,0.1)); color: var(--muted); border-radius: 4px; font-size: 0.78rem; }
+.video-detail-playlists { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, #8b5cf6 8%, var(--surface)); color: var(--muted); font-size: .8rem; }
+.video-detail-playlists a { padding: 4px 9px; border: 1px solid color-mix(in srgb, #8b5cf6 45%, var(--border)); border-radius: 999px; color: #a78bfa; text-decoration: none; }
 .video-detail-thumb { margin: 16px 0 24px; }
 .video-detail-thumb img { width: 100%; max-width: 560px; aspect-ratio: 16/9; object-fit: cover; border-radius: 12px; box-shadow: 0 14px 35px rgba(3,8,20,.24); }
 .video-detail-thumb-fallback { width: 100%; max-width: 480px; aspect-ratio: 16/9; background: var(--surface-2, rgba(127,127,127,0.1)); border-radius: 6px; }

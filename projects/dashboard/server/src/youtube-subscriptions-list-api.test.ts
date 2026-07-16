@@ -146,10 +146,17 @@ describe('GET /api/subscriptions', () => {
     const item = body.items[0]!
     expect(Object.keys(item).sort()).toEqual([
       'auto_fetch_transcripts',
+      'backfill_error',
+      'backfill_retryable',
+      'backfill_status',
       'channel_id',
       'id',
       'is_important',
       'is_included',
+      'last_backfill_count',
+      'last_backfill_days',
+      'last_backfill_skipped_count',
+      'last_backfilled_at',
       'last_polled_at',
       'subscribed_at',
       'thumbnail_url',

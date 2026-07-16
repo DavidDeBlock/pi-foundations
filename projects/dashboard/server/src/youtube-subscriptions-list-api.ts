@@ -36,9 +36,16 @@ import {
   updateSubscriptionToggles,
   type Subscription,
 } from './youtube-subscriptions.js'
+import {
+  getSubscriptionBackfillState,
+  type SubscriptionBackfillState,
+  type YouTubeSubscriptionBackfillService,
+} from './youtube-subscription-backfill.js'
+import { MANUAL_BACKFILL_DAYS } from './youtube-preferences.js'
 
 export interface SubscriptionsApiDeps {
   readonly db: Database
+  readonly backfillService?: YouTubeSubscriptionBackfillService
 }
 
 /**
@@ -191,6 +198,34 @@ export function subscriptionsApi(
     return c.json({ ok: true, subscription: toApiItem(fresh) })
   })
 
+  api.post('/:id/backfill', async (c) => {
+    if (!deps.backfillService) {
+      return c.json({ ok: false, error: 'backfill_unavailable' }, 503)
+    }
+    let body: { days?: unknown }
+    try {
+      body = await c.req.json() as typeof body
+    } catch {
+      return c.json({ ok: false, error: 'malformed_json' }, 400)
+    }
+    if (!MANUAL_BACKFILL_DAYS.includes(body.days as never)) {
+      return c.json({
+        ok: false,
+        error: 'invalid_days',
+        message: 'days must be 7, 30, or 90',
+      }, 400)
+    }
+    const state = deps.backfillService.queueManual(c.req.param('id'), body.days as never)
+    if (!state) return c.json({ ok: false, error: 'not_found' }, 404)
+    return c.json({ ok: true, backfill: stateToApi(state) }, 202)
+  })
+
+  api.get('/:id/backfill', (c) => {
+    const state = getSubscriptionBackfillState(deps.db, c.req.param('id'))
+    if (!state) return c.json({ ok: false, error: 'not_found' }, 404)
+    return c.json({ ok: true, backfill: stateToApi(state) })
+  })
+
   return api
 }
 
@@ -214,6 +249,13 @@ interface ApiSubscriptionItem {
   readonly is_important: boolean
   readonly auto_fetch_transcripts: boolean
   readonly last_polled_at: string | null
+  readonly backfill_status: Subscription['backfillStatus']
+  readonly last_backfill_days: number | null
+  readonly last_backfill_count: number
+  readonly last_backfill_skipped_count: number
+  readonly last_backfilled_at: string | null
+  readonly backfill_error: string | null
+  readonly backfill_retryable: boolean
 }
 
 function toApiItem(s: Subscription): ApiSubscriptionItem {
@@ -227,6 +269,29 @@ function toApiItem(s: Subscription): ApiSubscriptionItem {
     is_important: s.isImportant,
     auto_fetch_transcripts: s.autoFetchTranscripts,
     last_polled_at: s.lastPolledAt,
+    backfill_status: s.backfillStatus,
+    last_backfill_days: s.lastBackfillDays,
+    last_backfill_count: s.lastBackfillCount,
+    last_backfill_skipped_count: s.lastBackfillSkippedCount,
+    last_backfilled_at: s.lastBackfilledAt,
+    backfill_error: s.backfillError,
+    backfill_retryable: s.backfillRetryable,
+  }
+}
+
+function stateToApi(state: SubscriptionBackfillState): Record<string, unknown> {
+  return {
+    subscription_id: state.subscriptionId,
+    status: state.status,
+    requested_days: state.requestedDays,
+    imported_count: state.importedCount,
+    skipped_count: state.skippedCount,
+    requested_at: state.requestedAt,
+    started_at: state.startedAt,
+    completed_at: state.completedAt,
+    last_backfilled_at: state.lastBackfilledAt,
+    error: state.error,
+    retryable: state.retryable,
   }
 }
 

@@ -34,6 +34,11 @@ import { youtubeTranscriptsApi } from './youtube-transcripts-api.js'
 import type { YouTubeTranscriptService } from './youtube-transcripts.js'
 import { youtubeVideoSummariesApi } from './youtube-video-summaries-api.js'
 import type { YouTubeVideoSummaryService } from './youtube-video-summaries.js'
+import type { YouTubeSubscriptionBackfillService } from './youtube-subscription-backfill.js'
+import { youtubePreferencesApi } from './youtube-preferences-api.js'
+import type { YouTubePlaylistsSync } from './youtube-playlists-sync.js'
+import { youtubePlaylistsApi } from './youtube-playlists-api.js'
+import { youtubePlaylistsView } from './youtube-playlists-view.js'
 
 export interface EmailDeps {
   /** AES-256-GCM cipher for OAuth tokens at rest. */
@@ -99,6 +104,10 @@ export interface YouTubeDeps {
   readonly transcriptService: YouTubeTranscriptService
   /** Optional MiniMax-backed queue. Absent until LLM_API_KEY is configured. */
   readonly summaryService?: YouTubeVideoSummaryService
+  /** Persistent recent-upload import queue (YT-009). */
+  readonly backfillService: YouTubeSubscriptionBackfillService
+  /** Read-only playlist metadata and membership mirror (YT-010). */
+  readonly playlistsSync: YouTubePlaylistsSync
 }
 
 export interface AppDeps {
@@ -278,7 +287,15 @@ export function createApp({
     )
     app.route(
       '/api/subscriptions',
-      subscriptionsApi({ db }),
+      subscriptionsApi({ db, backfillService: youtube.backfillService }),
+    )
+    app.route(
+      '/api/youtube/preferences',
+      youtubePreferencesApi({ db }),
+    )
+    app.route(
+      '/api/youtube/playlists',
+      youtubePlaylistsApi({ db, sync: youtube.playlistsSync }),
     )
     app.route(
       '/settings/youtube',
@@ -295,6 +312,10 @@ export function createApp({
     app.route(
       '/subscriptions',
       subscriptionsViewApi({ db }),
+    )
+    app.route(
+      '/playlists',
+      youtubePlaylistsView({ db }),
     )
     // Videos list page (issue YT-005): `/videos`. Same router
     // also owns the detail page at `/videos/:id` so we mount

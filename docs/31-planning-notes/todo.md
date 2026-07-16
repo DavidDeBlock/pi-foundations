@@ -1259,5 +1259,8 @@ to-issues, to-prd, triage, typescript-implementer, web-searcher, write-a-skill, 
  Is it possible to fetch the transcript of a video since they are available in the video description?
 
 
-Lets add some more things. 
+Let's add some more things regarding YouTube. I want to add my watch history, and I want to add the videos I saved on YouTube, like in playlists. Maybe a cool addition would be that if I subscribe to a new channel, I have to wait until the content creator creates a new video. It would be handy to fetch the videos of the last month and maybe add it as an option in the subscriptions. Let's enhance those things a bit. Maybe you can add some suggestions.
+
+
+Maybe it's a good idea to create the plans first so you can implement them individually. We have a docs folder under the dashboard directory, so either place them in plans, PRDs, or issues, like you want. I suggest creating PRDs first and then creating the separate issues pointing to that PRD so you are always on track with what to implement. 
  

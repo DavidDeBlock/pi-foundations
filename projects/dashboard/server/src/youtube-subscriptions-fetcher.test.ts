@@ -44,6 +44,13 @@ describe('parseSubscription', () => {
       isImportant: false,
       autoFetchTranscripts: false,
       lastPolledAt: null,
+      backfillStatus: null,
+      lastBackfillDays: null,
+      lastBackfillCount: 0,
+      lastBackfillSkippedCount: 0,
+      lastBackfilledAt: null,
+      backfillError: null,
+      backfillRetryable: false,
       createdAt: '',
       updatedAt: '',
     })

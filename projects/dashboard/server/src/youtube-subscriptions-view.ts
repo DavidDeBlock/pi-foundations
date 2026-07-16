@@ -48,6 +48,8 @@ import {
   type Subscription,
   type SubscriptionFilter,
 } from './youtube-subscriptions.js'
+import { getMostRecentYouTubeAccountId } from './youtube-accounts.js'
+import { getYouTubePreferences } from './youtube-preferences.js'
 
 // ─── Hono sub-app ─────────────────────────────────────────────────────────
 
@@ -72,6 +74,10 @@ export function subscriptionsViewApi(
 
     const result = searchSubscriptions(deps.db, { filter, search, page, limit })
     const counts = countIncludedExcluded(deps.db)
+    const accountId = getMostRecentYouTubeAccountId(deps.db)
+    const backfillDays = accountId
+      ? getYouTubePreferences(deps.db, accountId).newSubscriptionBackfillDays
+      : 30
     return c.html(
       renderPage({
         items: result.items,
@@ -81,6 +87,7 @@ export function subscriptionsViewApi(
         filter: result.invalidFilter !== null ? 'all' : filter,
         search,
         counts,
+        backfillDays,
       }),
     )
   })
@@ -112,6 +119,7 @@ interface RenderArgs {
   readonly filter: SubscriptionFilter
   readonly search: string
   readonly counts: { readonly included: number; readonly excluded: number }
+  readonly backfillDays: 0 | 7 | 30 | 90
 }
 
 function renderPage(args: RenderArgs): string {
@@ -137,6 +145,7 @@ ${COMMON_HEAD}
           <a class="subscriptions-tab subscriptions-tab-active" href="/subscriptions" aria-current="page">Subscriptions</a>
           <a class="subscriptions-tab" href="/settings/youtube">Settings</a>
         </nav>
+        ${renderBackfillPreference(args.backfillDays)}
         ${renderToolbar(args)}
         ${renderCountsLine(args.counts)}
         <div data-sync-banner-slot></div>
@@ -151,6 +160,27 @@ ${COMMON_HEAD}
     ${HAMBURGER_SCRIPT_TAG}
   </body>
 </html>`
+}
+
+function renderBackfillPreference(days: 0 | 7 | 30 | 90): string {
+  const options = [
+    [0, 'Future uploads only'],
+    [7, 'Last 7 days'],
+    [30, 'Last 30 days'],
+    [90, 'Last 90 days'],
+  ] as const
+  return `<section class="backfill-preference" aria-labelledby="backfill-preference-title">
+      <div>
+        <strong id="backfill-preference-title">When a new subscription is discovered</strong>
+        <span>Import recent uploads automatically. Existing subscriptions are not affected.</span>
+      </div>
+      <label>
+        <span class="sr-only">Automatic recent video window</span>
+        <select data-backfill-preference>${options.map(([value, label]) =>
+          `<option value="${value}"${value === days ? ' selected' : ''}>${label}</option>`).join('')}</select>
+      </label>
+      <span class="preference-status" data-preference-status></span>
+    </section>`
 }
 
 function renderSidebar(_args: { readonly active: 'subscriptions' }): string {
@@ -268,6 +298,7 @@ function renderRow(s: Subscription): string {
   const includedChecked = s.isIncluded ? ' checked' : ''
   const importantChecked = s.isImportant ? ' checked' : ''
   const transcriptsChecked = s.autoFetchTranscripts ? ' checked' : ''
+  const backfillStatus = renderBackfillStatus(s)
   return `
         <li class="subscription-row" data-subscription-row data-subscription-id="${escapeHtml(s.id)}">
           <a class="channel-link" href="${escapeHtml(youtubeUrl)}" target="_blank" rel="noopener">
@@ -286,8 +317,27 @@ function renderRow(s: Subscription): string {
             <input type="checkbox" data-toggle="auto_fetch_transcripts" ${transcriptsChecked}>
             <span class="toggle-label">Auto transcripts</span>
           </label>
+          <div class="backfill-action">
+            <select data-backfill-days aria-label="Recent video import window">
+              <option value="7">7 days</option>
+              <option value="30" selected>30 days</option>
+              <option value="90">90 days</option>
+            </select>
+            <button type="button" data-backfill-button>Import recent videos</button>
+          </div>
+          <span class="backfill-result" data-backfill-result data-backfill-state="${escapeHtml(s.backfillStatus ?? '')}">${backfillStatus}</span>
           <span class="row-status" data-row-status></span>
         </li>`
+}
+
+function renderBackfillStatus(s: Subscription): string {
+  if (s.backfillStatus === 'pending') return 'Queued…'
+  if (s.backfillStatus === 'running') return 'Importing…'
+  if (s.backfillStatus === 'failed') return `Failed${s.backfillRetryable ? ' · retry available' : ''}`
+  if (s.backfillStatus === 'completed') {
+    return `${s.lastBackfillCount} imported · ${s.lastBackfillSkippedCount} skipped`
+  }
+  return 'Not imported yet'
 }
 
 function renderPagination(args: RenderArgs): string {
@@ -389,6 +439,74 @@ const SUBSCRIPTIONS_PAGE_SCRIPT = `(function(){
           });
       });
     });
+
+    var backfillButton = row.querySelector('[data-backfill-button]');
+    var backfillDays = row.querySelector('[data-backfill-days]');
+    var backfillResult = row.querySelector('[data-backfill-result]');
+    var subscriptionId = row.getAttribute('data-subscription-id');
+    if (backfillButton && backfillDays && backfillResult) {
+      backfillButton.addEventListener('click', function () {
+        backfillButton.disabled = true;
+        backfillResult.textContent = 'Queueing…';
+        fetch('/api/subscriptions/' + encodeURIComponent(subscriptionId) + '/backfill', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ days: Number(backfillDays.value) }),
+        }).then(readJsonResponse).then(function (payload) {
+          if (!payload) return;
+          if (payload.status !== 202) throw new Error(payload.body.message || payload.body.error || ('HTTP ' + payload.status));
+          renderBackfillState(backfillResult, backfillButton, payload.body.backfill);
+          pollBackfill(subscriptionId, backfillResult, backfillButton);
+        }).catch(function (err) {
+          backfillButton.disabled = false;
+          backfillResult.textContent = 'Failed: ' + (err.message || 'network error');
+          backfillResult.setAttribute('data-backfill-state', 'failed');
+        });
+      });
+      var initialState = backfillResult.getAttribute('data-backfill-state');
+      if (initialState === 'pending' || initialState === 'running') {
+        backfillButton.disabled = true;
+        pollBackfill(subscriptionId, backfillResult, backfillButton);
+      }
+    }
+  }
+
+  function readJsonResponse(res) {
+    if (res.status === 401) {
+      window.location.href = '/api/login';
+      return null;
+    }
+    return res.json().then(function (body) { return { status: res.status, body: body }; });
+  }
+
+  function pollBackfill(subscriptionId, result, button) {
+    window.setTimeout(function check() {
+      fetch('/api/subscriptions/' + encodeURIComponent(subscriptionId) + '/backfill', {
+        credentials: 'same-origin',
+      }).then(readJsonResponse).then(function (payload) {
+        if (!payload) return;
+        if (payload.status !== 200) throw new Error('HTTP ' + payload.status);
+        var state = payload.body.backfill;
+        renderBackfillState(result, button, state);
+        if (state.status === 'pending' || state.status === 'running') {
+          window.setTimeout(check, 1000);
+        }
+      }).catch(function () {
+        button.disabled = false;
+        result.textContent = 'Could not read import status';
+      });
+    }, 350);
+  }
+
+  function renderBackfillState(result, button, state) {
+    result.setAttribute('data-backfill-state', state.status || '');
+    if (state.status === 'pending') result.textContent = 'Queued…';
+    else if (state.status === 'running') result.textContent = 'Importing…';
+    else if (state.status === 'completed') result.textContent = state.imported_count + ' imported · ' + state.skipped_count + ' skipped';
+    else if (state.status === 'failed') result.textContent = 'Failed: ' + (state.error || 'unknown error') + (state.retryable ? ' Retry available.' : '');
+    else result.textContent = 'Not imported yet';
+    button.disabled = state.status === 'pending' || state.status === 'running';
   }
 
   function flashRowStatus(el, message, kind) {
@@ -404,6 +522,29 @@ const SUBSCRIPTIONS_PAGE_SCRIPT = `(function(){
   }
 
   document.querySelectorAll('[data-subscription-row]').forEach(wireRow);
+
+  var preference = document.querySelector('[data-backfill-preference]');
+  var preferenceStatus = document.querySelector('[data-preference-status]');
+  if (preference) {
+    preference.addEventListener('change', function () {
+      preference.disabled = true;
+      if (preferenceStatus) preferenceStatus.textContent = 'Saving…';
+      fetch('/api/youtube/preferences', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ new_subscription_backfill_days: Number(preference.value) }),
+      }).then(readJsonResponse).then(function (payload) {
+        if (!payload) return;
+        if (payload.status !== 200) throw new Error(payload.body.message || payload.body.error || ('HTTP ' + payload.status));
+        preference.disabled = false;
+        if (preferenceStatus) preferenceStatus.textContent = 'Saved';
+      }).catch(function (err) {
+        preference.disabled = false;
+        if (preferenceStatus) preferenceStatus.textContent = 'Failed: ' + (err.message || 'network error');
+      });
+    });
+  }
 
   // ─── Sync-now POST ───────────────────────────────────────────────────
   var syncBtn = document.querySelector('[data-sync-now]');
@@ -498,6 +639,13 @@ const STYLES = `
 .subscriptions-tab:hover { color: var(--text); }
 .subscriptions-tab-active { color: var(--text); border-bottom-color: var(--accent); font-weight: 500; }
 
+.backfill-preference { display: grid; grid-template-columns: minmax(220px, 1fr) auto minmax(3.5rem, auto); gap: 1rem; align-items: center; padding: 0.9rem 1rem; margin-bottom: 1rem; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); border-radius: 0.8rem; background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.backfill-preference strong { display: block; font-size: 0.9rem; }
+.backfill-preference div span { display: block; color: var(--muted); font-size: 0.8rem; margin-top: 0.2rem; }
+.backfill-preference select, .backfill-action select { border: 1px solid var(--border); border-radius: 0.45rem; background: var(--surface); color: var(--text); padding: 0.42rem 0.55rem; }
+.preference-status { color: var(--muted); font-size: 0.78rem; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
 .subscriptions-toolbar { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
 .filter-chips { display: inline-flex; gap: 0.4rem; flex-wrap: wrap; }
 .filter-chip { padding: 0.4rem 0.85rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); text-decoration: none; font-size: 0.85rem; }
@@ -522,7 +670,7 @@ const STYLES = `
 .subscriptions-counts strong { color: var(--text); font-weight: 600; }
 
 .subscriptions-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
-.subscription-row { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto auto auto; gap: 1rem; align-items: center; padding: 0.8rem 1rem; background: color-mix(in srgb, var(--surface) 94%, transparent); border: 1px solid var(--border); border-radius: 0.8rem; transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease; }
+.subscription-row { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto auto; gap: 0.65rem 1rem; align-items: center; padding: 0.8rem 1rem; background: color-mix(in srgb, var(--surface) 94%, transparent); border: 1px solid var(--border); border-radius: 0.8rem; transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease; }
 .subscription-row:hover { transform: translateX(3px); border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: var(--surface); }
 .channel-link { display: flex; align-items: center; gap: 0.7rem; min-width: 0; color: var(--text); text-decoration: none; }
 .channel-link:hover .channel-title { color: var(--accent); }
@@ -534,7 +682,15 @@ const STYLES = `
 .toggle input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: var(--accent); cursor: pointer; }
 .toggle-label { white-space: nowrap; }
 
-.row-status { font-size: 0.8rem; min-width: 8rem; text-align: right; color: var(--muted); }
+.backfill-action { grid-column: 2 / 4; display: flex; gap: 0.4rem; justify-content: flex-end; align-items: center; }
+.backfill-action button { border: 1px solid var(--border); border-radius: 0.45rem; background: var(--surface); color: var(--text); padding: 0.42rem 0.65rem; cursor: pointer; font-size: 0.8rem; }
+.backfill-action button:hover { border-color: var(--accent); color: var(--accent); }
+.backfill-action button:disabled { opacity: 0.6; cursor: wait; }
+.backfill-result { grid-column: 4; color: var(--muted); font-size: 0.76rem; text-align: right; max-width: 15rem; }
+.backfill-result[data-backfill-state="completed"] { color: var(--accent); }
+.backfill-result[data-backfill-state="failed"] { color: var(--danger); }
+
+.row-status { grid-column: 1; grid-row: 2; font-size: 0.8rem; min-width: 8rem; color: var(--muted); padding-left: 3.8rem; }
 .row-status[data-row-status-kind="ok"] { color: var(--accent); }
 .row-status[data-row-status-kind="error"] { color: var(--danger); }
 .row-status[data-row-status-kind="pending"] { color: var(--muted); }
@@ -564,6 +720,8 @@ const STYLES = `
   .subscription-row { grid-template-columns: 1fr; gap: 0.5rem; }
   .subscription-row .toggle { justify-self: start; }
   .subscription-row .row-status { text-align: left; justify-self: start; min-width: 0; }
+  .backfill-preference { grid-template-columns: 1fr; gap: 0.6rem; }
+  .backfill-action, .backfill-result, .row-status { grid-column: 1; grid-row: auto; justify-content: flex-start; text-align: left; padding-left: 0; }
   .subscriptions-toolbar { flex-direction: column; align-items: stretch; }
   .subscriptions-toolbar-right { margin-left: 0; flex-direction: column; align-items: stretch; }
   .subscriptions-search { width: 100%; }
