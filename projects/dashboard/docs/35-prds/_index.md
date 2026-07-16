@@ -10,6 +10,7 @@ Product Requirements Documents (PRDs) for the **Dashboard** project. One file pe
 | [004](./PRD-004-youtube-library-history-playlists-backfill.md) | v3.1 — YouTube library, playlists, history, and subscription backfill | Draft |
 | [005](./PRD-005-youtube-discovery-tags-and-focus-player.md) | v3.2 — YouTube discovery controls and focus player | Draft |
 | [006](./PRD-006-youtube-ai-summary-profiles-web-research.md) | v3.3 — Configurable YouTube AI summaries and web research | Draft |
+| [007](./PRD-007-youtube-description-resources.md) | v3.4 — YouTube description resources | Draft |
 
 ## Roadmap
 
@@ -21,4 +22,5 @@ Product Requirements Documents (PRDs) for the **Dashboard** project. One file pe
 | **v3.1** | YouTube canonical library + recent backfill + playlists + Takeout watch history | Draft (PRD-004) |
 | **v3.2** | YouTube subscription tags + discovery controls + focus player | Draft (PRD-005) |
 | **v3.3** | Configurable YouTube AI summaries + bilingual output + web research | Draft (PRD-006) |
+| **v3.4** | YouTube descriptions, useful resources, promotion filtering, and optional enrichment | Draft (PRD-007) |
 | **v4** | Email mirror (Gmail → dashboard, local LLM access) | Draft (this doc) |

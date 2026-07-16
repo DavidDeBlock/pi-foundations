@@ -106,6 +106,8 @@ describe('Migrations runner', () => {
       '019_youtube_summary_runs',
       '020_ai_research_settings',
       '021_youtube_summary_research',
+      '022_youtube_video_descriptions',
+      '023_youtube_description_resources',
     ])
 
     // Spot-check that every table from the PRD schema now exists.
@@ -154,6 +156,8 @@ describe('Migrations runner', () => {
     expect(names).toContain('ai_research_settings')
     expect(names).toContain('summary_profile_revisions')
     expect(names).toContain('video_summary_sources')
+    expect(names).toContain('video_descriptions')
+    expect(names).toContain('video_description_resources')
     expect(db.all<{ id: string }>('SELECT id FROM summary_profiles ORDER BY id').map((row) => row.id)).toEqual([
       'builtin-detailed', 'builtin-quick', 'builtin-standard',
     ])
@@ -167,11 +171,11 @@ describe('Migrations runner', () => {
   it('is idempotent — running twice does NOT re-apply', async () => {
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const firstApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(firstApplied).toHaveLength(21)
+    expect(firstApplied).toHaveLength(23)
 
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const secondApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(secondApplied).toHaveLength(21)
+    expect(secondApplied).toHaveLength(23)
     // applied_at should be unchanged on re-run (still the original timestamps).
     expect(secondApplied.map((r) => r.name).sort()).toEqual(
       firstApplied.map((r) => r.name).sort(),

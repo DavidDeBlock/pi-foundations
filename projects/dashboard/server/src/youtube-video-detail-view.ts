@@ -50,6 +50,15 @@ import {
   type VideoSummary,
 } from './youtube-video-summaries.js'
 import { readDefaults } from './ai-research-settings.js'
+import {
+  getVideoDescription,
+  type VideoDescription,
+} from './youtube-video-descriptions.js'
+import {
+  getVideoDescriptionResources,
+  type VideoDescriptionResource,
+  type VideoResourceCategory,
+} from './youtube-description-resources.js'
 
 // ─── Hono sub-app ─────────────────────────────────────────────────────────
 
@@ -92,6 +101,8 @@ export function youtubeVideoDetailView(
     const summaryRuns = listVideoSummaryRuns(deps.db, id)
     const summaryProfiles = listSummaryProfiles(deps.db)
     const aiDefaults = readDefaults(deps.db)
+    const description = getVideoDescription(deps.db, id)
+    const resources = getVideoDescriptionResources(deps.db, id)
     c.header('Content-Security-Policy', YOUTUBE_FRAME_CSP)
     return c.html(
       renderPage({
@@ -109,6 +120,8 @@ export function youtubeVideoDetailView(
         summaryConfigured: deps.summaryConfigured === true,
         researchConfigured: deps.researchConfigured === true,
         maxSearchQueries: aiDefaults.maxSearchQueries,
+        description,
+        resources,
       }),
     )
   })
@@ -136,6 +149,8 @@ interface RenderPageOptions {
   readonly summaryConfigured: boolean
   readonly researchConfigured: boolean
   readonly maxSearchQueries: number
+  readonly description: VideoDescription | null
+  readonly resources: ReadonlyArray<VideoDescriptionResource>
 }
 
 function renderPage(opts: RenderPageOptions): string {
@@ -205,6 +220,8 @@ ${COMMON_HEAD}
           ${player}
           <p class="video-detail-player-note">Playback availability is controlled by YouTube. Private, deleted, age-restricted, or embed-disabled videos may need to be opened on YouTube.</p>
         </section>
+
+        ${renderResourcesSection(opts.description, opts.resources)}
 
         <section class="video-detail-folder">
           <h2>Folder</h2>
@@ -419,6 +436,141 @@ function renderCitedInsight(detail: VideoDetail, insight: CitedInsight): string 
   return `<li><span>${escapeHtml(insight.text)}</span>${citation}</li>`
 }
 
+function renderResourcesSection(
+  description: VideoDescription | null,
+  resources: ReadonlyArray<VideoDescriptionResource>,
+): string {
+  const status = description?.status ?? 'not_fetched'
+  const hasLastValue = description?.description !== null && description?.description !== undefined
+  const featured = resources.filter((resource) => resource.effectiveVisibility === 'featured')
+  const promotional = resources.filter((resource) =>
+    resource.effectiveVisibility === 'hidden' || resource.effectiveCategory === 'promotional')
+  const other = resources.filter((resource) =>
+    !featured.includes(resource) && !promotional.includes(resource))
+  const pending = status === 'pending'
+  const feedback = renderDescriptionState(description, resources.length)
+  const fetched = description?.fetchedAt
+    ? `<span>Refreshed <time datetime="${escapeHtml(description.fetchedAt)}">${escapeHtml(formatDateFull(description.fetchedAt))}</time></span>`
+    : '<span>Not fetched yet</span>'
+  const resourceContent = hasLastValue
+    ? `${featured.length > 0
+      ? `<div class="video-resources-featured" aria-label="Featured resources">${featured.map(renderResourceCard).join('')}</div>`
+      : resources.length > 0
+        ? '<p class="video-resources-empty">No links are featured yet. The remaining links are available below.</p>'
+        : '<p class="video-resources-empty">This description does not contain any validated web links.</p>'}
+      ${renderResourceGroup('Other links', other, 'Other creator-provided links')}
+      ${renderResourceGroup('Promotional links hidden', promotional, 'Sponsor, affiliate, and promotional links')}
+      ${renderFullDescription(description!.description ?? '', resources)}`
+    : ''
+  return `<section class="video-resources${hasLastValue && status !== 'ready' ? ' has-last-value' : ''}" data-video-resources data-description-status="${escapeHtml(status)}" aria-labelledby="video-resources-heading">
+    <div class="video-resources-heading">
+      <div><span class="video-resources-eyebrow">Creator references</span><h2 id="video-resources-heading">Resources from this video</h2><p>Useful links extracted from the stored YouTube description.</p></div>
+      <button type="button" class="video-resources-refresh" data-refresh-description${pending ? ' disabled' : ''}>
+        <span class="video-resources-refresh-icon" aria-hidden="true">↻</span><span>${pending ? 'Refreshing…' : 'Refresh description'}</span>
+      </button>
+    </div>
+    <div class="video-resources-meta">${fetched}${description?.truncated ? '<span class="video-resources-warning">Stored description was truncated</span>' : ''}</div>
+    <div class="video-resources-state${pending ? ' is-working' : ''}" data-description-state role="status">${feedback}</div>
+    ${resourceContent}
+    <p class="video-resources-feedback" data-description-feedback aria-live="polite"></p>
+  </section>`
+}
+
+function renderDescriptionState(
+  description: VideoDescription | null,
+  resourceCount: number,
+): string {
+  if (description === null) return '<strong>Description not fetched</strong><span>Fetch it on demand to find useful links without opening YouTube.</span>'
+  if (description.status === 'pending') return description.description === null
+    ? '<strong>Fetching the description…</strong><span>You can leave this page while YouTube metadata is refreshed in the background.</span>'
+    : '<strong>Refreshing in the background…</strong><span>The last stored description and its resources remain available below.</span>'
+  if (description.status === 'stale') return `<strong>Showing the last stored description</strong><span>${escapeHtml(description.errorMessage ?? 'The latest refresh failed; the previous resources are still available.')}</span>`
+  if (description.status === 'failed') return `<strong>Description refresh failed</strong><span>${escapeHtml(description.errorMessage ?? 'YouTube metadata could not be fetched. Try again later.')}</span>`
+  if (description.status === 'unavailable') return description.unavailableReason === 'no_description'
+    ? '<strong>No description available</strong><span>YouTube returned this video without a description.</span>'
+    : '<strong>Video metadata unavailable</strong><span>YouTube could not find this video during the last refresh.</span>'
+  return resourceCount > 0
+    ? `<strong>${resourceCount} ${resourceCount === 1 ? 'link' : 'links'} found</strong><span>Featured links are shown first; uncertain and promotional links stay inspectable.</span>`
+    : '<strong>Description ready</strong><span>No validated web links were found.</span>'
+}
+
+function renderResourceGroup(title: string, resources: ReadonlyArray<VideoDescriptionResource>, description: string): string {
+  if (resources.length === 0) return ''
+  return `<details class="video-resources-group"><summary><span>${escapeHtml(title)}</span><strong>${resources.length}</strong></summary>
+    <p>${escapeHtml(description)}</p><div class="video-resources-list">${resources.map(renderResourceCard).join('')}</div>
+  </details>`
+}
+
+function renderResourceCard(resource: VideoDescriptionResource): string {
+  const href = safeExternalUrl(resource.canonicalUrl)
+  if (href === null) return ''
+  const label = resource.label?.trim() || resourceLabelFallback(resource)
+  const context = [resource.contextBefore, resource.contextAfter].filter(Boolean).join(' … ')
+  return `<article class="video-resource-card">
+    <div class="video-resource-card-top"><span class="video-resource-category category-${escapeHtml(resource.effectiveCategory)}">${escapeHtml(categoryLabel(resource.effectiveCategory))}</span><span class="video-resource-domain">${escapeHtml(resource.domain)}</span></div>
+    <h3>${escapeHtml(label)}</h3>
+    ${context ? `<p>${escapeHtml(context)}</p>` : '<p class="video-resource-no-context">No surrounding description text.</p>'}
+    <small class="video-resource-reason">Why: ${escapeHtml(resource.effectiveReason)}</small>
+    <div class="video-resource-actions"><a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">Open ↗</a><button type="button" data-copy-resource="${escapeHtml(href)}" aria-label="Copy ${escapeHtml(label)} URL">Copy</button></div>
+  </article>`
+}
+
+function renderFullDescription(description: string, resources: ReadonlyArray<VideoDescriptionResource>): string {
+  return `<details class="video-resources-description"><summary><span>Full description</span><strong>${description.length.toLocaleString('en')} characters</strong></summary><div class="video-resources-description-text">${linkifyStoredDescription(description, resources)}</div></details>`
+}
+
+function linkifyStoredDescription(description: string, resources: ReadonlyArray<VideoDescriptionResource>): string {
+  const links: Array<{ start: number; end: number; href: string }> = []
+  for (const resource of resources) {
+    const href = safeExternalUrl(resource.canonicalUrl)
+    if (href === null) continue
+    for (const start of resource.sourcePositions) {
+      if (start < 0 || start >= description.length) continue
+      const written = resource.originalUrl
+      if (!description.startsWith(written, start)) continue
+      links.push({ start, end: start + written.length, href })
+    }
+  }
+  links.sort((a, b) => a.start - b.start || b.end - a.end)
+  let cursor = 0
+  let output = ''
+  for (const link of links) {
+    if (link.start < cursor) continue
+    output += escapeHtml(description.slice(cursor, link.start))
+    output += `<a href="${escapeHtml(link.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(description.slice(link.start, link.end))}</a>`
+    cursor = link.end
+  }
+  return output + escapeHtml(description.slice(cursor))
+}
+
+function safeExternalUrl(value: string): string | null {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
+function resourceLabelFallback(resource: VideoDescriptionResource): string {
+  try {
+    const url = new URL(resource.canonicalUrl)
+    const path = decodeURIComponent(url.pathname).replace(/^\/+|\/+$/gu, '')
+    return path ? `${resource.domain} / ${path}` : resource.domain
+  } catch {
+    return resource.domain || 'External resource'
+  }
+}
+
+function categoryLabel(category: VideoResourceCategory): string {
+  const labels: Record<VideoResourceCategory, string> = {
+    repository: 'Repository', documentation: 'Docs', tool: 'Tool', article: 'Article',
+    dataset: 'Dataset', community: 'Community', creator: 'Creator', social: 'Social',
+    promotional: 'Promotional', other: 'Other',
+  }
+  return labels[category]
+}
+
 function renderTranscriptSection(
   detail: VideoDetail,
   transcript: VideoTranscript | null,
@@ -578,6 +730,47 @@ const VIDEO_DETAIL_STYLES = `
 .video-player-unavailable { display: grid; gap: 5px; place-items: center; box-sizing: border-box; min-height: 230px; padding: 24px; border: 1px solid var(--border); border-radius: 13px; color: var(--text); background: #090909; text-align: center; }
 .video-player-unavailable span { color: var(--muted); }
 .video-detail-player-note { margin: 10px 2px 0; color: var(--muted); font-size: .78rem; line-height: 1.45; }
+.video-resources { margin: 26px 0 4px; padding: clamp(17px, 3vw, 23px); border: 1px solid color-mix(in srgb, #22c55e 28%, var(--border)); border-radius: 16px; background: linear-gradient(145deg, color-mix(in srgb, #22c55e 6%, var(--surface)), color-mix(in srgb, #38bdf8 4%, var(--surface))); }
+.video-resources.has-last-value { border-color: color-mix(in srgb, #f59e0b 36%, var(--border)); }
+.video-resources-heading { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
+.video-resources-heading h2 { margin: 2px 0 0; font-size: 1.08rem; }
+.video-resources-heading p { margin: 5px 0 0; color: var(--muted); font-size: .86rem; line-height: 1.45; }
+.video-resources-eyebrow { color: #34d399; font-size: .68rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+.video-resources-refresh { display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; min-height: 38px; padding: 8px 12px; border: 1px solid color-mix(in srgb, #22c55e 38%, var(--border)); border-radius: 9px; color: var(--text); background: color-mix(in srgb, var(--surface) 84%, transparent); cursor: pointer; font: inherit; font-size: .8rem; font-weight: 700; }
+.video-resources-refresh:hover:not(:disabled) { border-color: #34d399; background: color-mix(in srgb, #22c55e 10%, var(--surface)); }
+.video-resources-refresh:disabled { cursor: wait; opacity: .72; }
+.video-resources-refresh:disabled .video-resources-refresh-icon { animation: resource-spin .8s linear infinite; }
+.video-resources-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 13px; color: var(--muted); font-size: .73rem; font-variant-numeric: tabular-nums; }
+.video-resources-warning { color: #fbbf24; }
+.video-resources-state { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 14px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface) 82%, transparent); font-size: .82rem; line-height: 1.45; }
+.video-resources-state span { color: var(--muted); }
+.video-resources-state.is-working strong::before { content: ''; display: inline-block; box-sizing: border-box; width: 12px; height: 12px; margin-right: 7px; border: 2px solid color-mix(in srgb, #34d399 25%, var(--border)); border-top-color: #34d399; border-radius: 50%; animation: resource-spin .8s linear infinite; vertical-align: -1px; }
+.video-resources-featured, .video-resources-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.video-resource-card { min-width: 0; padding: 13px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--surface) 88%, transparent); }
+.video-resource-card-top { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.video-resource-category { flex: 0 0 auto; padding: 3px 7px; border: 1px solid color-mix(in srgb, #38bdf8 34%, var(--border)); border-radius: 999px; color: #7dd3fc; background: color-mix(in srgb, #0ea5e9 9%, transparent); font-size: .65rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.video-resource-category.category-promotional { color: #fbbf24; border-color: color-mix(in srgb, #f59e0b 40%, var(--border)); background: color-mix(in srgb, #f59e0b 8%, transparent); }
+.video-resource-domain { min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: .7rem; }
+.video-resource-card h3 { margin: 9px 0 5px; overflow-wrap: anywhere; font-size: .91rem; line-height: 1.35; }
+.video-resource-card p { margin: 0; overflow-wrap: anywhere; color: var(--muted); font-size: .78rem; line-height: 1.48; }
+.video-resource-card .video-resource-no-context { font-style: italic; }
+.video-resource-reason { display: block; margin-top: 8px; overflow-wrap: anywhere; color: color-mix(in srgb, var(--muted) 82%, #7dd3fc); font-size: .68rem; line-height: 1.4; }
+.video-resource-actions { display: flex; gap: 7px; margin-top: 11px; }
+.video-resource-actions a, .video-resource-actions button { min-height: 34px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--bg); cursor: pointer; font: inherit; font-size: .75rem; font-weight: 700; text-decoration: none; }
+.video-resource-actions a { color: #6ee7b7; border-color: color-mix(in srgb, #22c55e 34%, var(--border)); }
+.video-resources :is(a, button, summary):focus-visible { outline: 3px solid color-mix(in srgb, #38bdf8 72%, white); outline-offset: 3px; }
+.video-resource-actions button.copy-success { color: #6ee7b7; border-color: #22c55e; }
+.video-resource-actions button.copy-error { color: #fca5a5; border-color: var(--danger); }
+.video-resources-empty { margin: 0; padding: 10px 0; color: var(--muted); font-size: .84rem; }
+.video-resources-group, .video-resources-description { margin-top: 13px; border-top: 1px solid var(--border); padding-top: 11px; }
+.video-resources-group > summary, .video-resources-description > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text); font-size: .82rem; font-weight: 750; }
+.video-resources-group > summary strong, .video-resources-description > summary strong { padding: 2px 7px; border-radius: 999px; color: var(--muted); background: color-mix(in srgb, var(--surface-2, #777) 45%, transparent); font-size: .68rem; }
+.video-resources-group > p { margin: 7px 0 10px; color: var(--muted); font-size: .76rem; }
+.video-resources-description-text { margin-top: 11px; padding: 13px; max-height: 480px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font: .82rem/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; white-space: pre-wrap; }
+.video-resources-description-text a { color: #6ee7b7; text-underline-offset: 2px; }
+.video-resources-feedback { min-height: 1.1em; margin: 9px 0 0; color: var(--muted); font-size: .78rem; }
+.video-resources-feedback.error-flash { color: var(--danger); }
+@keyframes resource-spin { to { transform: rotate(360deg); } }
 .video-detail-folder h2, .video-detail-tags h2 { margin: 24px 0 8px; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 .video-detail-folder-select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font: inherit; min-width: 240px; }
 .video-detail-folder-status { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); }
@@ -678,7 +871,11 @@ const VIDEO_DETAIL_STYLES = `
   .video-detail-edit-btn { justify-self: start; }
   .video-detail-player-heading { align-items: start; flex-direction: column; }
   .video-detail-player-actions { justify-content: flex-start; }
+  .video-resources-heading { flex-direction: column; }
+  .video-resources-refresh { width: 100%; justify-content: center; }
+  .video-resources-featured, .video-resources-list { grid-template-columns: 1fr; }
 }
+@media (pointer: coarse) { .video-resource-actions a, .video-resource-actions button, .video-resources-refresh { min-height: 44px; } }
 `
 
 // ─── Inline JS ────────────────────────────────────────────────────────────
@@ -708,6 +905,83 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
       popup.focus();
     });
   }
+
+  // ── Stored description resources ─────────────────────────────
+  var resourcesPanel = article.querySelector('[data-video-resources]');
+  var descriptionButton = resourcesPanel && resourcesPanel.querySelector('[data-refresh-description]');
+  var descriptionFeedback = resourcesPanel && resourcesPanel.querySelector('[data-description-feedback]');
+  var descriptionPollAttempts = 0;
+  function pollDescription(){
+    descriptionPollAttempts++;
+    fetch('/api/videos/' + encodeURIComponent(videoId) + '/description', { credentials: 'same-origin' })
+      .then(function(res){
+        if (res.status === 401) { window.location.href = '/api/login'; return null; }
+        return res.json().then(function(json){ return { res: res, json: json }; });
+      })
+      .then(function(pair){
+        if (!pair) return;
+        if (!pair.res.ok) throw new Error(pair.json.error || ('HTTP ' + pair.res.status));
+        var value = pair.json.description;
+        if (value && value.status === 'pending') {
+          if (descriptionFeedback) descriptionFeedback.textContent = 'Refreshing YouTube metadata in the background…';
+          setTimeout(pollDescription, descriptionPollAttempts < 80 ? 1500 : 5000);
+          return;
+        }
+        if (value && value.status !== 'pending') window.location.reload();
+        else throw new Error('Description refresh state was not found.');
+      })
+      .catch(function(err){
+        if (descriptionButton) descriptionButton.disabled = false;
+        if (descriptionFeedback) {
+          descriptionFeedback.textContent = err.message || 'Failed to check description status.';
+          descriptionFeedback.className = 'video-resources-feedback error-flash';
+        }
+      });
+  }
+  if (descriptionButton) descriptionButton.addEventListener('click', function(){
+    if (descriptionButton.disabled) return;
+    descriptionButton.disabled = true;
+    var label = descriptionButton.querySelector('span:last-child');
+    if (label) label.textContent = 'Refreshing…';
+    if (descriptionFeedback) descriptionFeedback.textContent = 'Adding the description refresh to the queue…';
+    fetch('/api/videos/' + encodeURIComponent(videoId) + '/description/refresh', {
+      method: 'POST', credentials: 'same-origin',
+    })
+      .then(function(res){
+        if (res.status === 401) { window.location.href = '/api/login'; return null; }
+        return res.json().then(function(json){ return { res: res, json: json }; });
+      })
+      .then(function(pair){
+        if (!pair) return;
+        if (!pair.res.ok) throw new Error(pair.json.error || ('HTTP ' + pair.res.status));
+        descriptionPollAttempts = 0;
+        pollDescription();
+      })
+      .catch(function(err){
+        descriptionButton.disabled = false;
+        if (label) label.textContent = 'Refresh description';
+        if (descriptionFeedback) {
+          descriptionFeedback.textContent = err.message || 'Failed to request a description refresh.';
+          descriptionFeedback.className = 'video-resources-feedback error-flash';
+        }
+      });
+  });
+  if (resourcesPanel) resourcesPanel.addEventListener('click', function(ev){
+    var button = ev.target.closest && ev.target.closest('[data-copy-resource]');
+    if (!button) return;
+    var url = button.getAttribute('data-copy-resource');
+    if (!url) return;
+    var original = button.textContent;
+    function reportCopy(ok){
+      button.textContent = ok ? 'Copied' : 'Copy failed';
+      button.className = ok ? 'copy-success' : 'copy-error';
+      if (descriptionFeedback) descriptionFeedback.textContent = ok ? 'Resource URL copied to clipboard.' : 'The resource URL could not be copied.';
+      window.setTimeout(function(){ button.textContent = original; button.className = ''; }, 2200);
+    }
+    if (!navigator.clipboard || !navigator.clipboard.writeText) { reportCopy(false); return; }
+    navigator.clipboard.writeText(url).then(function(){ reportCopy(true); }, function(){ reportCopy(false); });
+  });
+  if (resourcesPanel && resourcesPanel.getAttribute('data-description-status') === 'pending') pollDescription();
 
   // ── Status helper ─────────────────────────────────────────────
   // Flashes success/error in the given status element for 2.5s.

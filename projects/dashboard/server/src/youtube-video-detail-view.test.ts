@@ -23,6 +23,7 @@ import { InMemoryTokenStore } from './token-store.js'
 import { youtubeVideoDetailView } from './youtube-video-detail-view.js'
 import { insertVideo, type VideoInsertInput } from './youtube-videos.js'
 import { attachTagByNameToSubscription, upsertSubscription } from './youtube-subscriptions.js'
+import { reconcileVideoDescriptionResources } from './youtube-description-resources.js'
 
 const PASSWORD = 'secret'
 const MIGRATIONS_DIR = resolve(process.cwd(), 'migrations')
@@ -93,6 +94,18 @@ async function getText(
     headers: { authorization: basic(PASSWORD) },
   })
   return { status: res.status, body: await res.text() }
+}
+
+function seedDescription(videoId: string, description: string, status = 'ready'): void {
+  env.db.run(
+    `INSERT INTO video_descriptions
+       (video_id, status, description, fingerprint, requested_at, fetched_at,
+        last_attempted_at, attempt_count, updated_at)
+     VALUES (?, ?, ?, 'sha256:fixture', '2026-07-16T08:00:00Z',
+       '2026-07-16T08:00:01Z', '2026-07-16T08:00:01Z', 1, '2026-07-16T08:00:01Z')`,
+    [videoId, status, description],
+  )
+  reconcileVideoDescriptionResources(env.db, videoId, description, '2026-07-16T08:00:01Z')
 }
 
 // ─── Auth ──────────────────────────────────────────────────────────────────
@@ -357,6 +370,102 @@ describe('GET /videos/:id — tag chips', () => {
     // No chips, but the input is there for adding
     expect(body).not.toContain('data-video-tag data-tag-id')
     expect(body).toContain('data-video-tag-input')
+  })
+})
+
+describe('GET /videos/:id — description resources', () => {
+  it('renders directly below the focus player and above Folder without moving later sections', async () => {
+    const id = env.seed()
+    seedDescription(id, 'Code https://github.com/acme/project')
+    const { body } = await getText(env.app, `/videos/${id}`)
+    const player = body.indexOf('video-detail-player-section')
+    const resources = body.indexOf('data-video-resources')
+    const folder = body.indexOf('class="video-detail-folder"')
+    const tags = body.indexOf('class="video-detail-tags"')
+    const insight = body.indexOf('data-video-summary')
+    const transcript = body.indexOf('data-video-transcript')
+    expect(player).toBeLessThan(resources)
+    expect(resources).toBeLessThan(folder)
+    expect(folder).toBeLessThan(tags)
+    expect(tags).toBeLessThan(insight)
+    expect(insight).toBeLessThan(transcript)
+  })
+
+  it('features useful links and collapses other, promotional, and full-description groups independently', async () => {
+    const id = env.seed()
+    seedDescription(id, [
+      '[Project source](https://github.com/acme/project)',
+      'Community https://discord.gg/example',
+      'Sponsor https://shop.example/deal?aff=channel',
+    ].join('\n'))
+    const { body } = await getText(env.app, `/videos/${id}`)
+    expect(body).toContain('Resources from this video')
+    expect(body).toContain('Project source')
+    expect(body).toContain('Repository')
+    expect(body).toContain('github.com')
+    expect(body).toContain('data-copy-resource="https://github.com/acme/project"')
+    expect(body).toMatch(/<details class="video-resources-group"><summary><span>Other links<\/span><strong>1<\/strong>/)
+    expect(body).toMatch(/<details class="video-resources-group"><summary><span>Promotional links hidden<\/span><strong>1<\/strong>/)
+    expect(body).toContain('<details class="video-resources-description"><summary><span>Full description</span>')
+    expect(body).not.toContain('<details class="video-resources-group" open')
+    expect(body).toContain('target="_blank" rel="noopener noreferrer"')
+  })
+
+  it('escapes remote fields and linkifies only a persisted, validated resource', async () => {
+    const id = env.seed()
+    const description = '<img src=x onerror=alert(1)>\nSafe https://example.com/path?q=%3Cscript%3E'
+    seedDescription(id, description)
+    env.db.run(`UPDATE video_description_resources SET label = ?, context_before = ?, domain = ?, effective_reason = ? WHERE video_id = ?`, [
+      '<svg onload=alert(2)>', '</p><script>alert(3)</script>', 'bad.example<script>', '<model-reason onmouseover=alert(4)>', id,
+    ])
+    const { body } = await getText(env.app, `/videos/${id}`)
+    expect(body).toContain('&lt;img src=x onerror=alert(1)&gt;')
+    expect(body).toContain('&lt;svg onload=alert(2)&gt;')
+    expect(body).toContain('&lt;/p&gt;&lt;script&gt;alert(3)&lt;/script&gt;')
+    expect(body).toContain('&lt;model-reason onmouseover=alert(4)&gt;')
+    expect(body).not.toContain('<img src=x')
+    expect(body).not.toContain('<svg onload')
+    expect(body).toContain('href="https://example.com/path?q=%3Cscript%3E"')
+    expect(body).not.toContain('href="&lt;img')
+  })
+
+  it('covers not-fetched, pending-last-value, unavailable, failed, and link-free states without GET side effects', async () => {
+    const id = env.seed()
+    let result = await getText(env.app, `/videos/${id}`)
+    expect(result.body).toContain('Description not fetched')
+    expect(result.body).toContain('data-description-status="not_fetched"')
+    expect(env.db.get('SELECT * FROM video_descriptions WHERE video_id = ?', [id])).toBeUndefined()
+
+    seedDescription(id, 'There are no links here', 'pending')
+    result = await getText(env.app, `/videos/${id}`)
+    expect(result.body).toContain('Refreshing in the background')
+    expect(result.body).toContain('This description does not contain any validated web links.')
+    expect(result.body).toContain('data-refresh-description disabled')
+
+    env.db.run(`UPDATE video_descriptions SET status = 'unavailable', description = NULL,
+      fingerprint = NULL, unavailable_reason = 'no_description' WHERE video_id = ?`, [id])
+    result = await getText(env.app, `/videos/${id}`)
+    expect(result.body).toContain('No description available')
+
+    env.db.run(`UPDATE video_descriptions SET status = 'failed', unavailable_reason = NULL,
+      error_message = 'Remote <failure>' WHERE video_id = ?`, [id])
+    result = await getText(env.app, `/videos/${id}`)
+    expect(result.body).toContain('Description refresh failed')
+    expect(result.body).toContain('Remote &lt;failure&gt;')
+  })
+
+  it('includes accessible copy feedback, explicit refresh polling, responsive cards, and visible focus styling', async () => {
+    const id = env.seed()
+    seedDescription(id, 'https://github.com/acme/project')
+    const { body } = await getText(env.app, `/videos/${id}`)
+    expect(body).toContain('data-description-feedback aria-live="polite"')
+    expect(body).toContain("navigator.clipboard.writeText(url)")
+    expect(body).toContain("method: 'POST', credentials: 'same-origin'")
+    expect(body).toContain("'/description/refresh'")
+    expect(body).toContain("data-description-status') === 'pending'")
+    expect(body).toContain('.video-resources :is(a, button, summary):focus-visible')
+    expect(body).toContain('.video-resources-featured, .video-resources-list { grid-template-columns: 1fr; }')
+    expect(body).toContain('@media (pointer: coarse)')
   })
 })
 

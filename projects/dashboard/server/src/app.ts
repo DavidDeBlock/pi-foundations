@@ -44,6 +44,8 @@ import { youtubeHistoryApi } from './youtube-history-api.js'
 import { youtubeHistoryView } from './youtube-history-view.js'
 import { aiResearchApi, type AiProviderStatus } from './ai-research-settings.js'
 import { aiResearchSettingsView } from './ai-research-settings-view.js'
+import { youtubeVideoDescriptionsApi } from './youtube-video-descriptions-api.js'
+import type { YouTubeVideoDescriptionService } from './youtube-video-descriptions.js'
 
 export interface EmailDeps {
   /** AES-256-GCM cipher for OAuth tokens at rest. */
@@ -113,6 +115,8 @@ export interface YouTubeDeps {
   readonly backfillService: YouTubeSubscriptionBackfillService
   /** Read-only playlist metadata and membership mirror (YT-010). */
   readonly playlistsSync: YouTubePlaylistsSync
+  /** Persisted authenticated video-description metadata queue (YT-022). */
+  readonly descriptionService: YouTubeVideoDescriptionService
 }
 
 export interface AppDeps {
@@ -305,6 +309,10 @@ export function createApp({
     app.route(
       '/api/videos',
       youtubeVideoSummariesApi({ db, ...(youtube.summaryService ? { service: youtube.summaryService } : {}) }),
+    )
+    app.route(
+      '/api/videos',
+      youtubeVideoDescriptionsApi({ db, service: youtube.descriptionService }),
     )
     app.route(
       '/api/subscriptions',

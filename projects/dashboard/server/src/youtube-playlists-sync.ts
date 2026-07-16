@@ -10,6 +10,7 @@ import {
 } from './youtube-playlists-fetcher.js'
 import { getYouTubePlaylist, type YouTubePlaylistView } from './youtube-playlists.js'
 import { upsertYouTubeVideo } from './youtube-video-upsert.js'
+import type { YouTubeVideoDescriptionService } from './youtube-video-descriptions.js'
 
 export interface PlaylistsFetcher {
   fetchAll(accessToken: string): Promise<readonly FetchedYouTubePlaylist[]>
@@ -56,6 +57,7 @@ export class YouTubePlaylistsSync {
   readonly #oauthClient: YouTubeOAuthClient
   readonly #fetcher: PlaylistsFetcher
   readonly #nowMs: () => number
+  readonly #descriptionService: YouTubeVideoDescriptionService | undefined
   #activeFullSync: Promise<PlaylistsSyncResult> | null = null
 
   constructor(deps: {
@@ -64,12 +66,14 @@ export class YouTubePlaylistsSync {
     readonly oauthClient: YouTubeOAuthClient
     readonly fetcher?: PlaylistsFetcher
     readonly nowMs?: () => number
+    readonly descriptionService?: YouTubeVideoDescriptionService
   }) {
     this.#db = deps.db
     this.#cipher = deps.cipher
     this.#oauthClient = deps.oauthClient
     this.#fetcher = deps.fetcher ?? new YouTubePlaylistsFetcher()
     this.#nowMs = deps.nowMs ?? (() => Date.now())
+    this.#descriptionService = deps.descriptionService
   }
 
   recoverInterrupted(): void {
@@ -279,6 +283,7 @@ export class YouTubePlaylistsSync {
           || previous.added_at !== item.addedAt
       }).length
       const removed = existing.filter((item) => !remoteIds.has(item.playlist_item_id)).length
+      const metadataVideoIds: string[] = []
       this.#db.transaction(() => {
         const remoteItemIds: string[] = []
         for (const item of fetched.items) {
@@ -287,6 +292,7 @@ export class YouTubePlaylistsSync {
             { ...item, origin: null },
             this.#nowMs,
           )
+          metadataVideoIds.push(canonical.id)
           remoteItemIds.push(item.playlistItemId)
           this.#db.run(
             `INSERT INTO youtube_playlist_items
@@ -321,6 +327,7 @@ export class YouTubePlaylistsSync {
             playlist.accountId, playlist.playlistId],
         )
       })
+      this.#descriptionService?.requestMany(metadataVideoIds)
       return { playlistId: playlist.playlistId, status: 'completed', itemCount: fetched.items.length, skipped: fetched.skipped, added, updated, removed, error: null }
     } catch (error: unknown) {
       this.#failPlaylist(playlist.accountId, playlist.playlistId, error)

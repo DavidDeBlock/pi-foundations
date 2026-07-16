@@ -38,6 +38,8 @@ import {
   YouTubePlaylistsScheduler,
 } from './youtube-playlists-scheduler.js'
 import { YouTubeHistoryImports } from './youtube-history-imports.js'
+import { getMostRecentYouTubeAccountId, getYouTubeAccount } from './youtube-accounts.js'
+import { YouTubeVideoDescriptionService } from './youtube-video-descriptions.js'
 
 async function main(): Promise<void> {
   const config = await loadConfig()
@@ -267,10 +269,23 @@ function buildYouTubeDeps(
     redirectUri: youtubeOauthRedirectUri,
   })
 
+  const descriptionService = new YouTubeVideoDescriptionService({
+    db,
+    accessToken: async () => {
+      const accountId = getMostRecentYouTubeAccountId(db)
+      if (!accountId) throw new Error('No YouTube account connected')
+      const account = getYouTubeAccount(db, tokenCipher, accountId)
+      if (!account) throw new Error('YouTube account is no longer connected')
+      return (await client.refreshIfNeeded(account)).accessToken
+    },
+  })
+  descriptionService.resumePending()
+
   const backfillService = new YouTubeSubscriptionBackfillService({
     db,
     cipher: tokenCipher,
     oauthClient: client,
+    descriptionService,
   })
   backfillService.resumePending()
 
@@ -278,6 +293,7 @@ function buildYouTubeDeps(
     db,
     cipher: tokenCipher,
     oauthClient: client,
+    descriptionService,
   })
   playlistsSync.recoverInterrupted()
 
@@ -318,6 +334,7 @@ function buildYouTubeDeps(
   const rssPoller = new YouTubeRssPoller({
     db,
     transcriptService,
+    descriptionService,
     concurrency: process.env.YOUTUBE_RSS_CONCURRENCY
       ? Number.parseInt(process.env.YOUTUBE_RSS_CONCURRENCY, 10)
       : DEFAULT_POLL_CONCURRENCY,
@@ -335,6 +352,7 @@ function buildYouTubeDeps(
     transcriptService,
     backfillService,
     playlistsSync,
+    descriptionService,
     ...(summaryService ? { summaryService } : {}),
   }
 }

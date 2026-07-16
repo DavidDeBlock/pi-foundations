@@ -89,6 +89,19 @@ From PRD: [PRD-006](../35-prds/PRD-006-youtube-ai-summary-profiles-web-research.
 | [YT-020](./YT-020-serper-web-research-citations.md) | Serper web research and source citations | AFK (external API smoke) | YT-018, YT-019 |
 | [YT-021](./YT-021-subscription-auto-summary-policies.md) | Subscription automatic summary policies and usage limits | AFK (scheduler/provider smoke) | YT-018, YT-019, YT-020 |
 
+## v3.4 — YouTube description resources (PRD-007)
+
+From PRD: [PRD-007](../35-prds/PRD-007-youtube-description-resources.md)
+
+| # | Title | Type | Blocked by |
+|---|-------|------|------------|
+| [YT-022](./YT-022-video-description-metadata-ingestion.md) | YouTube video description metadata ingestion | AFK (YouTube API/manual smoke) | YT-008 |
+| [YT-023](./YT-023-description-resource-extraction-classification.md) | Description resource extraction and deterministic classification | AFK | YT-022 |
+| [YT-024](./YT-024-video-resources-panel.md) | Video resources panel and full-description UX | AFK (browser smoke) | YT-023, YT-017 |
+| [YT-025](./YT-025-resource-overrides-and-rules.md) | Resource overrides and reusable channel/domain rules | AFK | YT-024 |
+| [YT-026](./YT-026-ai-resource-classification-insight-integration.md) | Optional AI resource classification and Insight Card integration | AFK (MiniMax/manual smoke) | YT-024, YT-025, YT-018 |
+| [YT-027](./YT-027-guarded-resource-link-checks.md) | Guarded resource link metadata and freshness checks | AFK (network/security smoke) | YT-024 |
+
 ## v4 — Email mirror (PRD-002)
 
 From PRD: [PRD-002](../35-prds/PRD-002-email-mirror.md)
@@ -199,6 +212,24 @@ Notes on sequencing:
   settings with bounded Serper research and persisted citations.
 - YT-021 lands last because subscription automation must resolve and snapshot
   the profile, language, research, and usage-limit behavior from earlier slices.
+
+## v3.4 (YouTube description resources) dependency graph
+
+```text
+YT-008 ── YT-022 ── YT-023 ── YT-024 ──┬── YT-025 ── YT-026
+YT-017 ────────────────────────┘         └── YT-027
+YT-018 ───────────────────────────────────── YT-026
+```
+
+Notes on sequencing:
+- YT-022 and YT-023 establish a useful provider- and AI-independent core.
+- YT-024 makes deterministic resources available before customization or model
+  enrichment is required.
+- YT-025 owns durable user intent. YT-026 lands after it so asynchronous model
+  output cannot accidentally take precedence over a manual correction.
+- YT-027 is an independent security-sensitive follow-up after the panel exists;
+  it can proceed in parallel with YT-025/YT-026 and is not required for resource
+  display or classification.
 
 ## Slicing rationale
 

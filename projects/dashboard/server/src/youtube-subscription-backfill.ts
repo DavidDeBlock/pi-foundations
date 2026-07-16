@@ -12,6 +12,7 @@ import {
   type ManualBackfillDays,
 } from './youtube-preferences.js'
 import { upsertYouTubeVideo } from './youtube-video-upsert.js'
+import type { YouTubeVideoDescriptionService } from './youtube-video-descriptions.js'
 
 export type BackfillStatus = 'pending' | 'running' | 'completed' | 'failed'
 
@@ -66,6 +67,7 @@ export interface YouTubeSubscriptionBackfillServiceDeps {
   readonly oauthClient: YouTubeOAuthClient
   readonly fetcher?: BackfillFetcher
   readonly nowMs?: () => number
+  readonly descriptionService?: YouTubeVideoDescriptionService
 }
 
 export class YouTubeSubscriptionBackfillService {
@@ -74,6 +76,7 @@ export class YouTubeSubscriptionBackfillService {
   readonly #oauthClient: YouTubeOAuthClient
   readonly #fetcher: BackfillFetcher
   readonly #nowMs: () => number
+  readonly #descriptionService: YouTubeVideoDescriptionService | undefined
   #drainPromise: Promise<void> | null = null
 
   constructor(deps: YouTubeSubscriptionBackfillServiceDeps) {
@@ -82,6 +85,7 @@ export class YouTubeSubscriptionBackfillService {
     this.#oauthClient = deps.oauthClient
     this.#fetcher = deps.fetcher ?? new YouTubeBackfillFetcher()
     this.#nowMs = deps.nowMs ?? (() => Date.now())
+    this.#descriptionService = deps.descriptionService
   }
 
   /** Reset interrupted work and resume it after the process restarts. */
@@ -214,6 +218,7 @@ export class YouTubeSubscriptionBackfillService {
           )
           let imported = 0
           let skipped = result.skipped
+          const metadataVideoIds: string[] = []
           for (const video of result.videos) {
             const upserted = upsertYouTubeVideo(this.#db, {
               ...video,
@@ -222,7 +227,9 @@ export class YouTubeSubscriptionBackfillService {
             }, this.#nowMs)
             if (upserted.outcome === 'inserted') imported++
             else skipped++
+            metadataVideoIds.push(upserted.id)
           }
+          this.#descriptionService?.requestMany(metadataVideoIds)
           this.#complete(row.id, imported, skipped)
         } catch (error: unknown) {
           this.#fail(row.id, error)

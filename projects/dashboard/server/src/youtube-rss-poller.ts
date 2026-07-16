@@ -30,6 +30,7 @@ import {
 import { ingestVideos, type IngestResult } from './youtube-video-ingest.js'
 import { touchVideoLastPolledAt } from './youtube-videos.js'
 import type { YouTubeTranscriptService } from './youtube-transcripts.js'
+import type { YouTubeVideoDescriptionService } from './youtube-video-descriptions.js'
 
 // ─── Public types ──────────────────────────────────────────────────────────
 
@@ -84,6 +85,8 @@ export interface YouTubeRssPollerDeps {
   readonly nowMs?: () => number
   /** Optional best-effort follow-up queue for channels that opted in. */
   readonly transcriptService?: YouTubeTranscriptService
+  /** Optional canonical authenticated metadata follow-up queue (YT-022). */
+  readonly descriptionService?: YouTubeVideoDescriptionService
 }
 
 /**
@@ -114,6 +117,7 @@ export class YouTubeRssPoller {
   readonly #concurrency: number
   readonly #nowMs: () => number
   readonly #transcriptService: YouTubeTranscriptService | undefined
+  readonly #descriptionService: YouTubeVideoDescriptionService | undefined
 
   constructor(deps: YouTubeRssPollerDeps) {
     this.#db = deps.db
@@ -121,6 +125,7 @@ export class YouTubeRssPoller {
     this.#concurrency = deps.concurrency ?? DEFAULT_POLL_CONCURRENCY
     this.#nowMs = deps.nowMs ?? (() => Date.now())
     this.#transcriptService = deps.transcriptService
+    this.#descriptionService = deps.descriptionService
   }
 
   /**
@@ -184,6 +189,7 @@ export class YouTubeRssPoller {
       for (const videoId of ingestResult.insertedVideoIds) {
         this.#transcriptService?.requestAutomatically(videoId)
       }
+      this.#descriptionService?.requestMany(ingestResult.insertedVideoIds)
       // Touch ONLY on success — per AC, the timestamp records
       // "we attempted this channel", and a failed fetch is still
       // an attempt. The AC text "for every attempted channel
