@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import {
   HistoryImportAlreadyCommittedError,
+  HistoryImportClassificationError,
   HistoryImportExpiredError,
   HistoryImportIntegrityError,
   HistoryImportNotFoundError,
@@ -52,12 +53,16 @@ export function youtubeHistoryApi(deps: { readonly imports: YouTubeHistoryImport
         malformed_count: preview.malformedCount,
         unique_video_count: preview.uniqueVideoCount,
         new_video_count: preview.newVideoCount,
+        shorts_excluded_event_count: preview.shortsExcludedEventCount,
+        shorts_excluded_video_count: preview.shortsExcludedVideoCount,
+        unavailable_video_count: preview.unavailableVideoCount,
         oldest_watched_at: preview.oldestWatchedAt,
         newest_watched_at: preview.newestWatchedAt,
         expires_at: preview.expiresAt,
       }, 201)
     } catch (error: unknown) {
       if (error instanceof TakeoutHistorySizeError) return c.json({ error: error.message }, 413)
+      if (error instanceof HistoryImportClassificationError) return c.json({ error: error.message }, 502)
       if (error instanceof TakeoutHistoryFormatError || error instanceof UploadFormatError) {
         return c.json({ error: error.message }, 400)
       }
@@ -76,6 +81,7 @@ export function youtubeHistoryApi(deps: { readonly imports: YouTubeHistoryImport
         inserted_video_count: result.insertedVideoCount,
         existing_video_count: result.existingVideoCount,
         snapshot_only_count: result.snapshotOnlyCount,
+        shorts_excluded_event_count: result.shortsExcludedEventCount,
         committed_at: result.committedAt,
       })
     } catch (error: unknown) {
@@ -101,6 +107,10 @@ export function youtubeHistoryApi(deps: { readonly imports: YouTubeHistoryImport
       malformed_count: item.malformedCount,
       unique_video_count: item.uniqueVideoCount,
       new_video_count: item.newVideoCount,
+      source_format: item.sourceFormat,
+      shorts_excluded_event_count: item.shortsExcludedEventCount,
+      shorts_excluded_video_count: item.shortsExcludedVideoCount,
+      unavailable_video_count: item.unavailableVideoCount,
       committed_event_count: item.committedEventCount,
       oldest_watched_at: item.oldestWatchedAt,
       newest_watched_at: item.newestWatchedAt,
@@ -143,8 +153,8 @@ async function readUpload(request: Request, maxFileBytes: number): Promise<{ dat
     return part
   }
 
-  if (!/^application\/(?:json|octet-stream)\b/i.test(contentType)) {
-    throw new UploadFormatError('Upload must be a JSON file or multipart form-data with a file field.')
+  if (!/^(?:application\/(?:json|octet-stream)|text\/html)\b/i.test(contentType)) {
+    throw new UploadFormatError('Upload must be a Takeout JSON/HTML file or multipart form-data with a file field.')
   }
   return { data: body, filename: request.headers.get('x-filename') ?? 'watch-history.json' }
 }

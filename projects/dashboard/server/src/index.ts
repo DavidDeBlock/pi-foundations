@@ -40,6 +40,7 @@ import {
 import { YouTubeHistoryImports } from './youtube-history-imports.js'
 import { getMostRecentYouTubeAccountId, getYouTubeAccount } from './youtube-accounts.js'
 import { YouTubeVideoDescriptionService } from './youtube-video-descriptions.js'
+import { YouTubeVideoDurationFetcher } from './youtube-video-duration-fetcher.js'
 
 async function main(): Promise<void> {
   const config = await loadConfig()
@@ -51,9 +52,6 @@ async function main(): Promise<void> {
   await runMigrations(db, {
     dir: resolve(process.cwd(), 'migrations'),
   })
-  const youtubeHistory = new YouTubeHistoryImports({ db, dataDir: config.dataDir })
-  await youtubeHistory.initialize()
-
   // Email slice is OPTIONAL at boot. When all four env vars are present
   // we wire up the OAuth + sync routes. When any are missing, we mount
   // a setup-only /settings/email route that documents how to configure
@@ -77,6 +75,22 @@ async function main(): Promise<void> {
         config.serperApiKey,
       )
     : undefined
+
+  const youtubeHistory = new YouTubeHistoryImports({
+    db,
+    dataDir: config.dataDir,
+    ...(youtube ? {
+      durationFetcher: new YouTubeVideoDurationFetcher(),
+      accessToken: async () => {
+        const accountId = getMostRecentYouTubeAccountId(db)
+        if (!accountId) throw new Error('No YouTube account is connected.')
+        const account = getYouTubeAccount(db, youtube.tokenCipher, accountId)
+        if (!account) throw new Error('The YouTube account is no longer connected.')
+        return (await youtube.client.refreshIfNeeded(account)).accessToken
+      },
+    } : {}),
+  })
+  await youtubeHistory.initialize()
 
   // Background poll scheduler (issue #026). Runs `EmailSyncWorker.sync`
   // for every connected account at `config.emailSyncIntervalMin`

@@ -85,7 +85,7 @@ describe('History UI and API', () => {
 
     const html = await (await app.request('/history', { headers: headers() })).text()
     expect(html.indexOf('Jul 15, 2026')).toBeLessThan(html.indexOf('Jul 12, 2026'))
-    expect(html).toContain('2× watched')
+    expect(html).toContain('↻ 2×')
     expect(html).toContain(`href="/videos/${video}"`)
     expect(html).toContain('UTC')
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;')
@@ -93,6 +93,33 @@ describe('History UI and API', () => {
     expect(html).toContain('&lt;script&gt;channel()&lt;/script&gt;')
     expect(html).toContain('↳research')
     expect(html).toContain('Inherited from subscription')
+    expect(html).toContain('Your viewing archive')
+    expect(html).toContain('Replay moments')
+    expect(html).toContain('In your library')
+    expect(html).toContain('id="history-q"')
+    expect(html).toContain('id="history-channel"')
+    expect(html).toContain('id="history-tag"')
+    expect(html).toContain('class="history-grid"')
+    expect(html).toContain('.history-main { display:block;')
+    expect(html).toContain('grid-template-columns:repeat(auto-fill,minmax(min(270px,100%),1fr))')
+
+    const snapshots = await (await app.request('/history?availability=snapshot', { headers: headers() })).text()
+    expect(snapshots).toContain('&lt;img src=x onerror=alert(1)&gt;')
+    expect(snapshots).not.toContain('Canonical title')
+
+    const tagged = await (await app.request('/history?tag_id=' + encodeURIComponent(
+      db.get<{ id: string }>("SELECT id FROM tags WHERE name = 'research'")!.id,
+    ), { headers: headers() })).text()
+    expect(tagged).toContain('Canonical title')
+    expect(tagged).not.toContain('&lt;img src=x onerror=alert(1)&gt;')
+
+    const oldest = await (await app.request('/history?sort=oldest', { headers: headers() })).text()
+    expect(oldest.indexOf('Jul 10, 2026')).toBeLessThan(oldest.indexOf('Jul 15, 2026'))
+
+    const searched = await (await app.request('/history?q=canonical&watched_from=2026-07-13', { headers: headers() })).text()
+    expect(searched).toContain('Jul 15, 2026')
+    expect(searched).not.toContain('Jul 10, 2026')
+    expect(searched).not.toContain('&lt;img src=x onerror=alert(1)&gt;')
 
     const body = await (await app.request('/api/youtube/history', { headers: headers() })).json() as { items: Array<{ watch_count: number; video_id: string | null }> }
     expect(body.items).toHaveLength(3)

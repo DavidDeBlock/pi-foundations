@@ -38,6 +38,26 @@ describe('TakeoutWatchHistoryParser', () => {
       .toEqual(['abc123XYZ_0', 'def456XYZ_1', 'ghi789XYZ_2'])
   })
 
+  it('parses legacy My Activity HTML without treating Viewed or Visited cards as watches', () => {
+    const input = `<html><head><title>My Activity History</title></head><body>
+      ${htmlCard('Watched', 'https://www.youtube.com/watch?v=abc123XYZ_0&amp;t=2', 'A &amp; B', 'Jul 16, 2026, 11:23:23 AM CEST')}
+      ${htmlCard('Watched', 'https://music.youtube.com/watch?v=music123XYZ', 'Music video', 'Nov 13, 2017, 8:10:42 PM CEST')}
+      ${htmlCard('Viewed', 'https://www.youtube.com/feed/history', 'History', 'Jul 16, 2026, 11:24:00 AM CEST')}
+      </body></html>`
+    const result = new TakeoutWatchHistoryParser().parse(input)
+    expect(result.format).toBe('html')
+    expect(result.totalCount).toBe(3)
+    expect(result.events).toHaveLength(2)
+    expect(result.malformed).toEqual([{ index: 2, reason: 'Activity is not a YouTube watch event.' }])
+    expect(result.events[0]).toMatchObject({
+      videoId: 'abc123XYZ_0', title: 'A & B', channelId: 'UCchannel123',
+      channelTitle: 'Channel & Co', watchedAt: '2026-07-16T09:23:23.000Z',
+    })
+    expect(result.events[1]).toMatchObject({
+      videoId: 'music123XYZ', watchedAt: '2017-11-13T18:10:42.000Z',
+    })
+  })
+
   it('isolates malformed entries but rejects malformed and unsupported documents', () => {
     const parser = new TakeoutWatchHistoryParser()
     const result = parser.parse(JSON.stringify([null, { title: 'Watched X', time: 'bad' }]))
@@ -51,3 +71,9 @@ describe('TakeoutWatchHistoryParser', () => {
     expect(() => parser.parse(' '.repeat(11))).toThrow(TakeoutHistorySizeError)
   })
 })
+
+function htmlCard(action: string, url: string, title: string, timestamp: string): string {
+  return `<div class="outer-cell mdl-cell mdl-cell--12-col"><div class="mdl-grid">
+    <div class="content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1">${action} <a href="${url}">${title}</a><br><a href="https://www.youtube.com/channel/UCchannel123">Channel &amp; Co</a><br>${timestamp}<br></div>
+  </div></div>`
+}

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 
-export const DEFAULT_TAKEOUT_MAX_BYTES = 25 * 1024 * 1024
+export const DEFAULT_TAKEOUT_MAX_BYTES = 64 * 1024 * 1024
 
 export class TakeoutHistoryFormatError extends Error {}
 export class TakeoutHistorySizeError extends Error {}
@@ -12,6 +12,8 @@ export interface ParsedWatchEvent {
   readonly channelId: string | null
   readonly channelTitle: string | null
   readonly fingerprint: string
+  /** True only when Takeout retained an explicit /shorts/ source URL. */
+  readonly knownShort: boolean
 }
 
 export interface MalformedWatchEntry {
@@ -20,6 +22,7 @@ export interface MalformedWatchEntry {
 }
 
 export interface TakeoutWatchHistoryResult {
+  readonly format: 'json' | 'html'
   readonly totalCount: number
   readonly events: ReadonlyArray<ParsedWatchEvent>
   readonly malformed: ReadonlyArray<MalformedWatchEntry>
@@ -29,7 +32,8 @@ export interface TakeoutWatchHistoryResult {
 }
 
 /**
- * Parser for Google Takeout's YouTube `watch-history.json` export.
+ * Parser for Google Takeout's YouTube `watch-history.json` and legacy
+ * `watch-history.html` exports.
  *
  * JSON parsing is intentionally protected by a hard input cap. This keeps the
  * process memory bounded even though Node's native JSON parser is not
@@ -52,11 +56,14 @@ export class TakeoutWatchHistoryParser {
       throw new TakeoutHistorySizeError(`Takeout file exceeds the ${this.maxBytes}-byte upload limit.`)
     }
 
+    const source = typeof input === 'string' ? input : input.toString('utf8')
+    if (/^\s*</.test(source)) return parseHtmlDocument(source)
+
     let value: unknown
     try {
-      value = JSON.parse(typeof input === 'string' ? input : input.toString('utf8')) as unknown
+      value = JSON.parse(source) as unknown
     } catch {
-      throw new TakeoutHistoryFormatError('Takeout file is not valid JSON.')
+      throw new TakeoutHistoryFormatError('Takeout file is neither valid JSON nor supported Takeout HTML.')
     }
     if (!Array.isArray(value)) {
       throw new TakeoutHistoryFormatError('Unsupported Takeout format: expected a watch-history JSON array.')
@@ -81,6 +88,7 @@ export class TakeoutWatchHistoryParser {
     })
 
     return {
+      format: 'json',
       totalCount: value.length,
       events,
       malformed,
@@ -127,7 +135,103 @@ function parseEntry(entry: unknown): ParsedWatchEvent | { readonly reason: strin
     .update(`youtube-watch\n${identity}\n${watchedAt}`)
     .digest('hex')
 
-  return { videoId, watchedAt, title, channelId, channelTitle, fingerprint }
+  return { videoId, watchedAt, title, channelId, channelTitle, fingerprint, knownShort: isShortUrl(titleUrl) }
+}
+
+function parseHtmlDocument(source: string): TakeoutWatchHistoryResult {
+  if (!/<title>My Activity History<\/title>/i.test(source) || !/class="outer-cell/i.test(source)) {
+    throw new TakeoutHistoryFormatError('Unsupported HTML: expected a Google My Activity history export.')
+  }
+
+  const cards = source.split(/(?=<div class="outer-cell\b)/i).slice(1)
+  const events: ParsedWatchEvent[] = []
+  const malformed: MalformedWatchEntry[] = []
+  const uniqueVideoIds = new Set<string>()
+  let oldestWatchedAt: string | null = null
+  let newestWatchedAt: string | null = null
+
+  cards.forEach((card, index) => {
+    const content = card.match(/<div class="content-cell[^>]*mdl-typography--body-1">([\s\S]*?)<\/div>/i)?.[1]
+    if (!content) {
+      malformed.push({ index, reason: 'Activity has no content cell.' })
+      return
+    }
+    const action = htmlText(content.split(/<a\s/i, 1)[0] ?? '')
+    if (action.toLowerCase() !== 'watched') {
+      malformed.push({ index, reason: 'Activity is not a YouTube watch event.' })
+      return
+    }
+    const anchors = [...content.matchAll(/<a\s+[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)]
+    const titleUrl = decodeHtml(anchors[0]?.[1] ?? '')
+    const title = htmlText(anchors[0]?.[2] ?? '')
+    const videoId = normalizeVideoId(titleUrl)
+    if (!title || !videoId) {
+      malformed.push({ index, reason: !title ? 'Entry has no usable title snapshot.' : 'Entry has an unsupported YouTube watch URL.' })
+      return
+    }
+    const watchedAt = parseHtmlTimestamp(content)
+    if (!watchedAt) {
+      malformed.push({ index, reason: 'Entry has no valid watch timestamp.' })
+      return
+    }
+    const channelAnchor = anchors.slice(1).find((anchor) => normalizeChannelId(decodeHtml(anchor[1] ?? '')) !== null)
+    const channelUrl = decodeHtml(channelAnchor?.[1] ?? '')
+    const channelTitle = channelAnchor ? htmlText(channelAnchor[2] ?? '') || null : null
+    const channelId = normalizeChannelId(channelUrl)
+    const fingerprint = createHash('sha256')
+      .update(`youtube-watch\nvideo:${videoId}\n${watchedAt}`)
+      .digest('hex')
+    const event: ParsedWatchEvent = {
+      videoId, watchedAt, title, channelId, channelTitle, fingerprint,
+      knownShort: isShortUrl(titleUrl),
+    }
+    events.push(event)
+    uniqueVideoIds.add(videoId)
+    if (oldestWatchedAt === null || watchedAt < oldestWatchedAt) oldestWatchedAt = watchedAt
+    if (newestWatchedAt === null || watchedAt > newestWatchedAt) newestWatchedAt = watchedAt
+  })
+
+  return {
+    format: 'html', totalCount: cards.length, events, malformed, uniqueVideoIds,
+    oldestWatchedAt, newestWatchedAt,
+  }
+}
+
+function parseHtmlTimestamp(content: string): string | null {
+  const text = decodeHtml(content)
+  const match = text.match(/(?:^|<br\s*\/?>)([A-Z][a-z]{2}) (\d{1,2}), (\d{4}), (\d{1,2}):(\d{2}):(\d{2})\s+(AM|PM)\s+([A-Z]{2,5})(?=<br\s*\/?>|$)/i)
+  if (!match) return null
+  const months: Record<string, number> = {
+    Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+    Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+  }
+  const month = months[capitalize(match[1]!)]
+  const offsets: Record<string, number> = { UTC: 0, GMT: 0, CET: 60, CEST: 120 }
+  const offset = offsets[match[8]!.toUpperCase()]
+  if (month === undefined || offset === undefined) return null
+  const hour = (Number(match[4]) % 12) + (match[7]!.toUpperCase() === 'PM' ? 12 : 0)
+  const value = Date.UTC(Number(match[3]), month, Number(match[2]), hour, Number(match[5]), Number(match[6])) - offset * 60_000
+  return Number.isFinite(value) ? new Date(value).toISOString() : null
+}
+
+function htmlText(value: string): string {
+  return decodeHtml(value.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function decodeHtml(value: string): string {
+  return value.replace(/&(#(?:x[0-9a-f]+|\d+)|amp|quot|apos|#39|lt|gt|nbsp);/gi, (entity, code: string) => {
+    const named: Record<string, string> = { amp: '&', quot: '"', apos: "'", '#39': "'", lt: '<', gt: '>', nbsp: ' ' }
+    const lower = code.toLowerCase()
+    if (named[lower] !== undefined) return named[lower]
+    const numeric = lower.startsWith('#x') ? Number.parseInt(lower.slice(2), 16) : Number.parseInt(lower.slice(1), 10)
+    return Number.isFinite(numeric) && numeric >= 0 && numeric <= 0x10ffff ? String.fromCodePoint(numeric) : entity
+  })
+}
+
+function capitalize(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1).toLowerCase()
 }
 
 function normalizeTitle(value: string): string {
@@ -152,6 +256,17 @@ function normalizeVideoId(value: string): string | null {
     return candidate && /^[A-Za-z0-9_-]{6,64}$/.test(candidate) ? candidate : null
   } catch {
     return null
+  }
+}
+
+function isShortUrl(value: string): boolean {
+  if (!value) return false
+  try {
+    const url = new URL(value)
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, '')
+    return (hostname === 'youtube.com' || hostname.endsWith('.youtube.com')) && /^\/shorts\//.test(url.pathname)
+  } catch {
+    return false
   }
 }
 

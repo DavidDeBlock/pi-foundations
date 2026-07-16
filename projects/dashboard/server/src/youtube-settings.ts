@@ -355,10 +355,10 @@ ${COMMON_HEAD}
 function renderHistoryImport(): string {
   return `<section class="history-import" id="watch-history-import" data-history-import>
     <div class="history-import-heading"><div><span class="page-eyebrow">Private local import</span><h2>Import watch history</h2><p>Bring in watch events from Google Takeout. The file is validated locally, staged privately, and nothing is saved until you confirm the preview.</p></div><a href="/history">View History →</a></div>
-    <details class="takeout-help"><summary>How to get <code>watch-history.json</code></summary><ol><li>Open <a href="https://takeout.google.com/" target="_blank" rel="noopener">Google Takeout</a> and deselect all products.</li><li>Select <strong>YouTube and YouTube Music</strong>, choose <strong>history</strong>, and create the export.</li><li>In the archive, select <code>YouTube and YouTube Music/history/watch-history.json</code> below.</li></ol></details>
+    <details class="takeout-help"><summary>Use a Takeout JSON or HTML export</summary><ol><li>Open <a href="https://takeout.google.com/" target="_blank" rel="noopener">Google Takeout</a> and deselect all products.</li><li>Select <strong>YouTube and YouTube Music</strong>, choose <strong>history</strong>, and create the export.</li><li>Select <code>watch-history.json</code> or <code>watch-history.html</code> below. Before previewing, the dashboard checks video durations and excludes Shorts and other videos of three minutes or less.</li></ol></details>
     <form class="history-upload-form" data-history-upload-form>
-      <label for="history-file">Takeout JSON file</label>
-      <div><input id="history-file" name="file" type="file" accept="application/json,.json" required data-history-file><button type="submit" class="primary-button" data-history-preview>Validate file</button></div>
+      <label for="history-file">Takeout history file</label>
+      <div><input id="history-file" name="file" type="file" accept="application/json,text/html,.json,.html" required data-history-file><button type="submit" class="primary-button" data-history-preview>Validate and filter</button></div>
     </form>
     <div class="history-import-status" data-history-status role="status" aria-live="polite"></div>
     <section class="history-preview" data-history-preview-panel hidden aria-labelledby="history-preview-title">
@@ -652,15 +652,15 @@ const HISTORY_IMPORT_SCRIPT = String.raw`(function () {
   async function json(response) { var body=await response.json().catch(function(){return {error:'The server returned an invalid response.'}}); if(!response.ok) throw new Error(body.error || 'Request failed.'); return body }
 
   form.addEventListener('submit', async function (event) {
-    event.preventDefault(); if (!file.files || !file.files[0]) { setStatus('Choose a watch-history.json file first.', 'error'); return }
-    token=null; panel.hidden=true; result.hidden=true; setStatus('Validating your Takeout file…', 'working')
+    event.preventDefault(); if (!file.files || !file.files[0]) { setStatus('Choose a watch-history JSON or HTML file first.', 'error'); return }
+    token=null; panel.hidden=true; result.hidden=true; setStatus('Reading history and checking video durations… Large exports can take several minutes.', 'working')
     var body=new FormData(); body.append('file', file.files[0])
     try {
       var preview=await json(await fetch('/api/youtube/history/preview',{method:'POST',body:body,credentials:'same-origin'}))
       token=preview.token; counts.replaceChildren(
-        metric('Total events',preview.total_count),metric('New events',preview.new_event_count),metric('Duplicates',preview.duplicate_count),metric('Malformed',preview.malformed_count),metric('Unique videos',preview.unique_video_count),metric('New videos',preview.new_video_count),metric('Oldest watch',date(preview.oldest_watched_at)),metric('Newest watch',date(preview.newest_watched_at)))
+        metric('Source activities',preview.total_count),metric('New watch events',preview.new_event_count),metric('Shorts excluded',preview.shorts_excluded_event_count),metric('Short videos excluded',preview.shorts_excluded_video_count),metric('Duplicates',preview.duplicate_count),metric('Skipped activities',preview.malformed_count),metric('Unique videos',preview.unique_video_count),metric('New library videos',preview.new_video_count),metric('Unavailable snapshots',preview.unavailable_video_count),metric('Oldest watch',date(preview.oldest_watched_at)),metric('Newest watch',date(preview.newest_watched_at)))
       expiry.textContent='Preview expires '+date(preview.expires_at)
-      var notes=[]; if(preview.duplicate_count)notes.push(preview.duplicate_count+' duplicate event'+(preview.duplicate_count===1?'':'s')+' will be skipped'); if(preview.malformed_count)notes.push(preview.malformed_count+' malformed entr'+(preview.malformed_count===1?'y':'ies')+' could not be imported')
+      var notes=[]; if(preview.shorts_excluded_event_count)notes.push(preview.shorts_excluded_event_count+' watches of videos up to three minutes will be excluded'); if(preview.duplicate_count)notes.push(preview.duplicate_count+' duplicate event'+(preview.duplicate_count===1?'':'s')+' will be skipped'); if(preview.malformed_count)notes.push(preview.malformed_count+' non-watch or malformed activit'+(preview.malformed_count===1?'y':'ies')+' will be skipped'); if(preview.unavailable_video_count)notes.push(preview.unavailable_video_count+' unavailable video'+(preview.unavailable_video_count===1?' remains':'s remain')+' as history-only snapshots')
       warning.textContent=notes.join('. '); warning.hidden=notes.length===0; panel.hidden=false; confirm.disabled=false
       setStatus('Validation complete. Review the dry-run counts before confirming.', '')
       panel.scrollIntoView({behavior:'smooth',block:'nearest'})
@@ -673,7 +673,7 @@ const HISTORY_IMPORT_SCRIPT = String.raw`(function () {
       var imported=await json(await fetch('/api/youtube/history/imports/'+encodeURIComponent(token)+'/commit',{method:'POST',credentials:'same-origin'}))
       token=null; panel.hidden=true; result.replaceChildren()
       var heading=document.createElement('h3'); heading.textContent='Import complete'
-      var copy=document.createElement('p'); copy.textContent=imported.committed_event_count+' watch events added · '+imported.duplicate_count+' duplicates skipped · '+imported.malformed_count+' malformed entries skipped · '+imported.inserted_video_count+' new videos created.'
+      var copy=document.createElement('p'); copy.textContent=imported.committed_event_count+' watch events added · '+imported.shorts_excluded_event_count+' short-form watches excluded · '+imported.duplicate_count+' duplicates skipped · '+imported.malformed_count+' other activities skipped · '+imported.inserted_video_count+' new videos created.'
       var link=document.createElement('a'); link.href='/history'; link.textContent='View watch history →'; result.append(heading,copy,link); result.hidden=false
       setStatus('Your watch history is ready.', ''); await loadAudits()
     } catch(error) { confirm.disabled=false; setStatus(error instanceof Error ? error.message : 'Could not commit this import.', 'error') }
@@ -684,7 +684,7 @@ const HISTORY_IMPORT_SCRIPT = String.raw`(function () {
       var body=await json(await fetch('/api/youtube/history/imports',{credentials:'same-origin'})); auditList.replaceChildren(); auditEmpty.hidden=body.items.length>0; if(!body.items.length)auditEmpty.textContent='No imports yet.'
       body.items.forEach(function(item){
         var card=document.createElement('article');card.className='history-audit';var head=document.createElement('header');var name=document.createElement('strong');name.textContent=item.filename;var state=document.createElement('span');state.textContent=item.status+(item.committed_at?' · '+date(item.committed_at):'');head.append(name,state)
-        var meta=document.createElement('p');meta.textContent=(item.committed_event_count===null?item.new_event_count:item.committed_event_count)+' added · '+item.duplicate_count+' duplicates · '+item.malformed_count+' malformed · '+date(item.oldest_watched_at)+' — '+date(item.newest_watched_at)
+        var meta=document.createElement('p');meta.textContent=(item.committed_event_count===null?item.new_event_count:item.committed_event_count)+' added · '+item.shorts_excluded_event_count+' short-form excluded · '+item.duplicate_count+' duplicates · '+item.malformed_count+' skipped · '+date(item.oldest_watched_at)+' — '+date(item.newest_watched_at)
         var hash=document.createElement('code');hash.textContent='SHA-256 '+item.file_hash.slice(0,12)+'…';card.append(head,meta,hash);auditList.append(card)
       })
     } catch(error) { auditEmpty.hidden=false; auditEmpty.textContent='Import history is unavailable right now.' }

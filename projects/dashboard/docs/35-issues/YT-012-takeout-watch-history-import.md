@@ -6,7 +6,7 @@
 
 ## What to build
 
-Import YouTube watch events from a Google Takeout `watch-history.json` file using a staged dry-run and transactional commit. Repeated and overlapping exports must be safe.
+Import YouTube watch events from a Google Takeout `watch-history.json` or legacy `watch-history.html` file using a staged dry-run and transactional commit. Repeated and overlapping exports must be safe.
 
 ## Acceptance criteria
 
@@ -21,8 +21,11 @@ Import YouTube watch events from a Google Takeout `watch-history.json` file usin
 - [ ] unknown/deleted/private videos retain the best available snapshot and do not abort valid events
 - [ ] no history or Takeout contents are logged or sent to MiniMax
 - [ ] tests include real-shape sanitized fixtures, malformed JSON, hostile filename, size limit, duplicate file, overlapping file, repeated watches, commit rollback, expiry, API auth, and restart
+- [ ] HTML exports are parsed deterministically; non-watch activity cards are skipped without leaking titles
+- [ ] preview enriches unique video IDs through authenticated `videos.list`, excludes videos with duration <= 180 seconds, and shows excluded event/video counts
+- [ ] deleted/private/unavailable videos remain history-only snapshots and do not create playable library records
+- [ ] duration classifications are persisted with the preview so commit/restart cannot change the reviewed filter result
 
 ## Blocked by
 
 - [YT-008](./YT-008-canonical-youtube-library-foundation.md)
-

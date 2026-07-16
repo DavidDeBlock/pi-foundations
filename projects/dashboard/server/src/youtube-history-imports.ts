@@ -9,6 +9,7 @@ import {
   type ParsedWatchEvent,
 } from './youtube-history-parser.js'
 import { upsertYouTubeVideo } from './youtube-video-upsert.js'
+import type { VideoDurationFetcher, VideoDurationResult } from './youtube-video-duration-fetcher.js'
 
 export const DEFAULT_HISTORY_STAGE_TTL_MS = 24 * 60 * 60 * 1000
 
@@ -16,6 +17,9 @@ export class HistoryImportNotFoundError extends Error {}
 export class HistoryImportExpiredError extends Error {}
 export class HistoryImportAlreadyCommittedError extends Error {}
 export class HistoryImportIntegrityError extends Error {}
+export class HistoryImportClassificationError extends Error {}
+
+export const HISTORY_SHORT_MAX_SECONDS = 180
 
 export interface HistoryPreview {
   readonly token: string
@@ -26,6 +30,9 @@ export interface HistoryPreview {
   readonly malformedCount: number
   readonly uniqueVideoCount: number
   readonly newVideoCount: number
+  readonly shortsExcludedEventCount: number
+  readonly shortsExcludedVideoCount: number
+  readonly unavailableVideoCount: number
   readonly oldestWatchedAt: string | null
   readonly newestWatchedAt: string | null
   readonly expiresAt: string
@@ -39,6 +46,7 @@ export interface HistoryCommitResult {
   readonly insertedVideoCount: number
   readonly existingVideoCount: number
   readonly snapshotOnlyCount: number
+  readonly shortsExcludedEventCount: number
   readonly committedAt: string
 }
 
@@ -53,6 +61,10 @@ export interface HistoryImportAudit {
   readonly malformedCount: number
   readonly uniqueVideoCount: number
   readonly newVideoCount: number
+  readonly sourceFormat: 'json' | 'html'
+  readonly shortsExcludedEventCount: number
+  readonly shortsExcludedVideoCount: number
+  readonly unavailableVideoCount: number
   readonly committedEventCount: number | null
   readonly oldestWatchedAt: string | null
   readonly newestWatchedAt: string | null
@@ -79,7 +91,13 @@ interface HistoryImportRow {
   created_at: string
   expires_at: string
   committed_at: string | null
+  source_format: 'json' | 'html'
+  shorts_excluded_event_count: number | bigint
+  shorts_excluded_video_count: number | bigint
+  unavailable_video_count: number | bigint
 }
+
+type HistoryVideoClassification = 'long' | 'short' | 'unavailable'
 
 export class YouTubeHistoryImports {
   readonly #db: Database
@@ -88,6 +106,8 @@ export class YouTubeHistoryImports {
   readonly #ttlMs: number
   readonly #nowMs: () => number
   readonly #beforeEventCommit?: (event: ParsedWatchEvent, index: number) => void
+  readonly #durationFetcher?: VideoDurationFetcher
+  readonly #accessToken?: () => Promise<string>
 
   constructor(options: {
     readonly db: Database
@@ -95,6 +115,8 @@ export class YouTubeHistoryImports {
     readonly parser?: TakeoutWatchHistoryParser
     readonly ttlMs?: number
     readonly nowMs?: () => number
+    readonly durationFetcher?: VideoDurationFetcher
+    readonly accessToken?: () => Promise<string>
     /** Test seam used to prove transaction rollback; production leaves it unset. */
     readonly beforeEventCommit?: (event: ParsedWatchEvent, index: number) => void
   }) {
@@ -104,6 +126,11 @@ export class YouTubeHistoryImports {
     this.#ttlMs = options.ttlMs ?? DEFAULT_HISTORY_STAGE_TTL_MS
     this.#nowMs = options.nowMs ?? (() => Date.now())
     this.#beforeEventCommit = options.beforeEventCommit
+    this.#durationFetcher = options.durationFetcher
+    this.#accessToken = options.accessToken
+    if ((this.#durationFetcher === undefined) !== (this.#accessToken === undefined)) {
+      throw new Error('History duration fetcher and access token provider must be configured together.')
+    }
     if (!Number.isSafeInteger(this.#ttlMs) || this.#ttlMs < 1) throw new Error('History staging TTL must be positive.')
   }
 
@@ -117,6 +144,14 @@ export class YouTubeHistoryImports {
   async preview(input: Buffer, originalFilename: string): Promise<HistoryPreview> {
     await this.cleanupExpired()
     const parsed = this.#parser.parse(input)
+    const classifications = await this.#classify(parsed.events, parsed.format === 'html')
+    const importableEvents = parsed.events.filter((event) =>
+      !event.videoId || classifications.get(event.videoId)?.classification !== 'short')
+    const importableVideoIds = new Set(importableEvents.flatMap((event) => event.videoId ? [event.videoId] : []))
+    const shortsExcludedEvents = parsed.events.filter((event) =>
+      event.videoId && classifications.get(event.videoId)?.classification === 'short').length
+    const shortsExcludedVideos = [...classifications.values()].filter((value) => value.classification === 'short').length
+    const unavailableVideoCount = [...classifications.values()].filter((value) => value.classification === 'unavailable').length
     const token = randomUUID()
     const stagedFilename = `${token}.json`
     const stagedPath = this.#stagedPath(stagedFilename)
@@ -126,31 +161,46 @@ export class YouTubeHistoryImports {
     const fileHash = createHash('sha256').update(input).digest('hex')
 
     const knownFingerprints = new Set<string>()
-    for (const event of parsed.events) {
+    for (const event of importableEvents) {
       if (knownFingerprints.has(event.fingerprint)) continue
       if (this.#db.get('SELECT 1 FROM youtube_watch_events WHERE event_fingerprint = ?', [event.fingerprint])) continue
       knownFingerprints.add(event.fingerprint)
     }
-    const duplicateCount = parsed.events.length - knownFingerprints.size
+    const duplicateCount = importableEvents.length - knownFingerprints.size
     let newVideoCount = 0
-    for (const videoId of parsed.uniqueVideoIds) {
+    for (const videoId of importableVideoIds) {
+      if (classifications.get(videoId)?.classification === 'unavailable') continue
       if (!this.#db.get('SELECT 1 FROM videos WHERE video_id = ?', [videoId])) newVideoCount += 1
     }
+    const { oldestWatchedAt, newestWatchedAt } = eventDateRange(importableEvents)
 
     await mkdir(this.#stageDir, { recursive: true, mode: 0o700 })
     await writeFile(stagedPath, input, { flag: 'wx', mode: 0o600 })
     try {
-      this.#db.run(
-        `INSERT INTO youtube_history_imports
-         (id, file_hash, original_filename, staged_filename, status, total_count,
-          new_event_count, duplicate_count, malformed_count, unique_video_count,
-          new_video_count, oldest_watched_at, newest_watched_at, created_at, expires_at)
-         VALUES (?, ?, ?, ?, 'previewed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [token, fileHash, filename, stagedFilename, parsed.totalCount,
-          knownFingerprints.size, duplicateCount, parsed.malformed.length,
-          parsed.uniqueVideoIds.size, newVideoCount, parsed.oldestWatchedAt,
-          parsed.newestWatchedAt, now, expiresAt],
-      )
+      this.#db.transaction(() => {
+        this.#db.run(
+          `INSERT INTO youtube_history_imports
+           (id, file_hash, original_filename, staged_filename, status, total_count,
+            new_event_count, duplicate_count, malformed_count, unique_video_count,
+            new_video_count, oldest_watched_at, newest_watched_at, created_at, expires_at,
+            source_format, shorts_excluded_event_count, shorts_excluded_video_count,
+            unavailable_video_count)
+           VALUES (?, ?, ?, ?, 'previewed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [token, fileHash, filename, stagedFilename, parsed.totalCount,
+            knownFingerprints.size, duplicateCount, parsed.malformed.length,
+            importableVideoIds.size, newVideoCount, oldestWatchedAt,
+            newestWatchedAt, now, expiresAt, parsed.format, shortsExcludedEvents,
+            shortsExcludedVideos, unavailableVideoCount],
+        )
+        for (const [videoId, value] of classifications) {
+          this.#db.run(
+            `INSERT INTO youtube_history_video_classifications
+             (history_import_id, youtube_video_id, classification, duration_seconds)
+             VALUES (?, ?, ?, ?)`,
+            [token, videoId, value.classification, value.durationSeconds],
+          )
+        }
+      })
     } catch (error: unknown) {
       await unlink(stagedPath).catch(() => undefined)
       throw error
@@ -160,9 +210,11 @@ export class YouTubeHistoryImports {
       token, filename, totalCount: parsed.totalCount,
       newEventCount: knownFingerprints.size, duplicateCount,
       malformedCount: parsed.malformed.length,
-      uniqueVideoCount: parsed.uniqueVideoIds.size, newVideoCount,
-      oldestWatchedAt: parsed.oldestWatchedAt,
-      newestWatchedAt: parsed.newestWatchedAt, expiresAt,
+      uniqueVideoCount: importableVideoIds.size, newVideoCount,
+      shortsExcludedEventCount: shortsExcludedEvents,
+      shortsExcludedVideoCount: shortsExcludedVideos,
+      unavailableVideoCount,
+      oldestWatchedAt, newestWatchedAt, expiresAt,
     }
   }
 
@@ -185,6 +237,13 @@ export class YouTubeHistoryImports {
       throw new HistoryImportIntegrityError('Staged history file failed its integrity check.')
     }
     const parsed = this.#parser.parse(input)
+    const classifications = new Map(this.#db.all<{
+      youtube_video_id: string
+      classification: HistoryVideoClassification
+    }>(
+      `SELECT youtube_video_id, classification
+         FROM youtube_history_video_classifications WHERE history_import_id = ?`, [token],
+    ).map((item) => [item.youtube_video_id, item.classification] as const))
     const committedAt = new Date(this.#nowMs()).toISOString()
 
     const result = this.#db.transaction(() => {
@@ -199,6 +258,8 @@ export class YouTubeHistoryImports {
       const canonicalVideos = new Map<string, string>()
 
       parsed.events.forEach((event, index) => {
+        const classification = event.videoId ? classifications.get(event.videoId) : undefined
+        if (classification === 'short') return
         this.#beforeEventCommit?.(event, index)
         if (this.#db.get('SELECT 1 FROM youtube_watch_events WHERE event_fingerprint = ?', [event.fingerprint])) {
           duplicateCount += 1
@@ -206,7 +267,7 @@ export class YouTubeHistoryImports {
         }
 
         let canonicalId: string | null = null
-        if (event.videoId) {
+        if (event.videoId && classification !== 'unavailable') {
           canonicalId = canonicalVideos.get(event.videoId) ?? null
           if (!canonicalId) {
             const existing = this.#db.get<{ id: string; channel_id: string }>(
@@ -252,7 +313,8 @@ export class YouTubeHistoryImports {
         [committedEventCount, committedAt, token],
       )
       return { committedEventCount, duplicateCount, malformedCount: parsed.malformed.length,
-        insertedVideoCount, existingVideoCount, snapshotOnlyCount }
+        insertedVideoCount, existingVideoCount, snapshotOnlyCount,
+        shortsExcludedEventCount: Number(row.shorts_excluded_event_count) }
     })
 
     await unlink(stagedPath).catch(() => undefined)
@@ -286,6 +348,44 @@ export class YouTubeHistoryImports {
     return this.#db.get<HistoryImportRow>('SELECT * FROM youtube_history_imports WHERE id = ?', [token])
   }
 
+  async #classify(events: readonly ParsedWatchEvent[], requireDurationLookup: boolean): Promise<Map<string, {
+    readonly classification: HistoryVideoClassification
+    readonly durationSeconds: number | null
+  }>> {
+    const values = new Map<string, { classification: HistoryVideoClassification; durationSeconds: number | null }>()
+    for (const event of events) {
+      if (event.videoId && event.knownShort) values.set(event.videoId, { classification: 'short', durationSeconds: null })
+    }
+    const remaining = [...new Set(events.flatMap((event) =>
+      event.videoId && !values.has(event.videoId) ? [event.videoId] : []))]
+    if (remaining.length === 0) return values
+    if (!this.#durationFetcher || !this.#accessToken) {
+      if (requireDurationLookup) {
+        throw new HistoryImportClassificationError('Connect YouTube before importing HTML so Shorts can be excluded safely.')
+      }
+      for (const videoId of remaining) values.set(videoId, { classification: 'long', durationSeconds: null })
+      return values
+    }
+    let fetched: ReadonlyMap<string, VideoDurationResult>
+    try {
+      fetched = await this.#durationFetcher.fetch(await this.#accessToken(), remaining)
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? ` ${error.message}` : ''
+      throw new HistoryImportClassificationError(`Could not classify Shorts before import.${detail}`)
+    }
+    for (const videoId of remaining) {
+      const result = fetched.get(videoId)
+      if (!result) throw new HistoryImportClassificationError('YouTube duration lookup returned an incomplete result.')
+      values.set(videoId, result.status === 'unavailable'
+        ? { classification: 'unavailable', durationSeconds: null }
+        : {
+            classification: result.durationSeconds <= HISTORY_SHORT_MAX_SECONDS ? 'short' : 'long',
+            durationSeconds: result.durationSeconds,
+          })
+    }
+    return values
+  }
+
   #stagedPath(stagedFilename: string): string {
     if (!/^[0-9a-f-]{36}\.json$/i.test(stagedFilename)) throw new HistoryImportIntegrityError('Unsafe staged history filename.')
     const path = resolve(this.#stageDir, stagedFilename)
@@ -310,10 +410,27 @@ function auditJson(row: HistoryImportRow): HistoryImportAudit {
     newEventCount: Number(row.new_event_count), duplicateCount: Number(row.duplicate_count),
     malformedCount: Number(row.malformed_count), uniqueVideoCount: Number(row.unique_video_count),
     newVideoCount: Number(row.new_video_count),
+    sourceFormat: row.source_format,
+    shortsExcludedEventCount: Number(row.shorts_excluded_event_count),
+    shortsExcludedVideoCount: Number(row.shorts_excluded_video_count),
+    unavailableVideoCount: Number(row.unavailable_video_count),
     committedEventCount: row.committed_event_count === null ? null : Number(row.committed_event_count),
     oldestWatchedAt: row.oldest_watched_at, newestWatchedAt: row.newest_watched_at,
     createdAt: row.created_at, expiresAt: row.expires_at, committedAt: row.committed_at,
   }
+}
+
+function eventDateRange(events: readonly ParsedWatchEvent[]): {
+  readonly oldestWatchedAt: string | null
+  readonly newestWatchedAt: string | null
+} {
+  let oldestWatchedAt: string | null = null
+  let newestWatchedAt: string | null = null
+  for (const event of events) {
+    if (oldestWatchedAt === null || event.watchedAt < oldestWatchedAt) oldestWatchedAt = event.watchedAt
+    if (newestWatchedAt === null || event.watchedAt > newestWatchedAt) newestWatchedAt = event.watchedAt
+  }
+  return { oldestWatchedAt, newestWatchedAt }
 }
 
 export { TakeoutHistoryFormatError, TakeoutHistorySizeError }

@@ -92,13 +92,13 @@ Liked Videos may be represented as a special playlist when YouTube exposes its r
 
 `/settings/youtube` gains an **Import watch history** flow:
 
-1. Select a Google Takeout `watch-history.json` file.
-2. Dashboard validates it and displays a dry-run preview.
+1. Select a Google Takeout `watch-history.json` or legacy `watch-history.html` file.
+2. Dashboard validates it, retrieves duration metadata in bounded `videos.list` batches, excludes videos of 180 seconds or less, and displays a dry-run preview.
 3. Preview shows total events, new events, duplicates, unique videos, new canonical videos, oldest date, and newest date.
-4. User confirms the staged import.
+4. User confirms the staged import. Stored classifications guarantee that commit matches the reviewed preview after a restart.
 5. Import commits transactionally and reports counts.
 
-The same or overlapping export can be imported repeatedly. Stable event fingerprints prevent duplicate watch events. Unknown, deleted, private, or malformed entries are reported separately; one bad entry does not abort an otherwise valid import.
+The same or overlapping export can be imported repeatedly. Stable event fingerprints prevent duplicate watch events. Unknown, deleted, private, or malformed entries are reported separately; one bad entry does not abort an otherwise valid import. Deleted/private videos remain history-only snapshots. Since Takeout HTML normalizes Shorts to `/watch` URLs and the Data API has no Shorts flag, duration <= 180 seconds is the explicit accepted exclusion rule.
 
 The History view shows reverse-chronological events. Video cards throughout the dashboard can show `Watched`, last-watched time, and watch count. The New Videos view gains `Unwatched only`.
 
@@ -251,4 +251,3 @@ YT-009, YT-010, and YT-012 can proceed independently after YT-008. YT-011 follow
 - [ADR-005](../40-decisions/005-youtube-source-of-truth.md) — dashboard owns local organization.
 - [ADR-009](../40-decisions/009-youtube-subscriptions-rss.md) — RSS new-video detection remains the future-upload path.
 - [PRD-003](./PRD-003-youtube-v3-subscriptions.md) — current subscription and new-video surface.
-

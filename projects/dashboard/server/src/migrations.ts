@@ -105,6 +105,10 @@ const MIGRATIONS = [
     name: '023_youtube_description_resources',
     filename: '023_youtube_description_resources.sql',
   },
+  {
+    name: '024_youtube_history_html_shorts',
+    filename: '024_youtube_history_html_shorts.sql',
+  },
 ] as const
 
 export interface RunMigrationsOptions {
