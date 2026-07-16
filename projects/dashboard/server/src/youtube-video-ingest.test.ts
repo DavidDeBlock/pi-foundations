@@ -63,7 +63,7 @@ function entry(overrides: Partial<FeedEntry> = {}): FeedEntry {
 describe('ingestVideos — empty input', () => {
   it('returns zeros and is a no-op for an empty list', () => {
     const r = ingestVideos(env.db, 'UCaaaaaaa000000000000aab', [])
-    expect(r).toEqual({ added: 0, skipped: 0, total: 0 })
+    expect(r).toEqual({ added: 0, skipped: 0, total: 0, insertedVideoIds: [] })
     expect(countVideos(env.db)).toBe(0)
   })
 })

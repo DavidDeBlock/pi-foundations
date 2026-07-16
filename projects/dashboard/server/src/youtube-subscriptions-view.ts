@@ -267,6 +267,7 @@ function renderRow(s: Subscription): string {
     : `<span class="channel-thumb channel-thumb-fallback" aria-hidden="true">${escapeHtml((s.channelTitle[0] ?? '?').toUpperCase())}</span>`
   const includedChecked = s.isIncluded ? ' checked' : ''
   const importantChecked = s.isImportant ? ' checked' : ''
+  const transcriptsChecked = s.autoFetchTranscripts ? ' checked' : ''
   return `
         <li class="subscription-row" data-subscription-row data-subscription-id="${escapeHtml(s.id)}">
           <a class="channel-link" href="${escapeHtml(youtubeUrl)}" target="_blank" rel="noopener">
@@ -280,6 +281,10 @@ function renderRow(s: Subscription): string {
           <label class="toggle" title="Reserve for future LLM job (no behavior in v3.0)">
             <input type="checkbox" data-toggle="is_important" ${importantChecked}>
             <span class="toggle-label">Important</span>
+          </label>
+          <label class="toggle" title="Automatically fetch captions for newly discovered videos">
+            <input type="checkbox" data-toggle="auto_fetch_transcripts" ${transcriptsChecked}>
+            <span class="toggle-label">Auto transcripts</span>
           </label>
           <span class="row-status" data-row-status></span>
         </li>`
@@ -344,7 +349,7 @@ const SUBSCRIPTIONS_PAGE_SCRIPT = `(function(){
         var status = row.querySelector('[data-row-status]');
         flashRowStatus(status, 'saving\u2026', 'pending');
         var body = {};
-        body[field === 'is_included' ? 'is_included' : 'is_important'] = next;
+        body[field] = next;
         fetch('/api/subscriptions/' + encodeURIComponent(row.getAttribute('data-subscription-id')), {
           method: 'PATCH',
           credentials: 'same-origin',
@@ -372,9 +377,7 @@ const SUBSCRIPTIONS_PAGE_SCRIPT = `(function(){
             // reconcile in case the DB normalised anything we
             // didn't anticipate (none today, but cheap insurance).
             if (payload.subscription) {
-              var serverVal = field === 'is_included'
-                ? payload.subscription.is_included
-                : payload.subscription.is_important;
+              var serverVal = payload.subscription[field];
               if (toggle.checked !== serverVal) toggle.checked = serverVal;
             }
             flashRowStatus(status, 'saved', 'ok');
@@ -519,7 +522,7 @@ const STYLES = `
 .subscriptions-counts strong { color: var(--text); font-weight: 600; }
 
 .subscriptions-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
-.subscription-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 1rem; align-items: center; padding: 0.8rem 1rem; background: color-mix(in srgb, var(--surface) 94%, transparent); border: 1px solid var(--border); border-radius: 0.8rem; transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease; }
+.subscription-row { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto auto auto; gap: 1rem; align-items: center; padding: 0.8rem 1rem; background: color-mix(in srgb, var(--surface) 94%, transparent); border: 1px solid var(--border); border-radius: 0.8rem; transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease; }
 .subscription-row:hover { transform: translateX(3px); border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: var(--surface); }
 .channel-link { display: flex; align-items: center; gap: 0.7rem; min-width: 0; color: var(--text); text-decoration: none; }
 .channel-link:hover .channel-title { color: var(--accent); }

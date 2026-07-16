@@ -236,6 +236,38 @@ describe('GET /videos/:id — tag chips', () => {
   })
 })
 
+describe('GET /videos/:id — transcript', () => {
+  it('offers on-demand fetching when no transcript has been requested', async () => {
+    const id = env.seed()
+    const { body } = await getText(env.app, `/videos/${id}`)
+    expect(body).toContain('data-video-transcript')
+    expect(body).toContain('data-transcript-status="not_requested"')
+    expect(body).toContain('data-fetch-transcript>Fetch transcript</button>')
+  })
+
+  it('renders stored segments with clickable timestamps', async () => {
+    const id = env.seed()
+    env.db.run(
+      `INSERT INTO video_transcripts
+         (video_id, status, language, requested_at, fetched_at, updated_at)
+       VALUES (?, 'ready', 'en', '2026-07-16T00:00:00.000Z',
+               '2026-07-16T00:00:01.000Z', '2026-07-16T00:00:01.000Z')`,
+      [id],
+    )
+    env.db.run(
+      `INSERT INTO video_transcript_segments
+         (video_id, position, start_ms, duration_ms, text)
+       VALUES (?, 0, 65000, 2000, 'A useful explanation')`,
+      [id],
+    )
+    const { body } = await getText(env.app, `/videos/${id}`)
+    expect(body).toContain('data-transcript-status="ready"')
+    expect(body).toContain('A useful explanation')
+    expect(body).toContain('>1:05</a>')
+    expect(body).toContain('&amp;t=65s')
+  })
+})
+
 // ─── Channel-included flag ──────────────────────────────────────────────
 
 describe('GET /videos/:id — channel flag', () => {

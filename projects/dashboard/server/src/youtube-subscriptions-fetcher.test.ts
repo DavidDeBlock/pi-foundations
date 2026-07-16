@@ -42,6 +42,7 @@ describe('parseSubscription', () => {
       subscribedAt: '2024-01-15T10:00:00Z',
       isIncluded: true,
       isImportant: false,
+      autoFetchTranscripts: false,
       lastPolledAt: null,
       createdAt: '',
       updatedAt: '',

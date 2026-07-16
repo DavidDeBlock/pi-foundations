@@ -34,6 +34,10 @@ import {
 import { getVideoDetail, type VideoDetail } from './youtube-videos.js'
 import { listAllFoldersWithCounts } from './folders.js'
 import { listAllTagsWithUsage } from './tags.js'
+import {
+  getVideoTranscript,
+  type VideoTranscript,
+} from './youtube-transcripts.js'
 
 // ─── Hono sub-app ─────────────────────────────────────────────────────────
 
@@ -58,8 +62,9 @@ export function youtubeVideoDetailView(
     if (detail === null) return c.text('Video not found', 404)
     const folders = listAllFoldersWithCounts(deps.db)
     const tags = listAllTagsWithUsage(deps.db)
+    const transcript = getVideoTranscript(deps.db, id)
     return c.html(
-      renderPage({ detail, folders, tags, allTags: tags }),
+      renderPage({ detail, folders, tags, allTags: tags, transcript }),
     )
   })
 
@@ -76,6 +81,7 @@ interface RenderPageOptions {
   }>
   readonly tags: ReadonlyArray<{ readonly id: string; readonly name: string }>
   readonly allTags: ReadonlyArray<{ readonly id: string; readonly name: string }>
+  readonly transcript: VideoTranscript | null
 }
 
 function renderPage(opts: RenderPageOptions): string {
@@ -144,6 +150,8 @@ ${COMMON_HEAD}
           <datalist id="video-all-tags-list"></datalist>
           <p class="video-detail-tag-status" data-video-tag-status></p>
         </section>
+
+        ${renderTranscriptSection(detail, opts.transcript)}
       </article>
     </main>
   </div>
@@ -153,6 +161,58 @@ ${COMMON_HEAD}
   <script>${VIDEO_DETAIL_SCRIPT}</script>
 </body>
 </html>`
+}
+
+function renderTranscriptSection(
+  detail: VideoDetail,
+  transcript: VideoTranscript | null,
+): string {
+  const status = transcript?.status ?? 'not_requested'
+  let content: string
+  if (transcript?.status === 'ready') {
+    const language = transcript.language
+      ? `<span class="video-transcript-language">${escapeHtml(transcript.language)}</span>`
+      : ''
+    const rows = transcript.segments.map((segment) => {
+      const seconds = Math.floor(segment.startMs / 1000)
+      return `<li class="video-transcript-segment">
+        <a class="video-transcript-time" href="https://www.youtube.com/watch?v=${encodeURIComponent(detail.videoId)}&amp;t=${seconds}s" target="_blank" rel="noopener noreferrer">${formatTimestamp(segment.startMs)}</a>
+        <span>${escapeHtml(segment.text)}</span>
+      </li>`
+    }).join('')
+    content = `<div class="video-transcript-ready">
+      <div class="video-transcript-summary"><strong>Transcript ready</strong>${language}</div>
+      <ol class="video-transcript-segments">${rows}</ol>
+    </div>`
+  } else if (transcript?.status === 'pending') {
+    content = `<p class="video-transcript-state">Fetching captions in the background…</p>`
+  } else if (transcript?.status === 'unavailable') {
+    content = `<p class="video-transcript-state">No captions are currently available for this video.</p>
+      <button type="button" class="primary-button" data-fetch-transcript>Try again</button>`
+  } else if (transcript?.status === 'failed') {
+    content = `<p class="video-transcript-state">The transcript could not be fetched. YouTube caption access can fail temporarily.</p>
+      <button type="button" class="primary-button" data-fetch-transcript>Try again</button>`
+  } else {
+    content = `<p class="video-transcript-state">Fetch this video’s captions when you need them.</p>
+      <button type="button" class="primary-button" data-fetch-transcript>Fetch transcript</button>`
+  }
+  return `<section class="video-detail-transcript" data-video-transcript data-transcript-status="${status}">
+    <div class="video-transcript-heading">
+      <div><h2>Transcript</h2><p>Timed captions stored locally for reading and future summaries.</p></div>
+    </div>
+    <div data-transcript-content>${content}</div>
+    <p class="video-transcript-feedback" data-transcript-feedback aria-live="polite"></p>
+  </section>`
+}
+
+function formatTimestamp(milliseconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
 function renderFolderSelect(
@@ -254,6 +314,18 @@ const VIDEO_DETAIL_STYLES = `
 .video-detail-tag-status { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); }
 .video-detail-tag-status.saved-flash { color: var(--accent); }
 .video-detail-tag-status.error-flash { color: var(--danger); }
+.video-detail-transcript { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--border); }
+.video-transcript-heading h2 { margin: 0; font-size: 1.05rem; }
+.video-transcript-heading p { margin: 4px 0 16px; color: var(--muted); font-size: .88rem; }
+.video-transcript-state { margin: 0 0 12px; color: var(--muted); }
+.video-transcript-summary { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.video-transcript-language { padding: 2px 7px; border-radius: 999px; background: var(--surface-2, rgba(127,127,127,.1)); color: var(--muted); font-size: .75rem; text-transform: uppercase; }
+.video-transcript-segments { list-style: none; margin: 0; padding: 4px 0; max-height: 520px; overflow: auto; display: grid; gap: 2px; }
+.video-transcript-segment { display: grid; grid-template-columns: 52px 1fr; gap: 10px; padding: 7px 8px; border-radius: 7px; line-height: 1.45; }
+.video-transcript-segment:hover { background: var(--surface-2, rgba(127,127,127,.07)); }
+.video-transcript-time { color: var(--accent); font-variant-numeric: tabular-nums; text-decoration: none; font-size: .82rem; padding-top: 2px; }
+.video-transcript-feedback { min-height: 1.2em; margin: 8px 0 0; color: var(--muted); font-size: .84rem; }
+.video-transcript-feedback.error-flash { color: var(--danger); }
 @media (max-width: 720px) {
   .video-detail-header { grid-template-columns: 1fr; }
   .video-detail-edit-btn { justify-self: start; }
@@ -493,5 +565,74 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
           flashStatus(tagStatus, err.message || 'failed', false);
         });
     });
+  }
+
+  // ── Transcript request + status polling ──────────────────────
+  var transcript = article.querySelector('[data-video-transcript]');
+  var transcriptButton = transcript && transcript.querySelector('[data-fetch-transcript]');
+  var transcriptFeedback = transcript && transcript.querySelector('[data-transcript-feedback]');
+  var pollAttempts = 0;
+  function pollTranscript(){
+    pollAttempts++;
+    fetch('/api/videos/' + encodeURIComponent(videoId) + '/transcript', {
+      credentials: 'same-origin',
+    })
+      .then(function(res){
+        if (res.status === 401) { window.location.href = '/api/login'; return null; }
+        return res.json().then(function(json){ return { res: res, json: json }; });
+      })
+      .then(function(pair){
+        if (!pair) return;
+        if (!pair.res.ok) throw new Error(pair.json.error || ('HTTP ' + pair.res.status));
+        var value = pair.json.transcript;
+        if (value && value.status === 'pending' && pollAttempts < 40) {
+          if (transcriptFeedback) transcriptFeedback.textContent = 'Fetching captions in the background\u2026';
+          setTimeout(pollTranscript, 1500);
+          return;
+        }
+        // The server-rendered view owns ready/error markup. Reload once
+        // the worker reaches a terminal state so there is one renderer.
+        if (value && value.status !== 'pending') window.location.reload();
+        else if (transcriptFeedback) transcriptFeedback.textContent = 'Still working. You can leave this page and return later.';
+      })
+      .catch(function(err){
+        if (transcriptFeedback) {
+          transcriptFeedback.textContent = err.message || 'Failed to check transcript status.';
+          transcriptFeedback.className = 'video-transcript-feedback error-flash';
+        }
+      });
+  }
+  if (transcriptButton) {
+    transcriptButton.addEventListener('click', function(){
+      transcriptButton.disabled = true;
+      if (transcriptFeedback) transcriptFeedback.textContent = 'Adding transcript to the queue\u2026';
+      fetch('/api/videos/' + encodeURIComponent(videoId) + '/transcript', {
+        method: 'POST',
+        credentials: 'same-origin',
+      })
+        .then(function(res){
+          if (res.status === 401) { window.location.href = '/api/login'; return null; }
+          return res.json().then(function(json){ return { res: res, json: json }; });
+        })
+        .then(function(pair){
+          if (!pair) return;
+          if (!pair.res.ok) throw new Error(pair.json.error || ('HTTP ' + pair.res.status));
+          if (pair.json.transcript && pair.json.transcript.status === 'ready') {
+            window.location.reload();
+            return;
+          }
+          pollAttempts = 0;
+          pollTranscript();
+        })
+        .catch(function(err){
+          transcriptButton.disabled = false;
+          if (transcriptFeedback) {
+            transcriptFeedback.textContent = err.message || 'Failed to request transcript.';
+            transcriptFeedback.className = 'video-transcript-feedback error-flash';
+          }
+        });
+    });
+  } else if (transcript && transcript.getAttribute('data-transcript-status') === 'pending') {
+    pollTranscript();
   }
 })();`

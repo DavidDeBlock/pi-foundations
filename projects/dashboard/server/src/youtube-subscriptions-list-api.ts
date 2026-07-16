@@ -9,7 +9,8 @@
 //        pages — the page-N row is the same on every reload).
 //
 //   PATCH /api/subscriptions/:id
-//        Body `{ is_included?: boolean, is_important?: boolean }`.
+//        Body `{ is_included?: boolean, is_important?: boolean,
+//                auto_fetch_transcripts?: boolean }`.
 //        Both fields optional; only the provided fields change.
 //        Empty body → 400. Missing id → 404. Returns the
 //        updated subscription row in the same shape as the list
@@ -90,13 +91,17 @@ export function subscriptionsApi(
   })
 
   // ─── PATCH /:id ─────────────────────────────────────────────────────
-  // Update `is_included` and/or `is_important`. Both fields are
+  // Update the three independent subscription preferences. Every field is
   // optional but at least one must be present — an empty body is
   // almost always a client bug, so we 400 instead of silently
   // no-op'ing.
   api.patch('/:id', async (c) => {
     const id = c.req.param('id')
-    let body: { is_included?: unknown; is_important?: unknown }
+    let body: {
+      is_included?: unknown
+      is_important?: unknown
+      auto_fetch_transcripts?: unknown
+    }
     try {
       body = (await c.req.json()) as typeof body
     } catch {
@@ -110,9 +115,14 @@ export function subscriptionsApi(
     // truthy-string shortcuts — toggle UIs already deal in real
     // booleans and accepting '1' / 'true' / 1 / 0 would muddy
     // the contract).
-    const patch: { isIncluded?: boolean; isImportant?: boolean } = {}
+    const patch: {
+      isIncluded?: boolean
+      isImportant?: boolean
+      autoFetchTranscripts?: boolean
+    } = {}
     let hasIncluded: boolean | null = null
     let hasImportant: boolean | null = null
+    let hasAutoTranscripts: boolean | null = null
     if (body.is_included !== undefined) {
       if (typeof body.is_included !== 'boolean') {
         return c.json(
@@ -141,12 +151,26 @@ export function subscriptionsApi(
       hasImportant = body.is_important
       patch.isImportant = body.is_important
     }
-    if (hasIncluded === null && hasImportant === null) {
+    if (body.auto_fetch_transcripts !== undefined) {
+      if (typeof body.auto_fetch_transcripts !== 'boolean') {
+        return c.json(
+          {
+            ok: false,
+            error: 'invalid_field',
+            message: 'auto_fetch_transcripts must be a boolean',
+          },
+          400,
+        )
+      }
+      hasAutoTranscripts = body.auto_fetch_transcripts
+      patch.autoFetchTranscripts = body.auto_fetch_transcripts
+    }
+    if (hasIncluded === null && hasImportant === null && hasAutoTranscripts === null) {
       return c.json(
         {
           ok: false,
           error: 'empty_patch',
-          message: 'must include is_included and/or is_important',
+          message: 'must include is_included, is_important, and/or auto_fetch_transcripts',
         },
         400,
       )
@@ -172,9 +196,10 @@ export function subscriptionsApi(
 
 // ─── Wire → API shape ─────────────────────────────────────────────────────
 
-/** Public API shape for one subscription. Mirrors the AC:
+/** Public API shape for one subscription:
  *   `{ id, channel_id, title, thumbnail_url, subscribed_at,
- *      is_included, is_important, last_polled_at }`. The
+ *      is_included, is_important, auto_fetch_transcripts,
+ *      last_polled_at }`. The
  *  `google_account_id` is intentionally omitted — the
  *  v3.0 UI is single-account and doesn't need to render
  *  which account owns which subscription; the row's id is
@@ -187,6 +212,7 @@ interface ApiSubscriptionItem {
   readonly subscribed_at: string
   readonly is_included: boolean
   readonly is_important: boolean
+  readonly auto_fetch_transcripts: boolean
   readonly last_polled_at: string | null
 }
 
@@ -199,6 +225,7 @@ function toApiItem(s: Subscription): ApiSubscriptionItem {
     subscribed_at: s.subscribedAt,
     is_included: s.isIncluded,
     is_important: s.isImportant,
+    auto_fetch_transcripts: s.autoFetchTranscripts,
     last_polled_at: s.lastPolledAt,
   }
 }

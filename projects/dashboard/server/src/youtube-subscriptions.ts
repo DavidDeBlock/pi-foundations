@@ -40,8 +40,8 @@ export const SUBSCRIPTION_FILTERS: ReadonlyArray<SubscriptionFilter> = [
 
 /**
  * Public view of one subscription. Title and thumbnail are the
- * fields the UI renders; `is_included` / `is_important` are the
- * user toggles; `subscribed_at` is YouTube's record of when the
+ * fields the UI renders; `is_included`, `is_important`, and
+ * `auto_fetch_transcripts` are user preferences; `subscribed_at` is YouTube's record of when the
  * user subscribed; `last_polled_at` is the RSS poller's
  * timestamp (NULL until YT-004 ships).
  */
@@ -54,6 +54,7 @@ export interface Subscription {
   readonly subscribedAt: string
   readonly isIncluded: boolean
   readonly isImportant: boolean
+  readonly autoFetchTranscripts: boolean
   readonly lastPolledAt: string | null
   readonly createdAt: string
   readonly updatedAt: string
@@ -70,6 +71,7 @@ interface SubscriptionRow {
   subscribed_at: string
   is_included: number | bigint
   is_important: number | bigint
+  auto_fetch_transcripts: number | bigint
   last_polled_at: string | null
   created_at: string
   updated_at: string
@@ -409,6 +411,7 @@ export function deleteSubscriptionsNotInChannelIds(
 export interface UpdateSubscriptionTogglesInput {
   readonly isIncluded?: boolean
   readonly isImportant?: boolean
+  readonly autoFetchTranscripts?: boolean
 }
 
 export function updateSubscriptionToggles(
@@ -417,8 +420,8 @@ export function updateSubscriptionToggles(
   input: UpdateSubscriptionTogglesInput,
   nowMs: () => number = () => Date.now(),
 ): boolean {
-  // Build a dynamic SET clause. The two columns are independent
-  // booleans; we let the caller patch either, both, or neither
+  // Build a dynamic SET clause. The three columns are independent
+  // booleans; we let the caller patch any combination
   // (caller-side validation rejects "neither" before reaching
   // this helper). At least one field is guaranteed present.
   const sets: string[] = []
@@ -430,6 +433,10 @@ export function updateSubscriptionToggles(
   if (input.isImportant !== undefined) {
     sets.push('is_important = ?')
     params.push(input.isImportant ? 1 : 0)
+  }
+  if (input.autoFetchTranscripts !== undefined) {
+    sets.push('auto_fetch_transcripts = ?')
+    params.push(input.autoFetchTranscripts ? 1 : 0)
   }
   sets.push('updated_at = ?')
   params.push(nowIso(nowMs))
@@ -468,6 +475,7 @@ function rowToSubscription(row: SubscriptionRow): Subscription {
     subscribedAt: row.subscribed_at,
     isIncluded: !!row.is_included,
     isImportant: !!row.is_important,
+    autoFetchTranscripts: !!row.auto_fetch_transcripts,
     lastPolledAt: row.last_polled_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

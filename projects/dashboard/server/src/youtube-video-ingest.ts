@@ -31,6 +31,9 @@ export interface IngestResult {
   readonly skipped: number
   /** Total entries the caller passed in. */
   readonly total: number
+  /** Dashboard ids for newly inserted rows. Used to queue optional
+   *  follow-up work such as transcript extraction. */
+  readonly insertedVideoIds: readonly string[]
 }
 
 /**
@@ -58,14 +61,15 @@ export function ingestVideos(
   nowMs?: () => number,
 ): IngestResult {
   if (entries.length === 0) {
-    return { added: 0, skipped: 0, total: 0 }
+    return { added: 0, skipped: 0, total: 0, insertedVideoIds: [] }
   }
 
   let added = 0
   let skipped = 0
+  const insertedVideoIds: string[] = []
   db.transaction(() => {
     for (const entry of entries) {
-      const { outcome } = insertVideo(
+      const { outcome, id } = insertVideo(
         db,
         {
           videoId: entry.videoId,
@@ -77,9 +81,12 @@ export function ingestVideos(
         },
         nowMs,
       )
-      if (outcome === 'inserted') added++
+      if (outcome === 'inserted') {
+        added++
+        insertedVideoIds.push(id)
+      }
       else skipped++
     }
   })
-  return { added, skipped, total: entries.length }
+  return { added, skipped, total: entries.length, insertedVideoIds }
 }

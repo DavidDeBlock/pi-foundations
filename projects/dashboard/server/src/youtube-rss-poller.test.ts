@@ -24,6 +24,11 @@ import {
   upsertSubscription,
 } from './youtube-subscriptions.js'
 import { getVideoByVideoId } from './youtube-videos.js'
+import {
+  getVideoTranscript,
+  YouTubeTranscriptService,
+  type TranscriptFetcher,
+} from './youtube-transcripts.js'
 
 const MIGRATIONS_DIR = resolve(process.cwd(), 'migrations')
 
@@ -140,6 +145,41 @@ const FEED_TWO = `<?xml version="1.0" encoding="UTF-8"?>
 
 const FEED_EMPTY = `<?xml version="1.0" encoding="UTF-8"?>
 <feed></feed>`
+
+describe('pollAll — automatic transcripts', () => {
+  it('queues transcripts only for newly discovered videos from opted-in channels', async () => {
+    seedChannel(CH_A, true)
+    env.db.run(
+      `UPDATE subscriptions SET auto_fetch_transcripts = 1 WHERE channel_id = ?`,
+      [CH_A],
+    )
+    const transcriptFetcher: TranscriptFetcher = {
+      fetch: vi.fn().mockResolvedValue({
+        language: 'en',
+        segments: [{ startMs: 0, durationMs: 1000, text: 'Caption' }],
+      }),
+    }
+    const transcriptService = new YouTubeTranscriptService({
+      db: env.db,
+      fetcher: transcriptFetcher,
+    })
+    const rss = makeFetcher({ [CH_A]: FEED_TWO })
+    const poller = new YouTubeRssPoller({
+      db: env.db,
+      fetcher: rss.fetcher,
+      transcriptService,
+    })
+
+    await poller.pollAll()
+    await transcriptService.whenIdle()
+
+    const first = getVideoByVideoId(env.db, 'AAAAAAAAAAA')!
+    const second = getVideoByVideoId(env.db, 'BBBBBBBBBBB')!
+    expect(getVideoTranscript(env.db, first.id)?.status).toBe('ready')
+    expect(getVideoTranscript(env.db, second.id)?.status).toBe('ready')
+    expect(transcriptFetcher.fetch).toHaveBeenCalledTimes(2)
+  })
+})
 
 /**
  * Build a feed with two entries whose videoIds are prefixed by

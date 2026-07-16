@@ -183,7 +183,7 @@ describe('/subscriptions list rendering', () => {
     expect(html).toContain('>B<')
   })
 
-  it('renders both toggles per row with the right checked state', async () => {
+  it('renders all three toggles per row with the right checked state', async () => {
     seedFixture()
     const res = await env.app.request('/subscriptions', {
       headers: { authorization: basic(PASSWORD) },
@@ -199,6 +199,8 @@ describe('/subscriptions list rendering', () => {
     // is_included toggle is checked.
     const alphaRow = rows.find((r) => r.includes('Alpha'))!
     expect(alphaRow).toMatch(/data-toggle="is_included"[^>]*checked/)
+    expect(alphaRow).toContain('data-toggle="auto_fetch_transcripts"')
+    expect(alphaRow).toContain('Auto transcripts')
     // Find the row containing "Beta" (is_included=false) → its
     // is_included toggle is NOT checked.
     const betaRow = rows.find((r) => r.includes('Beta'))!

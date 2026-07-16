@@ -23,6 +23,7 @@ import {
   YouTubeRssScheduler,
   DEFAULT_YOUTUBE_RSS_INTERVAL_MIN,
 } from './youtube-rss-scheduler.js'
+import { YouTubeTranscriptService } from './youtube-transcripts.js'
 
 async function main(): Promise<void> {
   const config = await loadConfig()
@@ -247,8 +248,12 @@ function buildYouTubeDeps(
   // (the public RSS endpoint is unauthenticated). Concurrency
   // cap is wired from `YOUTUBE_RSS_CONCURRENCY` env so the
   // operator can tune it.
+  const transcriptService = new YouTubeTranscriptService({ db })
+  transcriptService.resumePending()
+
   const rssPoller = new YouTubeRssPoller({
     db,
+    transcriptService,
     concurrency: process.env.YOUTUBE_RSS_CONCURRENCY
       ? Number.parseInt(process.env.YOUTUBE_RSS_CONCURRENCY, 10)
       : DEFAULT_POLL_CONCURRENCY,
@@ -263,6 +268,7 @@ function buildYouTubeDeps(
     client,
     subscriptionsSync,
     rssPoller,
+    transcriptService,
   }
 }
 

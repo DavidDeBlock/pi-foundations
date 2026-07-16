@@ -57,6 +57,10 @@ const MIGRATIONS = [
     name: '011_email_html_body',
     filename: '011_email_html_body.sql',
   },
+  {
+    name: '012_youtube_transcripts',
+    filename: '012_youtube_transcripts.sql',
+  },
 ] as const
 
 export interface RunMigrationsOptions {

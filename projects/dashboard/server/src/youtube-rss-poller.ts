@@ -29,6 +29,7 @@ import {
 } from './youtube-rss-fetcher.js'
 import { ingestVideos, type IngestResult } from './youtube-video-ingest.js'
 import { touchVideoLastPolledAt } from './youtube-videos.js'
+import type { YouTubeTranscriptService } from './youtube-transcripts.js'
 
 // ─── Public types ──────────────────────────────────────────────────────────
 
@@ -81,6 +82,8 @@ export interface YouTubeRssPollerDeps {
   readonly concurrency?: number
   /** Injected clock for `last_polled_at` timestamps. Default `Date.now`. */
   readonly nowMs?: () => number
+  /** Optional best-effort follow-up queue for channels that opted in. */
+  readonly transcriptService?: YouTubeTranscriptService
 }
 
 /**
@@ -110,12 +113,14 @@ export class YouTubeRssPoller {
   readonly #fetcher: YouTubeRssFeedFetcher
   readonly #concurrency: number
   readonly #nowMs: () => number
+  readonly #transcriptService: YouTubeTranscriptService | undefined
 
   constructor(deps: YouTubeRssPollerDeps) {
     this.#db = deps.db
     this.#fetcher = deps.fetcher ?? new YouTubeRssFeedFetcher()
     this.#concurrency = deps.concurrency ?? DEFAULT_POLL_CONCURRENCY
     this.#nowMs = deps.nowMs ?? (() => Date.now())
+    this.#transcriptService = deps.transcriptService
   }
 
   /**
@@ -176,6 +181,9 @@ export class YouTubeRssPoller {
         entries,
         this.#nowMs,
       )
+      for (const videoId of ingestResult.insertedVideoIds) {
+        this.#transcriptService?.requestAutomatically(videoId)
+      }
       // Touch ONLY on success — per AC, the timestamp records
       // "we attempted this channel", and a failed fetch is still
       // an attempt. The AC text "for every attempted channel

@@ -161,6 +161,7 @@ export function parseSubscription(raw: RawSubscription): Subscription | null {
     subscribedAt: snippet.publishedAt ?? '',
     isIncluded: true,
     isImportant: false,
+    autoFetchTranscripts: false,
     lastPolledAt: null,
     createdAt: '',
     updatedAt: '',

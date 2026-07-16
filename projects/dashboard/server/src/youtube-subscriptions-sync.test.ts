@@ -108,6 +108,7 @@ function sub(
     createdAt: '',
     updatedAt: '',
     ...overrides,
+    autoFetchTranscripts: overrides.autoFetchTranscripts ?? false,
   }
 }
 

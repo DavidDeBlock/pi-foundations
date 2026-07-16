@@ -145,6 +145,7 @@ describe('GET /api/subscriptions', () => {
     }
     const item = body.items[0]!
     expect(Object.keys(item).sort()).toEqual([
+      'auto_fetch_transcripts',
       'channel_id',
       'id',
       'is_important',
@@ -309,6 +310,32 @@ describe('PATCH /api/subscriptions/:id', () => {
     }
     expect(body.subscription.is_important).toBe(true)
     expect(body.subscription.is_included).toBe(true) // untouched
+  })
+
+  it('toggles automatic transcript fetching independently', async () => {
+    seedFixture()
+    const row = env.db.get<{ id: string }>(
+      `SELECT id FROM subscriptions WHERE channel_id = 'UCa'`,
+    )!
+    const res = await env.app.request(`/api/subscriptions/${row.id}`, {
+      method: 'PATCH',
+      headers: {
+        authorization: basic(PASSWORD),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ auto_fetch_transcripts: true }),
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      subscription: {
+        auto_fetch_transcripts: boolean
+        is_included: boolean
+        is_important: boolean
+      }
+    }
+    expect(body.subscription.auto_fetch_transcripts).toBe(true)
+    expect(body.subscription.is_included).toBe(true)
+    expect(body.subscription.is_important).toBe(false)
   })
 
   it('updates both fields when both are present', async () => {

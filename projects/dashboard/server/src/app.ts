@@ -30,6 +30,8 @@ import { youtubeVideosApi } from './youtube-videos-api.js'
 import { youtubeVideoTagsApi } from './youtube-video-tags-api.js'
 import { youtubeVideosView } from './youtube-videos-view.js'
 import { youtubeVideoDetailView } from './youtube-video-detail-view.js'
+import { youtubeTranscriptsApi } from './youtube-transcripts-api.js'
+import type { YouTubeTranscriptService } from './youtube-transcripts.js'
 
 export interface EmailDeps {
   /** AES-256-GCM cipher for OAuth tokens at rest. */
@@ -91,6 +93,8 @@ export interface YouTubeDeps {
    * it with a timer but isn't part of the API surface.
    */
   readonly rssPoller: YouTubeRssPoller
+  /** Persisted background queue used by automatic and on-demand transcript requests. */
+  readonly transcriptService: YouTubeTranscriptService
 }
 
 export interface AppDeps {
@@ -259,6 +263,10 @@ export function createApp({
     app.route(
       '/api/videos',
       youtubeVideoTagsApi({ db }),
+    )
+    app.route(
+      '/api/videos',
+      youtubeTranscriptsApi({ db, service: youtube.transcriptService }),
     )
     app.route(
       '/api/subscriptions',
