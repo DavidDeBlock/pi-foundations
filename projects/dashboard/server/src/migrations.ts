@@ -49,6 +49,10 @@ const MIGRATIONS = [
     name: '009_subscriptions',
     filename: '009_subscriptions.sql',
   },
+  {
+    name: '010_videos',
+    filename: '010_videos.sql',
+  },
 ] as const
 
 export interface RunMigrationsOptions {

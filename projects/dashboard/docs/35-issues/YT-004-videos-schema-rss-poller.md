@@ -10,19 +10,19 @@ Every 15 minutes, the server polls the public RSS feed (`https://www.youtube.com
 
 ## Acceptance criteria
 
-- [ ] Migration adds `videos` table per PRD-003 schema: `id, video_id (UNIQUE), channel_id (FK→subscriptions.channel_id, ON DELETE RESTRICT), title, published_at, thumbnail_url, link, discovered_at, folder_id (nullable FK→folders), created_at, updated_at`
-- [ ] Migration adds `video_tags` table: `video_id, tag_id` composite PK, mirroring `bookmark_tags` pattern
-- [ ] `RssFeedFetcher` deep module exposes `fetch(channelId) → FeedEntry[]`; fetches `https://www.youtube.com/feeds/videos.xml?channel_id=<id>`; parses Atom XML; returns `[{ video_id, title, published_at, thumbnail_url, link }]`
-- [ ] Malformed XML → typed error (does not crash)
-- [ ] HTTP 404 / network error → typed error per channel (does not crash)
-- [ ] Empty feed → returns `[]`
-- [ ] `VideoIngest` deep module exposes `ingest(channelId, entries) → { added, skipped }`; INSERTs new entries by `video_id`; skips duplicates (idempotent on re-poll)
-- [ ] `RssPoller` deep module exposes `pollAll() → { succeeded, failed, results: [{ channel_id, status: 'ok'|'error', added, error? }] }`; iterates `is_included=true` subscriptions; caps concurrency to 5 (configurable via env)
-- [ ] Per-channel try/catch: one channel's failure does not break the loop; failure is logged with `channel_id` + error message
-- [ ] `last_polled_at` updated for **every** attempted channel (success AND failure)
-- [ ] 15-min cron interval registered on server boot; first poll runs ~15s after boot to surface issues early
-- [ ] Manual "Poll now": `POST /api/youtube/poll` triggers immediate poll, returns the same shape as `pollAll()`
-- [ ] Tests: `RssFeedFetcher` against sample Atom XML (single entry, multiple entries, empty feed, malformed XML, 404); `VideoIngest` for new / dup / mixed scenarios; `RssPoller` for per-channel failure isolation (one mock 404 doesn't kill others), concurrency cap respected, `last_polled_at` updated on both success and failure paths
+- [x] Migration adds `videos` table per PRD-003 schema: `id, video_id (UNIQUE), channel_id (FK→subscriptions.channel_id, ON DELETE RESTRICT), title, published_at, thumbnail_url, link, discovered_at, folder_id (nullable FK→folders), created_at, updated_at`
+- [x] Migration adds `video_tags` table: `video_id, tag_id` composite PK, mirroring `bookmark_tags` pattern
+- [x] `RssFeedFetcher` deep module exposes `fetch(channelId) → FeedEntry[]`; fetches `https://www.youtube.com/feeds/videos.xml?channel_id=<id>`; parses Atom XML; returns `[{ video_id, title, published_at, thumbnail_url, link }]`
+- [x] Malformed XML → typed error (does not crash)
+- [x] HTTP 404 / network error → typed error per channel (does not crash)
+- [x] Empty feed → returns `[]`
+- [x] `VideoIngest` deep module exposes `ingest(channelId, entries) → { added, skipped }`; INSERTs new entries by `video_id`; skips duplicates (idempotent on re-poll)
+- [x] `RssPoller` deep module exposes `pollAll() → { succeeded, failed, results: [{ channel_id, status: 'ok'|'error', added, error? }] }`; iterates `is_included=true` subscriptions; caps concurrency to 5 (configurable via env)
+- [x] Per-channel try/catch: one channel's failure does not break the loop; failure is logged with `channel_id` + error message
+- [x] `last_polled_at` updated for **every** attempted channel (success AND failure)
+- [x] 15-min cron interval registered on server boot; first poll runs ~15s after boot to surface issues early
+- [x] Manual "Poll now": `POST /api/youtube/poll` triggers immediate poll, returns the same shape as `pollAll()`
+- [x] Tests: `RssFeedFetcher` against sample Atom XML (single entry, multiple entries, empty feed, malformed XML, 404); `VideoIngest` for new / dup / mixed scenarios; `RssPoller` for per-channel failure isolation (one mock 404 doesn't kill others), concurrency cap respected, `last_polled_at` updated on both success and failure paths
 - [ ] Manual smoke: pick a real channel known to publish frequently, click "Poll now", see new video in DB; toggle channel off, "Poll now" excludes it; toggle on, polling resumes
 
 ## Blocked by

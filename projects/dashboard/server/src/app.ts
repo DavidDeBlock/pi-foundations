@@ -21,9 +21,11 @@ import type { EmailSyncWorker } from './email-sync-worker.js'
 import { youtubeApi, type YouTubeOAuthClient } from './youtube-oauth.js'
 import { youtubeSettingsView, youtubeSettingsSetupOnly } from './youtube-settings.js'
 import type { YouTubeSubscriptionsSync } from './youtube-subscriptions-sync.js'
+import type { YouTubeRssPoller } from './youtube-rss-poller.js'
 import { youtubeSyncApi } from './youtube-subscriptions-api.js'
 import { subscriptionsApi } from './youtube-subscriptions-list-api.js'
 import { subscriptionsViewApi } from './youtube-subscriptions-view.js'
+import { youtubeRssPollApi } from './youtube-rss-poll-api.js'
 
 export interface EmailDeps {
   /** AES-256-GCM cipher for OAuth tokens at rest. */
@@ -76,6 +78,15 @@ export interface YouTubeDeps {
    *   * The daily scheduler (constructed in `index.ts`).
    */
   readonly subscriptionsSync: YouTubeSubscriptionsSync
+  /**
+   * RSS poller (issue YT-004). Used by:
+   *   * `POST /api/youtube/poll` — manual trigger endpoint.
+   *   * The 15-minute background scheduler (constructed in
+   *     `index.ts`).
+   * The route mounts the poller directly; the scheduler wraps
+   * it with a timer but isn't part of the API surface.
+   */
+  readonly rssPoller: YouTubeRssPoller
 }
 
 export interface AppDeps {
@@ -223,6 +234,14 @@ export function createApp({
       '/api/youtube',
       youtubeSyncApi({
         sync: youtube.subscriptionsSync,
+      }),
+    )
+    // RSS poll endpoint (issue YT-004): `POST /api/youtube/poll`.
+    // Mounted alongside the OAuth + sync routes on `/api/youtube`.
+    app.route(
+      '/api/youtube',
+      youtubeRssPollApi({
+        poller: youtube.rssPoller,
       }),
     )
     app.route(

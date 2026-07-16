@@ -93,6 +93,7 @@ describe('Migrations runner', () => {
       '007_email_sync_debounce',
       '008_youtube_accounts',
       '009_subscriptions',
+      '010_videos',
     ])
 
     // Spot-check that every table from the PRD schema now exists.
@@ -120,6 +121,9 @@ describe('Migrations runner', () => {
     expect(names).toContain('email_trigrams')
     // Dashboard-only tag table from issue #025.
     expect(names).toContain('email_tags')
+    // YouTube videos table + video_tags table from issue YT-004.
+    expect(names).toContain('videos')
+    expect(names).toContain('video_tags')
     // Sync debounce column for the background scheduler (issue #026).
     const syncCols = db.all<{ name: string }>('PRAGMA table_info(sync_state)')
     expect(syncCols.some((c) => c.name === 'last_manual_trigger_at')).toBe(true)
@@ -128,11 +132,11 @@ describe('Migrations runner', () => {
   it('is idempotent — running twice does NOT re-apply', async () => {
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const firstApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(firstApplied).toHaveLength(9)
+    expect(firstApplied).toHaveLength(10)
 
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const secondApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(secondApplied).toHaveLength(9)
+    expect(secondApplied).toHaveLength(10)
     // applied_at should be unchanged on re-run (still the original timestamps).
     expect(secondApplied.map((r) => r.name).sort()).toEqual(
       firstApplied.map((r) => r.name).sort(),

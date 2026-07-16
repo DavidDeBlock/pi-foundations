@@ -15,6 +15,14 @@ import {
   YouTubeSubscriptionsScheduler,
   DEFAULT_YOUTUBE_SYNC_INTERVAL_HOURS,
 } from './youtube-subscriptions-scheduler.js'
+import {
+  YouTubeRssPoller,
+  DEFAULT_POLL_CONCURRENCY,
+} from './youtube-rss-poller.js'
+import {
+  YouTubeRssScheduler,
+  DEFAULT_YOUTUBE_RSS_INTERVAL_MIN,
+} from './youtube-rss-scheduler.js'
 
 async function main(): Promise<void> {
   const config = await loadConfig()
@@ -82,6 +90,19 @@ async function main(): Promise<void> {
     : null
   if (youtubeSyncScheduler) youtubeSyncScheduler.start()
 
+  // YouTube RSS scheduler (issue YT-004). 15-min interval, first
+  // poll ~15s after boot. The OAuth callback does NOT auto-trigger
+  // an RSS poll (subscriber count is small and the next 15-min
+  // tick catches up naturally); the manual endpoint is the only
+  // way to force an immediate poll.
+  const youtubeRssSched = youtube
+    ? new YouTubeRssScheduler({
+        poller: youtube.rssPoller,
+        intervalMin: DEFAULT_YOUTUBE_RSS_INTERVAL_MIN,
+      })
+    : null
+  if (youtubeRssSched) youtubeRssSched.start()
+
   // Graceful shutdown. Best-effort cleanup of the timer so a
   // deployed dashboard doesn't keep ticking after `pm2 stop`.
   const shutdown = (signal: NodeJS.Signals): void => {
@@ -89,6 +110,7 @@ async function main(): Promise<void> {
     console.log(`[dashboard] ${signal} received; stopping scheduler and exiting`)
     if (syncScheduler) syncScheduler.stop()
     if (youtubeSyncScheduler) youtubeSyncScheduler.stop()
+    if (youtubeRssSched) youtubeRssSched.stop()
     db.close()
     process.exit(0)
   }
@@ -221,6 +243,17 @@ function buildYouTubeDeps(
     oauthClient: client,
   })
 
+  // RSS poller (issue YT-004). Same DB, no OAuth deps needed
+  // (the public RSS endpoint is unauthenticated). Concurrency
+  // cap is wired from `YOUTUBE_RSS_CONCURRENCY` env so the
+  // operator can tune it.
+  const rssPoller = new YouTubeRssPoller({
+    db,
+    concurrency: process.env.YOUTUBE_RSS_CONCURRENCY
+      ? Number.parseInt(process.env.YOUTUBE_RSS_CONCURRENCY, 10)
+      : DEFAULT_POLL_CONCURRENCY,
+  })
+
   return {
     tokenCipher,
     stateSigner,
@@ -229,6 +262,7 @@ function buildYouTubeDeps(
     redirectUri: youtubeOauthRedirectUri,
     client,
     subscriptionsSync,
+    rssPoller,
   }
 }
 
