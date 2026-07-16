@@ -252,6 +252,29 @@ describe('GET /videos — row rendering', () => {
     expect(html).toContain('value="playlist" selected')
     expect(html).toContain('value="PL-one" selected')
   })
+
+  it('shows watched count/last-watch metadata and an unwatched-only persistent control', async () => {
+    const id = env.seed({ videoId: 'watched-card', title: 'Watched card' })
+    env.db.run(`INSERT INTO youtube_history_imports
+      (id,file_hash,original_filename,staged_filename,status,total_count,new_event_count,duplicate_count,
+       malformed_count,unique_video_count,new_video_count,committed_event_count,created_at,expires_at,committed_at)
+      VALUES ('view-import','hash','history.json','gone.json','committed',2,2,0,0,1,0,2,
+       '2026-07-16T00:00:00Z','2026-07-17T00:00:00Z','2026-07-16T00:00:00Z')`)
+    for (const [eventId, watchedAt] of [['one','2026-07-15T00:00:00Z'],['two','2026-07-16T00:00:00Z']]) {
+      env.db.run(`INSERT INTO youtube_watch_events
+        (id,video_id,youtube_video_id,watched_at,title_snapshot,event_fingerprint,history_import_id,created_at)
+        VALUES (?,?,?,?,?,?, 'view-import','2026-07-16T00:00:00Z')`,
+      [eventId, id, 'watched-card', watchedAt, 'Watched card', `fp-${eventId}`])
+    }
+    const html = await getText(await get(env.app, '/videos'))
+    expect(html).toContain('Watched · 2×')
+    expect(html).toContain('Last watched 2026-07-16 00:00 UTC')
+    expect(html).toContain('data-videos-unwatched')
+    expect(html).toContain('dashboard.youtube.unwatched-only')
+    const filtered = await getText(await get(env.app, '/videos?unwatched=true'))
+    expect(filtered).not.toContain('Watched card')
+    expect(filtered).toContain('name="unwatched" value="true" checked')
+  })
 })
 
 // ─── Filter dropdown state ──────────────────────────────────────────────

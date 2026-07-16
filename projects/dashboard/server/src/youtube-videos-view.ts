@@ -61,9 +61,10 @@ export function youtubeVideosView(
     const folderIdRaw = c.req.query('folder_id') ?? 'all'
     const tagId = c.req.query('tag_id') || undefined
     const playlistId = c.req.query('playlist_id') || undefined
-    const source = c.req.query('source') === 'playlist' || playlistId
-      ? 'playlist' as const
-      : undefined
+    const sourceRaw = c.req.query('source')
+    const source: 'playlist' | 'history' | undefined = playlistId ? 'playlist'
+      : sourceRaw === 'playlist' || sourceRaw === 'history' ? sourceRaw : undefined
+    const unwatched = c.req.query('unwatched') === 'true'
     const page = parsePositiveInt(c.req.query('page')) ?? 1
     const limitRaw = parsePositiveInt(c.req.query('limit')) ?? 50
 
@@ -81,6 +82,7 @@ export function youtubeVideosView(
             ...(tagId ? { tagId } : {}),
             ...(source ? { source } : {}),
             ...(playlistId ? { playlistId } : {}),
+            ...(unwatched ? { unwatched: true } : {}),
             page,
             limit: limitRaw,
           }
@@ -91,6 +93,7 @@ export function youtubeVideosView(
               ...(tagId ? { tagId } : {}),
               ...(source ? { source } : {}),
               ...(playlistId ? { playlistId } : {}),
+              ...(unwatched ? { unwatched: true } : {}),
               page,
               limit: limitRaw,
             }
@@ -100,6 +103,7 @@ export function youtubeVideosView(
               ...(tagId ? { tagId } : {}),
               ...(source ? { source } : {}),
               ...(playlistId ? { playlistId } : {}),
+              ...(unwatched ? { unwatched: true } : {}),
               page,
               limit: limitRaw,
             }
@@ -126,6 +130,7 @@ export function youtubeVideosView(
         tagId,
         source,
         playlistId,
+        unwatched,
         channels,
         folders,
         tags,
@@ -147,8 +152,9 @@ interface RenderPageOptions {
   readonly channelId: string | undefined
   readonly folderIdRaw: string
   readonly tagId: string | undefined
-  readonly source: 'playlist' | undefined
+  readonly source: 'playlist' | 'history' | undefined
   readonly playlistId: string | undefined
+  readonly unwatched: boolean
   readonly channels: Array<{ readonly channelId: string; readonly channelTitle: string | null }>
   readonly folders: ReadonlyArray<{
     readonly id: string
@@ -202,6 +208,7 @@ ${COMMON_HEAD}
           <select id="source" name="source" data-videos-source>
             <option value="">New videos</option>
             <option value="playlist" ${opts.source === 'playlist' ? 'selected' : ''}>Playlists</option>
+            <option value="history" ${opts.source === 'history' ? 'selected' : ''}>Watch history</option>
           </select>
         </div>
         <div class="videos-filter">
@@ -243,6 +250,7 @@ ${COMMON_HEAD}
         <div class="videos-filter videos-filter-actions">
           <button type="submit">Filter</button>
         </div>
+        <label class="videos-unwatched-toggle"><input type="checkbox" name="unwatched" value="true" ${opts.unwatched ? 'checked' : ''} data-videos-unwatched> <span>Unwatched only</span></label>
       </form>
 
       <p class="videos-counts">
@@ -257,6 +265,7 @@ ${COMMON_HEAD}
   </div>
   ${THEME_SCRIPT_TAG}
   ${HAMBURGER_SCRIPT_TAG}
+  <script>${VIDEOS_FILTER_SCRIPT}</script>
 </body>
 </html>`
 }
@@ -275,6 +284,9 @@ function renderRow(v: VideoListItem): string {
   const playlistChips = v.playlists.map((playlist) =>
     `<span class="videos-row-playlist">${escapeHtml(playlist.title)}</span>`,
   )
+  const watched = v.watchCount > 0
+    ? `<span class="videos-row-watched" title="Last watched ${escapeHtml(formatDateFull(v.lastWatchedAt!))}">Watched${v.watchCount > 1 ? ` · ${v.watchCount}×` : ''}</span>`
+    : ''
   return `<li class="videos-row" data-videos-row data-video-id="${escapeHtml(v.id)}">
   <a class="videos-row-link" href="/videos/${encodeURIComponent(v.id)}">
     ${thumb}
@@ -285,7 +297,7 @@ function renderRow(v: VideoListItem): string {
         <span class="videos-row-dot">\u00b7</span>
         <span class="videos-row-date"><time datetime="${escapeHtml(v.publishedAt)}">${formatDate(v.publishedAt)}</time></span>
       </span>
-      <span class="videos-row-tags">${folder}${tagChips.length > 0 ? `<span class="videos-row-tag-list">${tagChips.join('')}</span>` : ''}${playlistChips.join('')}</span>
+      <span class="videos-row-tags">${watched}${folder}${tagChips.length > 0 ? `<span class="videos-row-tag-list">${tagChips.join('')}</span>` : ''}${playlistChips.join('')}</span>
     </span>
   </a>
 </li>`
@@ -295,7 +307,7 @@ function renderEmpty(opts: RenderPageOptions): string {
   if (opts.total !== 0) return ''
   // Distinct message when filters are active vs not.
   const filtersActive =
-    opts.channelId || opts.folderIdRaw !== 'all' || opts.tagId || opts.source || opts.playlistId
+    opts.channelId || opts.folderIdRaw !== 'all' || opts.tagId || opts.source || opts.playlistId || opts.unwatched
   if (filtersActive) {
     return `<div class="videos-empty">
   <p>No videos match those filters.</p>
@@ -322,6 +334,7 @@ function renderPagination(
     if (opts.tagId) sp.set('tag_id', opts.tagId)
     if (opts.source) sp.set('source', opts.source)
     if (opts.playlistId) sp.set('playlist_id', opts.playlistId)
+    if (opts.unwatched) sp.set('unwatched', 'true')
     sp.set('page', String(page))
     return sp.toString()
   }
@@ -382,6 +395,11 @@ function formatDate(iso: string): string {
   }
 }
 
+function formatDateFull(iso: string): string {
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? iso : date.toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
+}
+
 // ─── Stylesheet (scoped to the page) ─────────────────────────────────────
 
 const VIDEOS_VIEW_STYLES = `
@@ -396,6 +414,8 @@ const VIDEOS_VIEW_STYLES = `
 .videos-filter select, .videos-filter button { min-height: 38px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; }
 .videos-filter button { color: var(--accent-text); background: var(--accent); border-color: var(--accent); font-weight: 600; }
 .videos-filter-actions { align-self: end; }
+.videos-unwatched-toggle { align-self:end; min-height:38px; display:flex; align-items:center; gap:7px; padding:0 9px; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); cursor:pointer; font-weight:600; }
+.videos-unwatched-toggle input { accent-color:var(--accent); width:17px; height:17px; }
 .videos-counts { margin: 0 0 16px; color: var(--muted); }
 .videos-list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(270px, 100%), 1fr)); gap: 18px; }
 .videos-row { min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 10px 30px rgba(4, 10, 24, 0.13); transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
@@ -414,6 +434,7 @@ const VIDEOS_VIEW_STYLES = `
 .videos-row-tag { padding: 2px 8px; background: var(--surface-2, rgba(127,127,127,0.1)); border-radius: 4px; color: var(--muted); }
 .videos-row-tag-list { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .videos-row-playlist { padding: 2px 8px; border: 1px solid color-mix(in srgb, #8b5cf6 50%, var(--border)); border-radius: 999px; color: #a78bfa; background: color-mix(in srgb, #8b5cf6 10%, transparent); }
+.videos-row-watched { padding:2px 8px; border-radius:999px; color:#34d399; background:color-mix(in srgb,#10b981 12%,transparent); border:1px solid color-mix(in srgb,#10b981 35%,var(--border)); }
 .videos-empty { padding: 32px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; text-align: center; color: var(--muted); }
 .videos-empty button { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); cursor: pointer; }
 .videos-pagination { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; }
@@ -424,6 +445,20 @@ const VIDEOS_VIEW_STYLES = `
   .videos-main { padding: 18px 12px 48px; }
 }
 `
+
+export const VIDEOS_FILTER_SCRIPT = `(function(){
+  var box=document.querySelector('[data-videos-unwatched]');
+  if(!box)return;
+  var key='dashboard.youtube.unwatched-only';
+  var params=new URLSearchParams(window.location.search);
+  if(!params.has('unwatched') && localStorage.getItem(key)==='true'){
+    params.set('unwatched','true'); window.location.replace('/videos?'+params.toString()); return;
+  }
+  box.addEventListener('change',function(){
+    localStorage.setItem(key,box.checked?'true':'false');
+    if(box.form)box.form.submit();
+  });
+})();`
 
 // Inline script for the "Poll now" button on the empty-state copy.
 // Tiny (~30 lines); same rationale as the inline IIFE in the

@@ -142,6 +142,23 @@ describe('GET /videos/:id — scaffold', () => {
     expect(body).toContain('href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"')
   })
 
+  it('shows derived watch count and last watched time without playback progress', async () => {
+    const id = env.seed()
+    env.db.run(`INSERT INTO youtube_history_imports
+      (id,file_hash,original_filename,staged_filename,status,total_count,new_event_count,duplicate_count,
+       malformed_count,unique_video_count,new_video_count,committed_event_count,created_at,expires_at,committed_at)
+      VALUES ('detail-import','hash','history.json','gone.json','committed',1,1,0,0,1,0,1,
+       '2026-07-16T00:00:00Z','2026-07-17T00:00:00Z','2026-07-16T00:00:00Z')`)
+    env.db.run(`INSERT INTO youtube_watch_events
+      (id,video_id,youtube_video_id,watched_at,title_snapshot,event_fingerprint,history_import_id,created_at)
+      VALUES ('detail-watch',?,'dQw4w9WgXcQ','2026-07-15T09:30:00Z','Snapshot','detail-fp','detail-import','2026-07-16T00:00:00Z')`, [id])
+    const { body } = await getText(env.app, `/videos/${id}`)
+    expect(body).toContain('video-detail-watched">Watched')
+    expect(body).toContain('1 time · last watched')
+    expect(body).toContain('2026-07-15T09:30:00Z')
+    expect(body).not.toContain('playback position')
+  })
+
   it('HTML-escapes channel + title (XSS defence)', async () => {
     const id = env.seed({ title: '<script>alert(1)</script>' })
     const { body } = await getText(env.app, `/videos/${id}`)

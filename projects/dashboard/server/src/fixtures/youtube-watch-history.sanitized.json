@@ -1,0 +1,36 @@
+[
+  {
+    "header": "YouTube",
+    "title": "Watched A useful talk",
+    "titleUrl": "https://www.youtube.com/watch?v=abc123XYZ_0",
+    "subtitles": [{
+      "name": "Example Learning",
+      "url": "https://www.youtube.com/channel/UCexample123"
+    }],
+    "time": "2026-07-10T10:30:00.000Z",
+    "products": ["YouTube"],
+    "activityControls": ["YouTube watch history"]
+  },
+  {
+    "header": "YouTube",
+    "title": "Watched A useful talk",
+    "titleUrl": "https://www.youtube.com/watch?v=abc123XYZ_0",
+    "subtitles": [{
+      "name": "Example Learning",
+      "url": "https://www.youtube.com/channel/UCexample123"
+    }],
+    "time": "2026-07-11T11:45:00.000Z",
+    "products": ["YouTube"]
+  },
+  {
+    "header": "YouTube",
+    "title": "Watched a video that has been removed",
+    "time": "2026-07-12T08:00:00.000Z",
+    "products": ["YouTube"]
+  },
+  {
+    "header": "YouTube",
+    "title": "Watched malformed activity without a timestamp",
+    "products": ["YouTube"]
+  }
+]

@@ -35,6 +35,7 @@ import {
   DEFAULT_YOUTUBE_PLAYLIST_SYNC_INTERVAL_HOURS,
   YouTubePlaylistsScheduler,
 } from './youtube-playlists-scheduler.js'
+import { YouTubeHistoryImports } from './youtube-history-imports.js'
 
 async function main(): Promise<void> {
   const config = await loadConfig()
@@ -46,6 +47,8 @@ async function main(): Promise<void> {
   await runMigrations(db, {
     dir: resolve(process.cwd(), 'migrations'),
   })
+  const youtubeHistory = new YouTubeHistoryImports({ db, dataDir: config.dataDir })
+  await youtubeHistory.initialize()
 
   // Email slice is OPTIONAL at boot. When all four env vars are present
   // we wire up the OAuth + sync routes. When any are missing, we mount
@@ -145,6 +148,7 @@ async function main(): Promise<void> {
     db,
     email,
     youtube,
+    youtubeHistory,
   })
 
   // HTTPS when DASHBOARD_TLS_CERT + DASHBOARD_TLS_KEY are set;

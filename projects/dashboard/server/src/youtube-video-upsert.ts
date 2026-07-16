@@ -20,6 +20,8 @@ export interface YouTubeVideoUpsertInput {
     readonly type: VideoOriginType
     readonly sourceId?: string
   } | null
+  /** History snapshots can be older/incomplete; never replace richer metadata. */
+  readonly preserveExistingMetadata?: boolean
 }
 
 export interface YouTubeVideoUpsertResult {
@@ -50,16 +52,18 @@ export function upsertYouTubeVideo(
       ? (knownChannel?.thumbnail_url ?? null)
       : input.channelThumbnailUrl
 
-    db.run(
-      `INSERT INTO youtube_channels
-         (channel_id, title, thumbnail_url, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(channel_id) DO UPDATE SET
-         title = excluded.title,
-         thumbnail_url = excluded.thumbnail_url,
-         updated_at = excluded.updated_at`,
-      [input.channelId, channelTitle, channelThumbnail, now, now],
-    )
+    if (!input.preserveExistingMetadata || !knownChannel) {
+      db.run(
+        `INSERT INTO youtube_channels
+           (channel_id, title, thumbnail_url, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(channel_id) DO UPDATE SET
+           title = excluded.title,
+           thumbnail_url = excluded.thumbnail_url,
+           updated_at = excluded.updated_at`,
+        [input.channelId, channelTitle, channelThumbnail, now, now],
+      )
+    }
 
     const existing = db.get<{ id: string }>(
       'SELECT id FROM videos WHERE video_id = ?',
@@ -70,21 +74,23 @@ export function upsertYouTubeVideo(
     if (existing) {
       id = existing.id
       outcome = 'existing'
-      db.run(
-        `UPDATE videos
-            SET channel_id = ?, title = ?, published_at = ?,
-                thumbnail_url = ?, link = ?, updated_at = ?
-          WHERE id = ?`,
-        [
-          input.channelId,
-          input.title,
-          input.publishedAt,
-          input.thumbnailUrl,
-          input.link,
-          now,
-          id,
-        ],
-      )
+      if (!input.preserveExistingMetadata) {
+        db.run(
+          `UPDATE videos
+              SET channel_id = ?, title = ?, published_at = ?,
+                  thumbnail_url = ?, link = ?, updated_at = ?
+            WHERE id = ?`,
+          [
+            input.channelId,
+            input.title,
+            input.publishedAt,
+            input.thumbnailUrl,
+            input.link,
+            now,
+            id,
+          ],
+        )
+      }
     } else {
       id = randomUUID()
       outcome = 'inserted'

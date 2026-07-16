@@ -230,6 +230,8 @@ ${COMMON_HEAD}
           </p>`
         : ''}
 
+      ${renderHistoryImport()}
+
       <section class="setup-docs">
         <h2>One-time Google Cloud Console setup</h2>
         <p>
@@ -344,8 +346,29 @@ ${COMMON_HEAD}
     ${CLIPBOARD_SCRIPT_TAG}
     ${THEME_SCRIPT_TAG}
     ${HAMBURGER_SCRIPT_TAG}
+    <script>${HISTORY_IMPORT_SCRIPT}</script>
   </body>
 </html>`
+}
+
+function renderHistoryImport(): string {
+  return `<section class="history-import" id="watch-history-import" data-history-import>
+    <div class="history-import-heading"><div><span class="page-eyebrow">Private local import</span><h2>Import watch history</h2><p>Bring in watch events from Google Takeout. The file is validated locally, staged privately, and nothing is saved until you confirm the preview.</p></div><a href="/history">View History →</a></div>
+    <details class="takeout-help"><summary>How to get <code>watch-history.json</code></summary><ol><li>Open <a href="https://takeout.google.com/" target="_blank" rel="noopener">Google Takeout</a> and deselect all products.</li><li>Select <strong>YouTube and YouTube Music</strong>, choose <strong>history</strong>, and create the export.</li><li>In the archive, select <code>YouTube and YouTube Music/history/watch-history.json</code> below.</li></ol></details>
+    <form class="history-upload-form" data-history-upload-form>
+      <label for="history-file">Takeout JSON file</label>
+      <div><input id="history-file" name="file" type="file" accept="application/json,.json" required data-history-file><button type="submit" class="primary-button" data-history-preview>Validate file</button></div>
+    </form>
+    <div class="history-import-status" data-history-status role="status" aria-live="polite"></div>
+    <section class="history-preview" data-history-preview-panel hidden aria-labelledby="history-preview-title">
+      <div class="history-preview-title"><div><span class="page-eyebrow">Dry-run preview</span><h3 id="history-preview-title">Review before importing</h3></div><span data-history-preview-expiry></span></div>
+      <dl class="history-preview-counts" data-history-preview-counts></dl>
+      <div class="history-preview-warning" data-history-preview-warning hidden></div>
+      <div class="history-confirm"><p>This action only adds missing watch events. It does not change or delete anything on YouTube.</p><button type="button" class="primary-button" data-history-confirm>Confirm import</button></div>
+    </section>
+    <section class="history-import-result" data-history-result hidden></section>
+    <section class="history-audits"><h3>Previous imports</h3><p data-history-audit-empty>Loading import history…</p><div class="history-audit-list" data-history-audit-list></div></section>
+  </section>`
 }
 
 function renderConnectPrompt(): string {
@@ -580,6 +603,19 @@ const STYLES = `
   .setup-docs dd { color: var(--muted); line-height: 1.5; margin-left: 1rem; }
   .setup-docs a { color: var(--accent); text-decoration: none; }
   .setup-docs a:hover { text-decoration: underline; }
+  .history-import { margin-top:2.5rem; padding:1.4rem; border:1px solid var(--border); border-radius:14px; background:var(--surface); box-shadow:var(--shadow); }
+  .history-import h2,.history-import h3 { margin:0; }.history-import p { color:var(--muted); line-height:1.5; }
+  .history-import-heading { display:flex; justify-content:space-between; gap:20px; align-items:flex-start; }.history-import-heading>div>p { max-width:650px; margin:.45rem 0 0; }.history-import-heading>a { color:var(--accent); text-decoration:none; white-space:nowrap; }
+  .takeout-help { margin:1rem 0; padding:.75rem 1rem; border:1px solid var(--border); border-radius:9px; background:var(--surface-2); }.takeout-help summary { cursor:pointer; font-weight:600; }.takeout-help ol { color:var(--muted); line-height:1.5; }
+  .history-upload-form { display:grid; gap:.4rem; margin-top:1rem; }.history-upload-form>label { font-size:.8rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }.history-upload-form>div { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }.history-upload-form input { flex:1; min-width:230px; padding:.55rem; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); }
+  .history-import-status { min-height:1.4em; margin:.8rem 0; color:var(--muted); }.history-import-status[data-kind=error] { color:var(--danger); }.history-import-status[data-kind=working]::before { content:'◌'; display:inline-block; margin-right:.4rem; animation:history-spin 1s linear infinite; }
+  .history-preview { border-top:1px solid var(--border); padding-top:1.2rem; }.history-preview-title { display:flex; justify-content:space-between; gap:12px; }.history-preview-title>span { color:var(--muted); font-size:.8rem; }
+  .history-preview-counts { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; margin:1rem 0; }.history-preview-counts div { padding:.7rem; border-radius:9px; background:var(--surface-2); }.history-preview-counts dt { color:var(--muted); font-size:.75rem; }.history-preview-counts dd { margin:.2rem 0 0; font-size:1.1rem; font-weight:650; }
+  .history-preview-warning { padding:.7rem .9rem; border:1px solid color-mix(in srgb,#f59e0b 45%,var(--border)); border-radius:8px; color:#f59e0b; background:color-mix(in srgb,#f59e0b 8%,transparent); }
+  .history-confirm { display:flex; justify-content:space-between; gap:18px; align-items:center; }.history-confirm p { margin:.6rem 0; font-size:.85rem; }.history-confirm button { white-space:nowrap; }
+  .history-import-result { margin-top:1rem; padding:1rem; border:1px solid color-mix(in srgb,#10b981 45%,var(--border)); border-radius:9px; background:color-mix(in srgb,#10b981 8%,var(--surface)); }.history-import-result h3 { color:var(--success); }.history-import-result a { color:var(--accent); }
+  .history-audits { margin-top:1.5rem; padding-top:1.2rem; border-top:1px solid var(--border); }.history-audits>p { margin:.5rem 0; }.history-audit-list { display:grid; gap:8px; }.history-audit { padding:.8rem; border:1px solid var(--border); border-radius:9px; background:var(--bg); }.history-audit header { display:flex; justify-content:space-between; gap:10px; }.history-audit strong { overflow-wrap:anywhere; }.history-audit header span { color:var(--muted); font-size:.78rem; }.history-audit p { margin:.35rem 0 0; font-size:.82rem; }.history-audit code { color:var(--muted); }
+  @keyframes history-spin { to { transform:rotate(360deg); } }
   @media (max-width: 640px) {
     .youtube-settings-main { padding-top: 1.5rem; }
     .connect-prompt, .setup-mode-prompt, .setup-required { padding: 1rem; }
@@ -589,5 +625,68 @@ const STYLES = `
     .account-actions, .disconnect-form, .danger-button { width: 100%; }
     .danger-button { justify-content: center; min-height: 42px; }
     .setup-docs dd { margin-left: 0; }
+    .history-import-heading,.history-confirm { flex-direction:column; }.history-confirm button { width:100%; justify-content:center; }
   }
 `
+
+const HISTORY_IMPORT_SCRIPT = String.raw`(function () {
+  var root = document.querySelector('[data-history-import]')
+  if (!root) return
+  var form = root.querySelector('[data-history-upload-form]')
+  var file = root.querySelector('[data-history-file]')
+  var status = root.querySelector('[data-history-status]')
+  var panel = root.querySelector('[data-history-preview-panel]')
+  var counts = root.querySelector('[data-history-preview-counts]')
+  var warning = root.querySelector('[data-history-preview-warning]')
+  var expiry = root.querySelector('[data-history-preview-expiry]')
+  var confirm = root.querySelector('[data-history-confirm]')
+  var result = root.querySelector('[data-history-result]')
+  var auditList = root.querySelector('[data-history-audit-list]')
+  var auditEmpty = root.querySelector('[data-history-audit-empty]')
+  var token = null
+
+  function setStatus(message, kind) { status.textContent = message; status.dataset.kind = kind || '' }
+  function metric(label, value) { var d=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=String(value);d.append(dt,dd);return d }
+  function date(value) { if (!value) return '—'; var d=new Date(value); return isNaN(d.getTime()) ? value : d.toLocaleString() }
+  async function json(response) { var body=await response.json().catch(function(){return {error:'The server returned an invalid response.'}}); if(!response.ok) throw new Error(body.error || 'Request failed.'); return body }
+
+  form.addEventListener('submit', async function (event) {
+    event.preventDefault(); if (!file.files || !file.files[0]) { setStatus('Choose a watch-history.json file first.', 'error'); return }
+    token=null; panel.hidden=true; result.hidden=true; setStatus('Validating your Takeout file…', 'working')
+    var body=new FormData(); body.append('file', file.files[0])
+    try {
+      var preview=await json(await fetch('/api/youtube/history/preview',{method:'POST',body:body,credentials:'same-origin'}))
+      token=preview.token; counts.replaceChildren(
+        metric('Total events',preview.total_count),metric('New events',preview.new_event_count),metric('Duplicates',preview.duplicate_count),metric('Malformed',preview.malformed_count),metric('Unique videos',preview.unique_video_count),metric('New videos',preview.new_video_count),metric('Oldest watch',date(preview.oldest_watched_at)),metric('Newest watch',date(preview.newest_watched_at)))
+      expiry.textContent='Preview expires '+date(preview.expires_at)
+      var notes=[]; if(preview.duplicate_count)notes.push(preview.duplicate_count+' duplicate event'+(preview.duplicate_count===1?'':'s')+' will be skipped'); if(preview.malformed_count)notes.push(preview.malformed_count+' malformed entr'+(preview.malformed_count===1?'y':'ies')+' could not be imported')
+      warning.textContent=notes.join('. '); warning.hidden=notes.length===0; panel.hidden=false; confirm.disabled=false
+      setStatus('Validation complete. Review the dry-run counts before confirming.', '')
+      panel.scrollIntoView({behavior:'smooth',block:'nearest'})
+    } catch (error) { setStatus(error instanceof Error ? error.message : 'Could not validate this file.', 'error') }
+  })
+
+  confirm.addEventListener('click', async function () {
+    if(!token)return; confirm.disabled=true; setStatus('Importing watch events…', 'working')
+    try {
+      var imported=await json(await fetch('/api/youtube/history/imports/'+encodeURIComponent(token)+'/commit',{method:'POST',credentials:'same-origin'}))
+      token=null; panel.hidden=true; result.replaceChildren()
+      var heading=document.createElement('h3'); heading.textContent='Import complete'
+      var copy=document.createElement('p'); copy.textContent=imported.committed_event_count+' watch events added · '+imported.duplicate_count+' duplicates skipped · '+imported.malformed_count+' malformed entries skipped · '+imported.inserted_video_count+' new videos created.'
+      var link=document.createElement('a'); link.href='/history'; link.textContent='View watch history →'; result.append(heading,copy,link); result.hidden=false
+      setStatus('Your watch history is ready.', ''); await loadAudits()
+    } catch(error) { confirm.disabled=false; setStatus(error instanceof Error ? error.message : 'Could not commit this import.', 'error') }
+  })
+
+  async function loadAudits() {
+    try {
+      var body=await json(await fetch('/api/youtube/history/imports',{credentials:'same-origin'})); auditList.replaceChildren(); auditEmpty.hidden=body.items.length>0; if(!body.items.length)auditEmpty.textContent='No imports yet.'
+      body.items.forEach(function(item){
+        var card=document.createElement('article');card.className='history-audit';var head=document.createElement('header');var name=document.createElement('strong');name.textContent=item.filename;var state=document.createElement('span');state.textContent=item.status+(item.committed_at?' · '+date(item.committed_at):'');head.append(name,state)
+        var meta=document.createElement('p');meta.textContent=(item.committed_event_count===null?item.new_event_count:item.committed_event_count)+' added · '+item.duplicate_count+' duplicates · '+item.malformed_count+' malformed · '+date(item.oldest_watched_at)+' — '+date(item.newest_watched_at)
+        var hash=document.createElement('code');hash.textContent='SHA-256 '+item.file_hash.slice(0,12)+'…';card.append(head,meta,hash);auditList.append(card)
+      })
+    } catch(error) { auditEmpty.hidden=false; auditEmpty.textContent='Import history is unavailable right now.' }
+  }
+  loadAudits()
+})()`

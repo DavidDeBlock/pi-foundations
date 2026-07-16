@@ -101,6 +101,7 @@ describe('Migrations runner', () => {
       '014_youtube_library_foundation',
       '015_youtube_subscription_backfill',
       '016_youtube_playlists',
+      '017_youtube_watch_history',
     ])
 
     // Spot-check that every table from the PRD schema now exists.
@@ -140,6 +141,8 @@ describe('Migrations runner', () => {
     expect(names).toContain('youtube_playlists')
     expect(names).toContain('youtube_playlist_items')
     expect(names).toContain('youtube_playlist_sync_state')
+    expect(names).toContain('youtube_history_imports')
+    expect(names).toContain('youtube_watch_events')
     const subscriptionCols = db.all<{ name: string }>('PRAGMA table_info(subscriptions)')
     expect(subscriptionCols.some((c) => c.name === 'auto_fetch_transcripts')).toBe(true)
     // Sync debounce column for the background scheduler (issue #026).
@@ -150,11 +153,11 @@ describe('Migrations runner', () => {
   it('is idempotent — running twice does NOT re-apply', async () => {
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const firstApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(firstApplied).toHaveLength(16)
+    expect(firstApplied).toHaveLength(17)
 
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const secondApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(secondApplied).toHaveLength(16)
+    expect(secondApplied).toHaveLength(17)
     // applied_at should be unchanged on re-run (still the original timestamps).
     expect(secondApplied.map((r) => r.name).sort()).toEqual(
       firstApplied.map((r) => r.name).sort(),

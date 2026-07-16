@@ -39,6 +39,9 @@ import { youtubePreferencesApi } from './youtube-preferences-api.js'
 import type { YouTubePlaylistsSync } from './youtube-playlists-sync.js'
 import { youtubePlaylistsApi } from './youtube-playlists-api.js'
 import { youtubePlaylistsView } from './youtube-playlists-view.js'
+import type { YouTubeHistoryImports } from './youtube-history-imports.js'
+import { youtubeHistoryApi } from './youtube-history-api.js'
+import { youtubeHistoryView } from './youtube-history-view.js'
 
 export interface EmailDeps {
   /** AES-256-GCM cipher for OAuth tokens at rest. */
@@ -116,6 +119,8 @@ export interface AppDeps {
   readonly db: Database
   readonly email?: EmailDeps
   readonly youtube?: YouTubeDeps
+  /** Private, local-only Google Takeout watch-history importer (YT-012). */
+  readonly youtubeHistory?: YouTubeHistoryImports
 }
 
 /**
@@ -131,6 +136,7 @@ export function createApp({
   db,
   email,
   youtube,
+  youtubeHistory,
 }: AppDeps): Hono<{ Variables: AuthVariables }> {
   const app = new Hono<{ Variables: AuthVariables }>()
 
@@ -160,6 +166,13 @@ export function createApp({
   app.route('/api/folders', foldersApi(db))
   app.route('/api/bookmarks', bookmarksApi(db))
   app.route('/api/tags', tagsApi(db))
+
+  // Takeout history is local data and does not require a connected YouTube
+  // OAuth account. It is still protected by the dashboard's unified auth.
+  if (youtubeHistory) {
+    app.route('/api/youtube/history', youtubeHistoryApi({ imports: youtubeHistory, db }))
+    app.route('/history', youtubeHistoryView({ db }))
+  }
 
   // Email read API (issue #022): list, detail, thread, search.
   // Mounted unconditionally because it only reads from the DB —

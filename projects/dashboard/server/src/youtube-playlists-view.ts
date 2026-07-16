@@ -233,7 +233,7 @@ function renderVideoCard(item: YouTubePlaylistVideoItem, playlist: YouTubePlayli
     ? `<img src="${escapeHtml(item.thumbnailUrl)}" alt="" loading="lazy">`
     : '<span class="video-thumb-fallback" aria-hidden="true">▶</span>'
   const statuses = [
-    item.watched === true ? '<span class="video-state watched">Watched</span>' : '',
+    item.watched === true ? `<span class="video-state watched" title="Last watched ${escapeHtml(formatDate(item.lastWatchedAt!))}">Watched${item.watchCount > 1 ? ` · ${item.watchCount}×` : ''}</span>` : '',
     item.transcriptStatus === 'ready' ? '<span class="video-state">Transcript</span>' : '',
     item.summaryStatus === 'ready' ? '<span class="video-state insight">Insight</span>' : '',
   ].join('')

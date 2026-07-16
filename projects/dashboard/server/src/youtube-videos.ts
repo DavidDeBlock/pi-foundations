@@ -61,9 +61,12 @@ export interface SearchVideosOptions {
   readonly unfoldered?: boolean
   readonly tagId?: string
   /** Restrict the canonical library to videos mirrored from YouTube playlists. */
-  readonly source?: 'playlist'
+  readonly source?: 'playlist' | 'history'
   /** Restrict to one playlist. Implies `source: 'playlist'`. */
   readonly playlistId?: string
+  /** Derived watch-state filters. Callers must not set both. */
+  readonly watched?: boolean
+  readonly unwatched?: boolean
   readonly page?: number
   readonly limit?: number
   /** Optional injected clock to make `discovered_at` ordering
@@ -96,6 +99,8 @@ export interface VideoListItem {
   readonly folderName: string | null
   readonly tags: ReadonlyArray<{ readonly id: string; readonly name: string }>
   readonly playlists: ReadonlyArray<{ readonly id: string; readonly title: string }>
+  readonly watchCount: number
+  readonly lastWatchedAt: string | null
 }
 
 export interface VideoDetail extends VideoListItem {
@@ -196,7 +201,8 @@ export function searchVideos(
 
   // ─── WHERE assembly ────────────────────────────────────────────────
   const playlistContext = options.source === 'playlist' || options.playlistId !== undefined
-  const where: string[] = playlistContext ? [] : ['(s.is_included = 1 OR s.id IS NULL)']
+  const historyContext = options.source === 'history'
+  const where: string[] = playlistContext || historyContext ? [] : ['(s.is_included = 1 OR s.id IS NULL)']
   const params: Array<string | number> = []
   if (options.channelId) {
     where.push('v.channel_id = ?')
@@ -221,6 +227,14 @@ export function searchVideos(
     )`)
     if (options.playlistId) params.push(options.playlistId)
   }
+  if (historyContext) {
+    where.push('EXISTS (SELECT 1 FROM youtube_watch_events source_we WHERE source_we.video_id = v.id)')
+  }
+  if (options.watched) {
+    where.push('EXISTS (SELECT 1 FROM youtube_watch_events filter_we WHERE filter_we.video_id = v.id)')
+  } else if (options.unwatched) {
+    where.push('NOT EXISTS (SELECT 1 FROM youtube_watch_events filter_we WHERE filter_we.video_id = v.id)')
+  }
   const whereSql = where.length > 0 ? ` WHERE ${where.join(' AND ')}` : ''
 
   // Total count uses the same WHERE (subquery wrapper around
@@ -242,7 +256,9 @@ export function searchVideos(
             COALESCE(v.local_title_override, v.title) AS title,
             v.published_at, v.thumbnail_url,
             v.link, v.discovered_at, v.folder_id, f.name AS folder_name,
-            s.is_included AS channel_is_included
+            s.is_included AS channel_is_included,
+            (SELECT COUNT(*) FROM youtube_watch_events watch_count_we WHERE watch_count_we.video_id = v.id) AS watch_count,
+            (SELECT MAX(last_watch_we.watched_at) FROM youtube_watch_events last_watch_we WHERE last_watch_we.video_id = v.id) AS last_watched_at
        FROM videos v
             JOIN youtube_channels c ON c.channel_id = v.channel_id
             LEFT JOIN subscriptions s ON s.channel_id = v.channel_id
@@ -285,8 +301,10 @@ export function getVideoDetail(db: Database, id: string): VideoDetail | null {
             COALESCE(v.local_title_override, v.title) AS title,
             v.published_at, v.thumbnail_url,
             v.link, v.discovered_at, v.folder_id, f.name AS folder_name,
-            s.is_included AS channel_is_included
-            , s.id AS subscription_id
+            s.is_included AS channel_is_included,
+            s.id AS subscription_id,
+            (SELECT COUNT(*) FROM youtube_watch_events watch_count_we WHERE watch_count_we.video_id = v.id) AS watch_count,
+            (SELECT MAX(last_watch_we.watched_at) FROM youtube_watch_events last_watch_we WHERE last_watch_we.video_id = v.id) AS last_watched_at
        FROM videos v
             JOIN youtube_channels c ON c.channel_id = v.channel_id
             LEFT JOIN subscriptions s ON s.channel_id = v.channel_id
@@ -540,6 +558,8 @@ interface VideoListItemRow {
   discovered_at: string
   folder_id: string | null
   folder_name: string | null
+  watch_count: number | bigint
+  last_watched_at: string | null
 }
 
 function rowToVideoListItem(
@@ -564,6 +584,8 @@ function rowToVideoListItem(
     folderName: row.folder_name,
     tags: [],
     playlists: [],
+    watchCount: Number(row.watch_count),
+    lastWatchedAt: row.last_watched_at,
   }
 }
 

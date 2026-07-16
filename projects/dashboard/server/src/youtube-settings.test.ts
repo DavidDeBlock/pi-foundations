@@ -109,6 +109,20 @@ describe('GET /settings/youtube — empty state', () => {
     const res = await env.app.request('/settings/youtube')
     expect(res.status).toBe(401)
   })
+
+  it('renders the Takeout dry-run, explicit-confirm, audit, and progress UI', async () => {
+    const html = await (await env.app.request('/settings/youtube', {
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })).text()
+    expect(html).toContain('id="watch-history-import"')
+    expect(html).toContain('data-history-upload-form')
+    expect(html).toContain('Validate file')
+    expect(html).toContain('data-history-preview-panel')
+    expect(html).toContain('Confirm import')
+    expect(html).toContain('Previous imports')
+    expect(html).toContain('/api/youtube/history/preview')
+    expect(html).toContain('/api/youtube/history/imports')
+  })
 })
 
 // ─── Connected state ──────────────────────────────────────────────────────

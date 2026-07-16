@@ -41,6 +41,9 @@ interface ApiVideoItem {
   readonly folder_name: string | null
   readonly tags: ReadonlyArray<{ readonly id: string; readonly name: string }>
   readonly playlists: ReadonlyArray<{ readonly id: string; readonly title: string }>
+  readonly watched: boolean
+  readonly watch_count: number
+  readonly last_watched_at: string | null
 }
 
 interface ApiVideoDetail extends ApiVideoItem {
@@ -64,6 +67,9 @@ function toApiItem(item: VideoListItem): ApiVideoItem {
     folder_name: item.folderName,
     tags: item.tags,
     playlists: item.playlists,
+    watched: item.watchCount > 0,
+    watch_count: item.watchCount,
+    last_watched_at: item.lastWatchedAt,
   }
 }
 
@@ -161,8 +167,20 @@ export function youtubeVideosApi(
     const channelId = c.req.query('channel_id') || undefined
     const folder = parseFolderFilter(c.req.query('folder_id'))
     const tagId = c.req.query('tag_id') || undefined
-    const source = c.req.query('source') === 'playlist' ? 'playlist' as const : undefined
+    const sourceRaw = c.req.query('source')
+    if (sourceRaw && sourceRaw !== 'playlist' && sourceRaw !== 'history') {
+      return c.json({ error: 'source must be playlist or history' }, 400)
+    }
+    const source = sourceRaw as 'playlist' | 'history' | undefined
     const playlistId = c.req.query('playlist_id') || undefined
+    const watchedRaw = c.req.query('watched')
+    const unwatchedRaw = c.req.query('unwatched')
+    if ((watchedRaw !== undefined && watchedRaw !== 'true') || (unwatchedRaw !== undefined && unwatchedRaw !== 'true')) {
+      return c.json({ error: 'watched and unwatched must be true when provided' }, 400)
+    }
+    if (watchedRaw === 'true' && unwatchedRaw === 'true') {
+      return c.json({ error: 'watched and unwatched filters are contradictory' }, 400)
+    }
     const page = parsePositiveInt(c.req.query('page')) ?? 1
     const limitRaw = parsePositiveInt(c.req.query('limit')) ?? 50
 
@@ -173,6 +191,8 @@ export function youtubeVideosApi(
             ...(tagId !== undefined ? { tagId } : {}),
             ...(source !== undefined ? { source } : {}),
             ...(playlistId !== undefined ? { playlistId } : {}),
+            ...(watchedRaw === 'true' ? { watched: true } : {}),
+            ...(unwatchedRaw === 'true' ? { unwatched: true } : {}),
             page,
             limit: limitRaw,
           }
@@ -183,6 +203,8 @@ export function youtubeVideosApi(
               ...(tagId !== undefined ? { tagId } : {}),
               ...(source !== undefined ? { source } : {}),
               ...(playlistId !== undefined ? { playlistId } : {}),
+              ...(watchedRaw === 'true' ? { watched: true } : {}),
+              ...(unwatchedRaw === 'true' ? { unwatched: true } : {}),
               page,
               limit: limitRaw,
             }
@@ -192,6 +214,8 @@ export function youtubeVideosApi(
               ...(tagId !== undefined ? { tagId } : {}),
               ...(source !== undefined ? { source } : {}),
               ...(playlistId !== undefined ? { playlistId } : {}),
+              ...(watchedRaw === 'true' ? { watched: true } : {}),
+              ...(unwatchedRaw === 'true' ? { unwatched: true } : {}),
               page,
               limit: limitRaw,
             }

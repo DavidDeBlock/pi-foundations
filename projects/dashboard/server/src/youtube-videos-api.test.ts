@@ -126,6 +126,19 @@ describe('auth', () => {
 // ─── GET / ──────────────────────────────────────────────────────────────
 
 describe('GET /api/videos', () => {
+  function markWatched(videoId: string, suffix = '1', watchedAt = '2026-07-15T09:30:00Z'): void {
+    env.db.run(`INSERT OR IGNORE INTO youtube_history_imports
+      (id,file_hash,original_filename,staged_filename,status,total_count,new_event_count,
+       duplicate_count,malformed_count,unique_video_count,new_video_count,committed_event_count,
+       created_at,expires_at,committed_at)
+      VALUES ('api-import','hash','history.json','gone.json','committed',1,1,0,0,1,0,1,
+       '2026-07-16T00:00:00Z','2026-07-17T00:00:00Z','2026-07-16T00:00:00Z')`)
+    env.db.run(`INSERT INTO youtube_watch_events
+      (id,video_id,youtube_video_id,watched_at,title_snapshot,event_fingerprint,history_import_id,created_at)
+      VALUES (?,?,?,?,?,?, 'api-import','2026-07-16T00:00:00Z')`,
+    [`watch-${suffix}`, videoId, `youtube-${suffix}`, watchedAt, 'Snapshot', `fingerprint-${suffix}`])
+  }
+
   it('returns the documented envelope shape', async () => {
     env.seed()
     const res = await req(env.app, '/api/videos', {
@@ -314,6 +327,26 @@ describe('GET /api/videos', () => {
       headers: { authorization: basic(PASSWORD) },
     })
     expect((await asJson<{ total: number }>(missingPlaylist)).total).toBe(0)
+  })
+
+  it('returns derived watched metadata and supports watched, unwatched, and history source filters', async () => {
+    const watchedId = env.seed({ videoId: 'watched-one' })
+    const unwatchedId = env.seed({ videoId: 'unwatched-one' })
+    markWatched(watchedId)
+    markWatched(watchedId, '2', '2026-07-16T09:30:00Z')
+
+    const watched = await asJson<{ items: Array<{ id: string; watched: boolean; watch_count: number; last_watched_at: string }> }>(await req(env.app, '/api/videos?watched=true', { headers: { authorization: basic(PASSWORD) } }))
+    expect(watched.items).toEqual([expect.objectContaining({ id: watchedId, watched: true, watch_count: 2, last_watched_at: '2026-07-16T09:30:00Z' })])
+    const unwatched = await asJson<{ items: Array<{ id: string }> }>(await req(env.app, '/api/videos?unwatched=true', { headers: { authorization: basic(PASSWORD) } }))
+    expect(unwatched.items.map((item) => item.id)).toEqual([unwatchedId])
+    const history = await asJson<{ items: Array<{ id: string }> }>(await req(env.app, '/api/videos?source=history', { headers: { authorization: basic(PASSWORD) } }))
+    expect(history.items.map((item) => item.id)).toEqual([watchedId])
+  })
+
+  it('rejects contradictory watch filters', async () => {
+    const response = await req(env.app, '/api/videos?watched=true&unwatched=true', { headers: { authorization: basic(PASSWORD) } })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining('contradictory') })
   })
 })
 

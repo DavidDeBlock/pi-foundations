@@ -164,8 +164,23 @@ describe('YT-011 playlist views', () => {
     seedPlaylist()
     const watched = seedVideo({ videoId: 'watched', channelId: 'UC-a', channelTitle: 'Alpha', title: 'Already watched', position: 0 })
     seedVideo({ videoId: 'fresh', channelId: 'UC-a', channelTitle: 'Alpha', title: 'Still fresh', position: 1 })
-    db.run(`CREATE TABLE youtube_watch_events (video_id TEXT NOT NULL)`)
-    db.run(`INSERT INTO youtube_watch_events (video_id) VALUES (?)`, [watched])
+    db.run(
+      `INSERT INTO youtube_history_imports
+       (id, file_hash, original_filename, staged_filename, status, total_count,
+        new_event_count, duplicate_count, malformed_count, unique_video_count,
+        new_video_count, committed_event_count, created_at, expires_at, committed_at)
+       VALUES ('import-1', 'hash', 'watch-history.json', '00000000-0000-0000-0000-000000000000.json',
+               'committed', 1, 1, 0, 0, 1, 0, 1,
+               '2026-07-16T00:00:00Z', '2026-07-17T00:00:00Z', '2026-07-16T00:00:00Z')`,
+    )
+    db.run(
+      `INSERT INTO youtube_watch_events
+       (id, video_id, youtube_video_id, watched_at, title_snapshot,
+        event_fingerprint, history_import_id, created_at)
+       VALUES ('watch-1', ?, 'watched', '2026-07-16T00:00:00Z',
+               'Already watched', 'fingerprint-1', 'import-1', '2026-07-16T00:00:00Z')`,
+      [watched],
+    )
     const html = await (await request('/playlists/PL-research?watched=unwatched')).text()
     expect(html).toContain('name="watched"')
     expect(html).toContain('value="unwatched" selected')

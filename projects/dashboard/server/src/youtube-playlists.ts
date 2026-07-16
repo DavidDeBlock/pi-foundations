@@ -80,6 +80,8 @@ export interface YouTubePlaylistVideoItem {
   readonly transcriptStatus: string | null
   readonly summaryStatus: string | null
   readonly watched: boolean | null
+  readonly watchCount: number
+  readonly lastWatchedAt: string | null
   readonly tags: ReadonlyArray<{ readonly id: string; readonly name: string }>
 }
 
@@ -136,6 +138,8 @@ interface PlaylistVideoRow {
   transcript_status: string | null
   summary_status: string | null
   watched: number | bigint | null
+  watch_count: number | bigint
+  last_watched_at: string | null
 }
 
 export function searchYouTubePlaylistVideos(
@@ -174,6 +178,12 @@ export function searchYouTubePlaylistVideos(
   const watchedSql = watchedAvailable
     ? 'EXISTS (SELECT 1 FROM youtube_watch_events we WHERE we.video_id = v.id)'
     : 'NULL'
+  const watchCountSql = watchedAvailable
+    ? '(SELECT COUNT(*) FROM youtube_watch_events we WHERE we.video_id = v.id)'
+    : '0'
+  const lastWatchedSql = watchedAvailable
+    ? '(SELECT MAX(we.watched_at) FROM youtube_watch_events we WHERE we.video_id = v.id)'
+    : 'NULL'
   const rows = db.all<PlaylistVideoRow>(
     `SELECT pi.playlist_item_id, pi.position, pi.added_at, pi.synced_at,
        v.id, v.video_id, v.channel_id, COALESCE(v.local_title_override, v.title) AS title,
@@ -181,7 +191,8 @@ export function searchYouTubePlaylistVideos(
        yc.title AS channel_title,
        (SELECT status FROM video_transcripts WHERE video_id = v.id) AS transcript_status,
        (SELECT status FROM video_summaries WHERE video_id = v.id) AS summary_status,
-       ${watchedSql} AS watched
+       ${watchedSql} AS watched, ${watchCountSql} AS watch_count,
+       ${lastWatchedSql} AS last_watched_at
        FROM youtube_playlist_items pi
        JOIN videos v ON v.id = pi.video_id
        JOIN youtube_channels yc ON yc.channel_id = v.channel_id
@@ -210,6 +221,8 @@ export function searchYouTubePlaylistVideos(
       transcriptStatus: row.transcript_status,
       summaryStatus: row.summary_status,
       watched: row.watched === null ? null : Boolean(row.watched),
+      watchCount: Number(row.watch_count),
+      lastWatchedAt: row.last_watched_at,
       tags: tagMap.get(row.id) ?? [],
     })),
     total, page, limit, watchedAvailable,

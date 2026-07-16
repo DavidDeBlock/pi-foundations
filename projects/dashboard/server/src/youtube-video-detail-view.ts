@@ -140,6 +140,10 @@ ${COMMON_HEAD}
             <dd><time datetime="${escapeHtml(detail.publishedAt)}">${escapeHtml(formatDateFull(detail.publishedAt))}</time></dd>
             <dt>Discovered</dt>
             <dd><time datetime="${escapeHtml(detail.discoveredAt)}">${escapeHtml(formatDateFull(detail.discoveredAt))}</time></dd>
+            <dt>Watch state</dt>
+            <dd>${detail.watchCount > 0
+              ? `<span class="video-detail-watched">Watched</span> ${detail.watchCount} ${detail.watchCount === 1 ? 'time' : 'times'} · last watched <time datetime="${escapeHtml(detail.lastWatchedAt!)}">${escapeHtml(formatDateFull(detail.lastWatchedAt!))}</time>`
+              : '<span class="video-detail-unwatched">Unwatched</span>'}</dd>
             <dt>Watch</dt>
             <dd><a href="${escapeHtml(detail.link)}" target="_blank" rel="noopener noreferrer">Open on YouTube \u2197</a></dd>
           </dl>
@@ -372,6 +376,8 @@ const VIDEO_DETAIL_STYLES = `
 .video-detail-meta dd { margin: 0; color: var(--text); }
 .video-detail-meta a { color: var(--accent); text-decoration: none; }
 .video-detail-channel-flag { display: inline-block; margin-left: 8px; padding: 2px 6px; background: var(--surface-2, rgba(127,127,127,0.1)); color: var(--muted); border-radius: 4px; font-size: 0.78rem; }
+.video-detail-watched { display:inline-block; padding:2px 8px; margin-right:4px; border-radius:999px; color:#34d399; background:color-mix(in srgb,#10b981 12%,transparent); border:1px solid color-mix(in srgb,#10b981 35%,var(--border)); font-size:.8rem; font-weight:650; }
+.video-detail-unwatched { color:var(--muted); }
 .video-detail-playlists { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, #8b5cf6 8%, var(--surface)); color: var(--muted); font-size: .8rem; }
 .video-detail-playlists a { padding: 4px 9px; border: 1px solid color-mix(in srgb, #8b5cf6 45%, var(--border)); border-radius: 999px; color: #a78bfa; text-decoration: none; }
 .video-detail-thumb { margin: 16px 0 24px; }
