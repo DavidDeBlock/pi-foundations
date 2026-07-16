@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { resolve } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { Database } from './db.js'
 import { runMigrations } from './migrations.js'
 
@@ -97,6 +98,7 @@ describe('Migrations runner', () => {
       '011_email_html_body',
       '012_youtube_transcripts',
       '013_youtube_video_summaries',
+      '014_youtube_library_foundation',
     ])
 
     // Spot-check that every table from the PRD schema now exists.
@@ -130,6 +132,8 @@ describe('Migrations runner', () => {
     expect(names).toContain('video_transcripts')
     expect(names).toContain('video_transcript_segments')
     expect(names).toContain('video_summaries')
+    expect(names).toContain('youtube_channels')
+    expect(names).toContain('video_origins')
     const subscriptionCols = db.all<{ name: string }>('PRAGMA table_info(subscriptions)')
     expect(subscriptionCols.some((c) => c.name === 'auto_fetch_transcripts')).toBe(true)
     // Sync debounce column for the background scheduler (issue #026).
@@ -140,15 +144,112 @@ describe('Migrations runner', () => {
   it('is idempotent — running twice does NOT re-apply', async () => {
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const firstApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(firstApplied).toHaveLength(13)
+    expect(firstApplied).toHaveLength(14)
 
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const secondApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(secondApplied).toHaveLength(13)
+    expect(secondApplied).toHaveLength(14)
     // applied_at should be unchanged on re-run (still the original timestamps).
     expect(secondApplied.map((r) => r.name).sort()).toEqual(
       firstApplied.map((r) => r.name).sort(),
     )
+  })
+
+  it('upgrades a populated migration-013 database without changing video ids or enrichment', async () => {
+    const legacyMigrations = [
+      '001_initial',
+      '002_search_trigram',
+      '003_email_accounts',
+      '004_emails_sync_state',
+      '005_email_search',
+      '006_email_tags',
+      '007_email_sync_debounce',
+      '008_youtube_accounts',
+      '009_subscriptions',
+      '010_videos',
+      '011_email_html_body',
+      '012_youtube_transcripts',
+      '013_youtube_video_summaries',
+    ] as const
+    db.exec(`CREATE TABLE migrations (
+      name TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    )`)
+    for (const name of legacyMigrations) {
+      const sql = await readFile(resolve(MIGRATIONS_DIR, `${name}.sql`), 'utf8')
+      db.transaction(() => {
+        db.exec(sql)
+        db.run('INSERT INTO migrations (name) VALUES (?)', [name])
+      })
+    }
+
+    db.run(
+      `INSERT INTO youtube_accounts
+         (id, provider, google_user_id, email_address, access_token_enc, refresh_token_enc, scopes)
+       VALUES ('acct-1', 'youtube', 'google-1', 'd@example.com', 'x', 'y', 'youtube.readonly')`,
+    )
+    db.run(`INSERT INTO folders (id, name) VALUES ('folder-1', 'Research')`)
+    db.run(`INSERT INTO tags (id, name) VALUES ('tag-1', 'watch')`)
+    db.run(
+      `INSERT INTO subscriptions
+         (id, google_account_id, channel_id, channel_title, channel_thumbnail_url,
+          subscribed_at, is_included, is_important, auto_fetch_transcripts)
+       VALUES ('sub-1', 'acct-1', 'UClegacy', 'Legacy Channel', 'https://img/channel.jpg',
+               '2025-01-01T00:00:00.000Z', 1, 1, 1)`,
+    )
+    db.run(
+      `INSERT INTO videos
+         (id, video_id, channel_id, title, published_at, thumbnail_url, link,
+          discovered_at, folder_id, created_at, updated_at)
+       VALUES ('video-local-1', 'youtube-1', 'UClegacy', 'Locally curated title',
+               '2025-02-01T00:00:00.000Z', 'https://img/video.jpg',
+               'https://youtube.com/watch?v=youtube-1', '2025-02-02T00:00:00.000Z',
+               'folder-1', '2025-02-02T00:00:00.000Z', '2025-02-03T00:00:00.000Z')`,
+    )
+    db.run(`INSERT INTO video_tags (video_id, tag_id) VALUES ('video-local-1', 'tag-1')`)
+    db.run(
+      `INSERT INTO video_transcripts
+         (video_id, status, language, requested_at, fetched_at, updated_at)
+       VALUES ('video-local-1', 'ready', 'en', '2025-02-03T00:00:00.000Z',
+               '2025-02-03T00:01:00.000Z', '2025-02-03T00:01:00.000Z')`,
+    )
+    db.run(
+      `INSERT INTO video_transcript_segments
+         (video_id, position, start_ms, duration_ms, text)
+       VALUES ('video-local-1', 0, 0, 1200, 'Preserved transcript')`,
+    )
+    db.run(
+      `INSERT INTO video_summaries
+         (video_id, status, tldr, model, prompt_version, requested_at, generated_at, updated_at)
+       VALUES ('video-local-1', 'ready', 'Preserved summary', 'MiniMax-M2.7', 1,
+               '2025-02-03T00:02:00.000Z', '2025-02-03T00:03:00.000Z',
+               '2025-02-03T00:03:00.000Z')`,
+    )
+
+    await runMigrations(db, { dir: MIGRATIONS_DIR })
+
+    expect(db.get('SELECT id, folder_id, local_title_override FROM videos')).toEqual({
+      id: 'video-local-1',
+      folder_id: 'folder-1',
+      local_title_override: 'Locally curated title',
+    })
+    expect(db.get('SELECT * FROM video_tags')).toEqual({ video_id: 'video-local-1', tag_id: 'tag-1' })
+    expect(db.get<{ text: string }>('SELECT text FROM video_transcript_segments')?.text).toBe('Preserved transcript')
+    expect(db.get<{ tldr: string }>('SELECT tldr FROM video_summaries')?.tldr).toBe('Preserved summary')
+    expect(db.get('SELECT origin_type, source_id FROM video_origins')).toEqual({
+      origin_type: 'subscription_rss',
+      source_id: 'sub-1',
+    })
+    expect(db.get('SELECT channel_id, title FROM youtube_channels')).toEqual({
+      channel_id: 'UClegacy',
+      title: 'Legacy Channel',
+    })
+
+    const videoFk = db.all<{ table: string; from: string }>('PRAGMA foreign_key_list(videos)')
+    expect(videoFk).toContainEqual(expect.objectContaining({ table: 'youtube_channels', from: 'channel_id' }))
+    const subscriptionFk = db.all<{ table: string; from: string }>('PRAGMA foreign_key_list(subscriptions)')
+    expect(subscriptionFk).toContainEqual(expect.objectContaining({ table: 'youtube_channels', from: 'channel_id' }))
+    expect(db.all('PRAGMA foreign_key_check')).toEqual([])
   })
 
   it('enforces the folders self-referential FK', async () => {

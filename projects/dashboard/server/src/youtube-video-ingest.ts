@@ -20,7 +20,7 @@
 // own per-channel result.
 
 import type { Database } from './db.js'
-import { insertVideo } from './youtube-videos.js'
+import { upsertYouTubeVideo } from './youtube-video-upsert.js'
 import type { FeedEntry } from './youtube-rss-fetcher.js'
 
 /** Outcome of ingesting one channel's batch. */
@@ -50,7 +50,7 @@ export interface IngestResult {
  * leave the per-channel dedupe in a half-state, which would
  * silently cause double-inserts in some SQLite versions.
  *
- * `nowMs` is passed straight through to `insertVideo` so the
+ * `nowMs` is passed straight through to the canonical upsert so the
  * `discovered_at` / `created_at` timestamps are deterministic in
  * tests.
  */
@@ -67,19 +67,27 @@ export function ingestVideos(
   let added = 0
   let skipped = 0
   const insertedVideoIds: string[] = []
+  const subscription = db.get<{ id: string; channel_title: string; channel_thumbnail_url: string | null }>(
+    `SELECT id, channel_title, channel_thumbnail_url
+       FROM subscriptions WHERE channel_id = ?`,
+    [channelId],
+  )
   db.transaction(() => {
     for (const entry of entries) {
-      const { outcome, id } = insertVideo(
+      const { outcome, id } = upsertYouTubeVideo(
         db,
         {
           videoId: entry.videoId,
           channelId,
+          channelTitle: subscription?.channel_title,
+          channelThumbnailUrl: subscription?.channel_thumbnail_url,
           title: entry.title,
           publishedAt: entry.publishedAt,
           thumbnailUrl: entry.thumbnailUrl,
           link: entry.link,
+          origin: { type: 'subscription_rss', sourceId: subscription?.id },
         },
-        nowMs,
+        nowMs ?? (() => Date.now()),
       )
       if (outcome === 'inserted') {
         added++

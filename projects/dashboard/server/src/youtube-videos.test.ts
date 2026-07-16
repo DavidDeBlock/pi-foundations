@@ -169,6 +169,10 @@ describe('insertVideo', () => {
     const second = insertVideo(env.db, makeInput({ title: 'Fresh from RSS' }))
     expect(second.outcome).toBe('duplicate')
     expect(getVideoByVideoId(env.db, 'dQw4w9WgXcQ')!.title).toBe('Operator rename')
+    expect(env.db.get('SELECT title, local_title_override FROM videos WHERE id = ?', [first.id])).toEqual({
+      title: 'Fresh from RSS',
+      local_title_override: 'Operator rename',
+    })
   })
 
   it('returns the existing row\'s id on duplicate', () => {
@@ -285,23 +289,20 @@ describe('touchVideoLastPolledAt', () => {
 // ─── FK enforcement ───────────────────────────────────────────────────────
 
 describe('FK enforcement', () => {
-  it('refuses to insert a video for an unknown channel', () => {
-    // SQLite enforces FK at INSERT time when foreign_keys=ON (set
-    // in the Database wrapper). Migration 010's ON DELETE
-    // RESTRICT also blocks deleting subscriptions that have
-    // videos — tested below.
-    expect(() =>
-      insertVideo(env.db, makeInput({ channelId: 'UCpe0000000000000000aabc' })),
-    ).toThrow(/FOREIGN KEY constraint failed/)
+  it('creates a canonical channel for a video without a subscription', () => {
+    const inserted = insertVideo(env.db, makeInput({ channelId: 'UCpe0000000000000000aabc' }))
+    expect(inserted.outcome).toBe('inserted')
+    expect(env.db.get('SELECT channel_id FROM youtube_channels WHERE channel_id = ?', [
+      'UCpe0000000000000000aabc',
+    ])).toEqual({ channel_id: 'UCpe0000000000000000aabc' })
   })
 
-  it('refuses to delete a subscription that still has videos', () => {
-    // ON DELETE RESTRICT — the AC explicitly wants this for
-    // operator-curated data preservation.
-    insertVideo(env.db, makeInput())
-    expect(() =>
-      env.db.run(`DELETE FROM subscriptions WHERE channel_id = 'UCaaaaaaa000000000000aab'`),
-    ).toThrow(/FOREIGN KEY constraint failed/)
+  it('keeps canonical videos when their subscription is deleted', () => {
+    const inserted = insertVideo(env.db, makeInput())
+    env.db.run(`DELETE FROM subscriptions WHERE channel_id = 'UCaaaaaaa000000000000aab'`)
+    expect(getVideoById(env.db, inserted.id)).not.toBeNull()
+    expect(getVideoDetail(env.db, inserted.id)?.channelIsIncluded).toBe(false)
+    expect(searchVideos(env.db).items.map((video) => video.id)).toContain(inserted.id)
   })
 })
 // ─── Search + list (issue YT-005) ─────────────────────────────────────────

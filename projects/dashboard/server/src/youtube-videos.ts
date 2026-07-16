@@ -10,12 +10,10 @@
 // `video_tags` join table and any other dashboard-side joins
 // (e.g. folder moves in YT-005).
 //
-// FK cascade behavior (per migration `010_videos.sql`):
-//   * `videos.channel_id → subscriptions.channel_id ON DELETE
-//     RESTRICT` — deleting a subscription requires first deleting
-//     its videos. The disconnect flow must clear videos for the
-//     account before deleting subscriptions (which auto-cascade
-//     from `youtube_accounts`).
+// FK behavior after migration `014_youtube_library_foundation.sql`:
+//   * `videos.channel_id → youtube_channels.channel_id ON DELETE
+//     RESTRICT` — canonical videos can exist without, and outlive,
+//     a subscription relationship.
 //   * `videos.folder_id → folders(id) ON DELETE SET NULL` — videos
 //     that lived in a deleted folder become unfoldered, not deleted.
 //   * `video_tags` rows cascade on video or tag delete.
@@ -24,9 +22,9 @@
 // and rename the snake_case columns to the camelCase the rest of
 // the codebase uses.
 
-import { randomUUID } from 'node:crypto'
 import type { Database } from './db.js'
 import { normalize } from './tag-normalizer.js'
+import { upsertYouTubeVideo } from './youtube-video-upsert.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -121,6 +119,7 @@ interface VideoRow {
   video_id: string
   channel_id: string
   title: string
+  local_title_override: string | null
   published_at: string
   thumbnail_url: string | null
   link: string
@@ -165,9 +164,9 @@ const MAX_LIST_LIMIT = 200
 
 /**
  * Paginated, filterable list of videos for `GET /api/videos`.
- * Videos from currently excluded subscriptions are omitted. Their rows
- * remain stored so re-including a channel restores its existing history,
- * and direct detail links continue to work.
+ * Videos from currently excluded subscriptions are omitted. Canonical videos
+ * without a subscription remain visible, and direct detail links work for
+ * both excluded and non-subscribed channels.
  *
  * Sort order: `discovered_at DESC, id ASC`. The `id ASC` tiebreaker
  * keeps pagination stable when many videos share the same
@@ -190,7 +189,7 @@ export function searchVideos(
   const offset = (page - 1) * limit
 
   // ─── WHERE assembly ────────────────────────────────────────────────
-  const where: string[] = ['s.is_included = 1']
+  const where: string[] = ['(s.is_included = 1 OR s.id IS NULL)']
   const params: Array<string | number> = []
   if (options.channelId) {
     where.push('v.channel_id = ?')
@@ -216,7 +215,7 @@ export function searchVideos(
     `SELECT COUNT(*) AS c FROM (
        SELECT DISTINCT v.id
          FROM videos v
-         JOIN subscriptions s ON s.channel_id = v.channel_id${whereSql}
+         LEFT JOIN subscriptions s ON s.channel_id = v.channel_id${whereSql}
      )`,
     params,
   )
@@ -225,12 +224,14 @@ export function searchVideos(
   // ─── Page ──────────────────────────────────────────────────────────
   const rows = db.all<VideoListItemRow>(
     `SELECT DISTINCT v.id, v.video_id, v.channel_id,
-            s.channel_title, s.channel_thumbnail_url,
-            v.title, v.published_at, v.thumbnail_url,
+            c.title AS channel_title, c.thumbnail_url AS channel_thumbnail_url,
+            COALESCE(v.local_title_override, v.title) AS title,
+            v.published_at, v.thumbnail_url,
             v.link, v.discovered_at, v.folder_id, f.name AS folder_name,
             s.is_included AS channel_is_included
        FROM videos v
-            JOIN subscriptions s ON s.channel_id = v.channel_id
+            JOIN youtube_channels c ON c.channel_id = v.channel_id
+            LEFT JOIN subscriptions s ON s.channel_id = v.channel_id
             LEFT JOIN folders f ON f.id = v.folder_id${whereSql}
       ORDER BY v.discovered_at DESC, v.id ASC
       LIMIT ? OFFSET ?`,
@@ -261,12 +262,14 @@ export function searchVideos(
 export function getVideoDetail(db: Database, id: string): VideoDetail | null {
   const row = db.get<VideoListItemRow & { channel_is_included: number }>(
     `SELECT v.id, v.video_id, v.channel_id,
-            s.channel_title, s.channel_thumbnail_url,
-            v.title, v.published_at, v.thumbnail_url,
+            c.title AS channel_title, c.thumbnail_url AS channel_thumbnail_url,
+            COALESCE(v.local_title_override, v.title) AS title,
+            v.published_at, v.thumbnail_url,
             v.link, v.discovered_at, v.folder_id, f.name AS folder_name,
             s.is_included AS channel_is_included
        FROM videos v
-            JOIN subscriptions s ON s.channel_id = v.channel_id
+            JOIN youtube_channels c ON c.channel_id = v.channel_id
+            LEFT JOIN subscriptions s ON s.channel_id = v.channel_id
             LEFT JOIN folders f ON f.id = v.folder_id
       WHERE v.id = ?`,
     [id],
@@ -390,33 +393,18 @@ export function insertVideo(
   input: VideoInsertInput,
   nowMs?: () => number,
 ): { outcome: 'inserted' | 'duplicate'; id: string } {
-  const id = randomUUID()
-  const result = db.run(
-    `INSERT OR IGNORE INTO videos (
-       id, video_id, channel_id, title, published_at,
-       thumbnail_url, link, discovered_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      input.videoId,
-      input.channelId,
-      input.title,
-      input.publishedAt,
-      input.thumbnailUrl,
-      input.link,
-      isoNow(nowMs),
-    ],
+  const subscription = db.get<{ id: string; channel_title: string; channel_thumbnail_url: string | null }>(
+    `SELECT id, channel_title, channel_thumbnail_url
+       FROM subscriptions WHERE channel_id = ?`,
+    [input.channelId],
   )
-  if (result.changes === 0) {
-    // The id we generated isn't in the DB — fetch the real row's
-    // id so callers can log / dedupe against it.
-    const existing = db.get<{ id: string }>(
-      'SELECT id FROM videos WHERE video_id = ?',
-      [input.videoId],
-    )
-    return { outcome: 'duplicate', id: existing?.id ?? id }
-  }
-  return { outcome: 'inserted', id }
+  const result = upsertYouTubeVideo(db, {
+    ...input,
+    channelTitle: subscription?.channel_title,
+    channelThumbnailUrl: subscription?.channel_thumbnail_url,
+    origin: { type: 'manual' },
+  }, nowMs ?? (() => Date.now()))
+  return { outcome: result.outcome === 'inserted' ? 'inserted' : 'duplicate', id: result.id }
 }
 
 /** Touch the `last_polled_at` column for one subscription row.
@@ -466,7 +454,7 @@ export function renameVideoTitle(
   nowMs?: () => number,
 ): boolean {
   const result = db.run(
-    `UPDATE videos SET title = ?, updated_at = ? WHERE id = ?`,
+    `UPDATE videos SET local_title_override = ?, updated_at = ? WHERE id = ?`,
     [title, isoNow(nowMs), id],
   )
   return result.changes > 0
@@ -479,7 +467,7 @@ function rowToVideo(row: VideoRow): Video {
     id: row.id,
     videoId: row.video_id,
     channelId: row.channel_id,
-    title: row.title,
+    title: row.local_title_override ?? row.title,
     publishedAt: row.published_at,
     thumbnailUrl: row.thumbnail_url,
     link: row.link,

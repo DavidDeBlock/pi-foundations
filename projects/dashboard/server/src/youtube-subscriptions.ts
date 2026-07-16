@@ -312,54 +312,67 @@ export function upsertSubscription(
   input: UpsertSubscriptionInput,
   nowMs: () => number = () => Date.now(),
 ): { outcome: UpsertOutcome; id: string } {
-  const existing = db.get<SubscriptionRow>(
-    `SELECT * FROM subscriptions WHERE channel_id = ?`,
-    [input.channelId],
-  )
-  if (existing) {
-    const changed =
-      existing.channel_title !== input.channelTitle ||
-      (existing.channel_thumbnail_url ?? null) !==
-        (input.channelThumbnailUrl ?? null) ||
-      existing.subscribed_at !== input.subscribedAt
-    if (!changed) {
-      return { outcome: 'unchanged', id: existing.id }
-    }
+  return db.transaction(() => {
+    const now = nowIso(nowMs)
     db.run(
-      `UPDATE subscriptions
-         SET channel_title = ?,
-             channel_thumbnail_url = ?,
-             subscribed_at = ?,
-             updated_at = ?
-         WHERE id = ?`,
+      `INSERT INTO youtube_channels
+         (channel_id, title, thumbnail_url, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(channel_id) DO UPDATE SET
+         title = excluded.title,
+         thumbnail_url = excluded.thumbnail_url,
+         updated_at = excluded.updated_at`,
+      [input.channelId, input.channelTitle, input.channelThumbnailUrl, now, now],
+    )
+    const existing = db.get<SubscriptionRow>(
+      `SELECT * FROM subscriptions WHERE channel_id = ?`,
+      [input.channelId],
+    )
+    if (existing) {
+      const changed =
+        existing.channel_title !== input.channelTitle ||
+        (existing.channel_thumbnail_url ?? null) !==
+          (input.channelThumbnailUrl ?? null) ||
+        existing.subscribed_at !== input.subscribedAt
+      if (!changed) {
+        return { outcome: 'unchanged', id: existing.id }
+      }
+      db.run(
+        `UPDATE subscriptions
+           SET channel_title = ?,
+               channel_thumbnail_url = ?,
+               subscribed_at = ?,
+               updated_at = ?
+           WHERE id = ?`,
+        [
+          input.channelTitle,
+          input.channelThumbnailUrl,
+          input.subscribedAt,
+          now,
+          existing.id,
+        ],
+      )
+      return { outcome: 'updated', id: existing.id }
+    }
+    const id = randomUUID()
+    db.run(
+      `INSERT INTO subscriptions
+         (id, google_account_id, channel_id, channel_title,
+          channel_thumbnail_url, subscribed_at,
+          is_included, is_important, last_polled_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 1, 0, NULL, ?)`,
       [
+        id,
+        input.googleAccountId,
+        input.channelId,
         input.channelTitle,
         input.channelThumbnailUrl,
         input.subscribedAt,
-        nowIso(nowMs),
-        existing.id,
+        now,
       ],
     )
-    return { outcome: 'updated', id: existing.id }
-  }
-  const id = randomUUID()
-  db.run(
-    `INSERT INTO subscriptions
-       (id, google_account_id, channel_id, channel_title,
-        channel_thumbnail_url, subscribed_at,
-        is_included, is_important, last_polled_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 1, 0, NULL, ?)`,
-    [
-      id,
-      input.googleAccountId,
-      input.channelId,
-      input.channelTitle,
-      input.channelThumbnailUrl,
-      input.subscribedAt,
-      nowIso(nowMs),
-    ],
-  )
-  return { outcome: 'inserted', id }
+    return { outcome: 'inserted', id }
+  })
 }
 
 /**

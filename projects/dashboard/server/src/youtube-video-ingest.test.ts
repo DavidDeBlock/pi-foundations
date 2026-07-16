@@ -13,6 +13,7 @@ import {
   getVideoByVideoId,
 } from './youtube-videos.js'
 import { ingestVideos } from './youtube-video-ingest.js'
+import { renameVideoTitle } from './youtube-videos.js'
 import { upsertSubscription } from './youtube-subscriptions.js'
 import type { FeedEntry } from './youtube-rss-fetcher.js'
 
@@ -129,12 +130,19 @@ describe('ingestVideos — all-duplicate entries', () => {
     const r1 = ingestVideos(env.db, 'UCaaaaaaa000000000000aab', [entry({ videoId: 'FFFFFFFFFF' })])
     expect(r1.added).toBe(1)
     const row = getVideoByVideoId(env.db, 'FFFFFFFFFF')!
-    env.db.run(
-      `UPDATE videos SET title = ? WHERE id = ?`,
-      ['Renamed', row.id],
-    )
+    renameVideoTitle(env.db, row.id, 'Renamed')
     ingestVideos(env.db, 'UCaaaaaaa000000000000aab', [entry({ videoId: 'FFFFFFFFFF', title: 'Should not overwrite' })])
     expect(getVideoByVideoId(env.db, 'FFFFFFFFFF')!.title).toBe('Renamed')
+  })
+
+  it('records RSS provenance idempotently', () => {
+    ingestVideos(env.db, 'UCaaaaaaa000000000000aab', [entry({ videoId: 'ORIGIN00001' })])
+    ingestVideos(env.db, 'UCaaaaaaa000000000000aab', [entry({ videoId: 'ORIGIN00001' })])
+    const origins = env.db.all<{ origin_type: string; source_id: string }>(
+      `SELECT origin_type, source_id FROM video_origins`,
+    )
+    expect(origins).toHaveLength(1)
+    expect(origins[0]).toEqual(expect.objectContaining({ origin_type: 'subscription_rss' }))
   })
 })
 

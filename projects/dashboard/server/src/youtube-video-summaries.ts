@@ -279,8 +279,9 @@ export class YouTubeVideoSummaryService {
 
   async #process(videoId: string): Promise<void> {
     const video = this.#db.get<{ title: string; channel_title: string }>(
-      `SELECT v.title, COALESCE(s.channel_title, v.channel_id) AS channel_title
-         FROM videos v LEFT JOIN subscriptions s ON s.channel_id = v.channel_id
+      `SELECT COALESCE(v.local_title_override, v.title) AS title,
+              c.title AS channel_title
+         FROM videos v JOIN youtube_channels c ON c.channel_id = v.channel_id
         WHERE v.id = ?`,
       [videoId],
     )

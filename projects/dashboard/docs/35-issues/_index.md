@@ -54,6 +54,20 @@ From PRD: [PRD-003](../35-prds/PRD-003-youtube-v3-subscriptions.md)
 | [YT-006](./YT-006-youtube-e2e-smoke-and-docs.md) | Tracer-bullet E2E + smoke test + docs | AFK (manual smoke) | YT-003, YT-005 |
 | [YT-007](./YT-007-youtube-ai-insight-cards.md) | MiniMax YouTube AI Insight Cards | AFK | YT-005 |
 
+## v3.1 — YouTube canonical library + playlists + history + backfill (PRD-004)
+
+From PRD: [PRD-004](../35-prds/PRD-004-youtube-library-history-playlists-backfill.md)
+
+| # | Title | Type | Blocked by |
+|---|-------|------|------------|
+| [YT-008](./YT-008-canonical-youtube-library-foundation.md) | Canonical YouTube library foundation | AFK (migration rehearsal) | YT-005 |
+| [YT-009](./YT-009-subscription-recent-video-backfill.md) | Subscription recent-video backfill | AFK (manual smoke) | YT-008 |
+| [YT-010](./YT-010-youtube-playlists-ingestion-sync-api.md) | YouTube playlists ingestion, sync, and API | AFK (manual smoke) | YT-008 |
+| [YT-011](./YT-011-playlists-ui-library-integration.md) | Playlists UI and library integration | AFK | YT-010 |
+| [YT-012](./YT-012-takeout-watch-history-import.md) | Google Takeout watch-history import | AFK (manual smoke) | YT-008 |
+| [YT-013](./YT-013-watch-history-ui-watched-state.md) | Watch History UI and watched-state integration | AFK | YT-012 |
+| [YT-014](./YT-014-youtube-library-e2e-migration-docs.md) | YouTube library E2E, migration rehearsal, and docs | AFK (manual smoke) | YT-009, YT-011, YT-013 |
+
 ## v4 — Email mirror (PRD-002)
 
 From PRD: [PRD-002](../35-prds/PRD-002-email-mirror.md)
@@ -123,6 +137,20 @@ Notes on parallelism:
 - YT-005 depends on YT-004 because the videos UI needs videos in DB to render.
 - YT-006 is the final integration slice and waits for both UI slices (YT-003 + YT-005) so the full smoke test is meaningful.
 - YT-001 is the natural starting point (no blockers) but also the slice with the most real-world uncertainty (Google Cloud Console OAuth setup is a manual step).
+
+## v3.1 (YouTube library) dependency graph
+
+```text
+YT-008 ──┬── YT-009 ───────────────┐
+         ├── YT-010 ── YT-011 ─────┼── YT-014
+         └── YT-012 ── YT-013 ─────┘
+```
+
+Notes on parallelism:
+- YT-008 is the required canonical-data foundation because the current video schema only accepts subscribed channels.
+- After YT-008, backfill (YT-009), playlist ingestion (YT-010), and history import (YT-012) can be implemented independently.
+- YT-011 and YT-013 are UI integrations over their respective ingestion slices.
+- YT-014 is the release gate and waits for every user-visible branch.
 
 ## Slicing rationale
 
