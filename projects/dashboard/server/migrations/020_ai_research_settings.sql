@@ -13,7 +13,7 @@ CREATE TABLE ai_research_settings (
 );
 
 INSERT INTO ai_research_settings VALUES
-  (1, 'builtin-standard', 'en', 'US', 'en', 3, 120000, 8000,
+  (1, 'builtin-standard', 'en', 'US', 'en', 3, 120000, 12000,
    strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
 
 CREATE TABLE summary_profile_revisions (

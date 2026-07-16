@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { Database } from './db.js'
-import { OpenAiCompatibleLlmClient } from './llm-client.js'
+import { OpenAiCompatibleLlmClient, type LlmMessage } from './llm-client.js'
 import { SerperSearchError, type SerperOrganicResult, type SerperSearchClient } from './serper-search-client.js'
 import { getVideoTranscript, type TranscriptSegment } from './youtube-transcripts.js'
 
@@ -241,7 +241,7 @@ export class MiniMaxVideoSummarizer implements VideoSummarizer {
     this.#client = client
     this.model = client.model
     this.#chunkChars = options.chunkChars ?? 42_000
-    this.#limits = options.limits ?? (() => ({ maxInputChars: this.#chunkChars, maxOutputTokens: 8_000 }))
+    this.#limits = options.limits ?? (() => ({ maxInputChars: this.#chunkChars, maxOutputTokens: 12_000 }))
   }
 
   async summarize(input: SummarizeInput): Promise<GeneratedSummaryRun> {
@@ -250,30 +250,63 @@ export class MiniMaxVideoSummarizer implements VideoSummarizer {
     const chunks = chunkTranscript(input.segments, Math.max(1_000, Math.min(this.#chunkChars, limits.maxInputChars)))
     const chunkPlans: SummaryEvidencePlan[] = []
     for (const segments of chunks) {
-      const raw = await this.#client.complete([
+      const messages = [
         { role: 'system', content: evidenceSystemPrompt(profile, { videoTitle: input.title, channelName: input.channelTitle }) },
         { role: 'user', content: evidenceUserPrompt({ ...input, segments }) },
-      ], { maxCompletionTokens: Math.min(4_000, limits.maxOutputTokens) })
-      chunkPlans.push(parseEvidencePlan(raw, input.segments, profile.options))
+      ] as const
+      chunkPlans.push(await this.#createEvidencePlan(messages, input.segments, profile.options, limits.maxOutputTokens))
     }
     let evidence = chunkPlans[0]!
     if (chunkPlans.length > 1) {
-      const raw = await this.#client.complete([
+      const messages = [
         { role: 'system', content: synthesisSystemPrompt(profile) },
-        { role: 'user', content: `Untrusted chunk evidence JSON:\n<evidence>${JSON.stringify(chunkPlans)}</evidence>` },
-      ], { maxCompletionTokens: Math.min(5_000, limits.maxOutputTokens) })
-      evidence = parseEvidencePlan(raw, input.segments, profile.options)
+        { role: 'user', content: `Untrusted chunk evidence JSON:\n<evidence>${JSON.stringify(chunkPlans.map(evidencePlanPromptValue))}</evidence>` },
+      ] as const
+      evidence = await this.#createEvidencePlan(messages, input.segments, profile.options, limits.maxOutputTokens)
     }
     const outputs: Partial<Record<'en' | 'nl', LocalizedSummary>> = {}
     for (const language of languagesFor(input.outputLanguage ?? 'en')) {
-      const raw = await this.#client.complete([
+      const messages = [
         { role: 'system', content: localizationSystemPrompt(profile, language) },
-        { role: 'user', content: `Video: ${input.title}\nChannel: ${input.channelTitle}\nUntrusted evidence plan JSON:\n<evidence>${JSON.stringify(evidence)}</evidence>` },
-      ], { maxCompletionTokens: Math.min(limits.maxOutputTokens, Math.max(500, profile.options.target_max_words * 2)) })
-      outputs[language] = parseLocalizedSummary(raw, evidence, language)
+        { role: 'user', content: `Video: ${input.title}\nChannel: ${input.channelTitle}\nUntrusted evidence plan JSON:\n<evidence>${JSON.stringify(evidencePlanPromptValue(evidence))}</evidence>` },
+      ] as const
+      outputs[language] = await this.#createLocalizedSummary(messages, evidence, language,
+        profile.options.target_max_words, limits.maxOutputTokens)
     }
     if ((input.outputLanguage ?? 'en') === 'en_nl') validateBilingualParity(outputs.en!, outputs.nl!)
     return { evidence, outputs }
+  }
+
+  async #createEvidencePlan(messages: ReadonlyArray<LlmMessage>, segments: ReadonlyArray<TranscriptSegment>,
+    options: SummaryProfileOptions, maxOutputTokens: number): Promise<SummaryEvidencePlan> {
+    let raw = await this.#client.complete(messages, { maxCompletionTokens: Math.min(4_000, maxOutputTokens) })
+    try {
+      return parseEvidencePlan(raw, segments, options)
+    } catch (error: unknown) {
+      if (!(error instanceof Error) || !isRetryableEvidenceError(error.message)) throw error
+      raw = await this.#client.complete([
+        { role: 'system', content: `${messages[0]!.content}\nYour previous response was incomplete or contained no usable cited claims. Return one complete JSON object, use start_ms exactly, and copy each start_ms from the supplied evidence or transcript.` },
+        messages[1]!,
+      ], { maxCompletionTokens: Math.min(6_000, maxOutputTokens) })
+      return parseEvidencePlan(raw, segments, options)
+    }
+  }
+
+  async #createLocalizedSummary(messages: ReadonlyArray<LlmMessage>, evidence: SummaryEvidencePlan,
+    language: 'en' | 'nl', targetMaxWords: number, maxOutputTokens: number): Promise<LocalizedSummary> {
+    let raw = await this.#client.complete(messages, {
+      maxCompletionTokens: Math.min(maxOutputTokens, Math.max(3_000, targetMaxWords * 2)),
+    })
+    try {
+      return parseLocalizedSummary(raw, evidence, language)
+    } catch (error: unknown) {
+      if (!(error instanceof Error)) throw error
+      raw = await this.#client.complete([
+        { role: 'system', content: `${messages[0]!.content}\nYour previous response was incomplete or invalid. Return one complete JSON object, keep text concise, and preserve every supplied section ID, claim ID, action ID, and start_ms exactly.` },
+        messages[1]!,
+      ], { maxCompletionTokens: Math.min(maxOutputTokens, Math.max(12_000, targetMaxWords * 3)) })
+      return parseLocalizedSummary(raw, evidence, language)
+    }
   }
 
   async enrichWithResearch(input: SummarizeInput, evidence: SummaryEvidencePlan,
@@ -301,7 +334,7 @@ export class MiniMaxVideoSummarizer implements VideoSummarizer {
         raw = await this.#client.complete([
           { role: 'system', content: `${researchSystemPrompt(language)}\nYour previous response was incomplete or invalid JSON. Keep every text value concise and return one complete JSON object.` },
           messages[1]!,
-        ], { maxCompletionTokens })
+        ], { maxCompletionTokens: Math.min(limits.maxOutputTokens, 12_000) })
         research = parseLocalizedResearch(raw, sources)
       }
       enriched[language] = { ...existing, research }
@@ -654,6 +687,17 @@ export function chunkTranscript(segments: ReadonlyArray<TranscriptSegment>, maxC
 }
 function timedTranscript(segments: ReadonlyArray<TranscriptSegment>): string {
   return segments.map((s) => `[${s.startMs}ms | ${formatTimestamp(s.startMs)}] ${s.text}`).join('\n')
+}
+function evidencePlanPromptValue(plan: SummaryEvidencePlan): Record<string, unknown> {
+  return {
+    sections: plan.sections.map((section) => ({ id: section.id, title: section.title,
+      claims: section.claims.map((claim) => ({ id: claim.id, text: claim.text, start_ms: claim.startMs })) })),
+    actions: plan.actions.map((action) => ({ id: action.id, text: action.text, start_ms: action.startMs })),
+    mentioned: plan.mentioned,
+  }
+}
+function isRetryableEvidenceError(message: string): boolean {
+  return message === 'LLM returned invalid evidence plan JSON' || message === 'LLM evidence plan did not include cited claims'
 }
 function parseEvidencePlan(raw: string, segments: ReadonlyArray<TranscriptSegment>, options: SummaryProfileOptions): SummaryEvidencePlan {
   const value = parseJsonObject(raw, 'evidence plan'); const starts = new Set(segments.map((s) => s.startMs)); let claimCount = 0

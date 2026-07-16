@@ -305,6 +305,7 @@ function renderSummarySection(
   defaultLanguage: string,
 ): string {
   let content: string
+  const summaryStartedAt = run?.requestedAt ?? summary?.requestedAt ?? ''
   if (!configured) {
     content = `<div class="video-ai-empty">
       <p>Add <code>LLM_API_KEY</code> to <code>server/.env</code> and restart the dashboard to enable MiniMax summaries.</p>
@@ -320,7 +321,7 @@ function renderSummarySection(
       <div class="video-ai-block"><h3>Why watch the full video?</h3><p>${escapeHtml(summary.worthWatching ?? '')}</p></div>${actions}${mentioned}
       <div class="video-ai-footer"><span>Generated with ${escapeHtml(summary.model)}</span></div></div>`
   } else if (summary?.status === 'pending') {
-    content = `<div class="video-ai-working"><span class="video-ai-spinner" aria-hidden="true"></span><div><strong>Building your Insight Card…</strong><p>MiniMax is reading the timed transcript in the background.</p></div></div>`
+    content = `<div class="video-ai-working"><span class="video-ai-spinner" aria-hidden="true"></span><div><strong>Building your Insight Card…</strong><p>MiniMax is reading the timed transcript in the background.</p>${summaryStartedAt ? `<p class="video-ai-timing"><span>Started <time datetime="${escapeHtml(summaryStartedAt)}">${escapeHtml(formatDateFull(summaryStartedAt))}</time></span><span>Running <strong data-summary-elapsed>0s</strong></span></p>` : ''}</div></div>`
   } else if (summary?.status === 'failed') {
     content = `<div class="video-ai-empty"><p>The Insight Card could not be generated. Adjust the controls above and create a new run; the failed attempt stays in history.</p></div>`
   } else if (transcript?.status !== 'ready') {
@@ -333,7 +334,7 @@ function renderSummarySection(
     ? renderSummaryControls(profiles, run?.profileId ?? defaultProfileId, run?.outputLanguage ?? defaultLanguage, researchConfigured, maxSearchQueries)
     : ''
   const history = runs.length > 0 ? renderSummaryHistory(runs) : ''
-  return `<section class="video-ai-card" data-video-summary data-summary-status="${summary?.status ?? 'not_requested'}" data-active-run-id="${escapeHtml(run?.id ?? '')}">
+  return `<section class="video-ai-card" data-video-summary data-summary-status="${summary?.status ?? 'not_requested'}" data-active-run-id="${escapeHtml(run?.id ?? '')}" data-summary-started-at="${escapeHtml(summaryStartedAt)}">
     <div class="video-ai-heading"><div class="video-ai-icon" aria-hidden="true">✦</div><div><span class="video-ai-eyebrow">AI insight</span><h2>Video briefing</h2></div></div>
     ${controls}
     <div data-summary-content>${content}</div>
@@ -640,6 +641,8 @@ const VIDEO_DETAIL_STYLES = `
 .video-ai-spinner { box-sizing:border-box; display:inline-block; width:20px; height:20px; flex:0 0 auto; border:2px solid color-mix(in srgb,var(--accent) 24%,var(--border)); border-top-color:var(--accent); border-radius:50%; animation:ai-spin .75s linear infinite; }
 .video-ai-working strong { display: block; }
 .video-ai-working p { margin: 3px 0 0; color: var(--muted); font-size: .88rem; }
+.video-ai-working .video-ai-timing { display:flex; flex-wrap:wrap; gap:5px 14px; margin-top:9px; font-size:.78rem; font-variant-numeric:tabular-nums; }
+.video-ai-working .video-ai-timing strong { display:inline; color:var(--text); }
 .video-ai-feedback { min-height: 1.15em; margin: 10px 0 0; color: var(--muted); font-size: .82rem; }
 .video-ai-feedback.is-working { display:flex; align-items:center; gap:7px; }
 .video-ai-feedback.is-working::before { content:''; box-sizing:border-box; width:13px; height:13px; flex:0 0 auto; border:2px solid color-mix(in srgb,var(--accent) 22%,var(--border)); border-top-color:var(--accent); border-radius:50%; animation:ai-spin .75s linear infinite; }
@@ -1041,6 +1044,36 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
   var summaryFeedback = summary && summary.querySelector('[data-summary-feedback]');
   var summaryPollAttempts = 0;
   var pendingSummaryRunId = null;
+  var summaryElapsedTimer = null;
+  function formatSummaryElapsed(milliseconds){
+    var seconds = Math.max(0, Math.floor(milliseconds / 1000));
+    var hours = Math.floor(seconds / 3600);
+    var minutes = Math.floor((seconds % 3600) / 60);
+    var remainder = seconds % 60;
+    return (hours ? hours + 'h ' : '') + (minutes ? minutes + 'm ' : '') + remainder + 's';
+  }
+  function updateSummaryTiming(){
+    if (!summary) return;
+    var startedAt = summary.getAttribute('data-summary-started-at');
+    var startedMs = startedAt ? Date.parse(startedAt) : NaN;
+    if (!Number.isFinite(startedMs)) return;
+    var elapsed = formatSummaryElapsed(Date.now() - startedMs);
+    var elapsedNode = summary.querySelector('[data-summary-elapsed]');
+    if (elapsedNode) elapsedNode.textContent = elapsed;
+    if (summaryFeedback && summaryFeedback.classList.contains('is-working')) {
+      summaryFeedback.textContent = 'Started ' + new Date(startedMs).toLocaleTimeString() + ' · Running ' + elapsed;
+    }
+  }
+  function startSummaryTimer(startedAt){
+    if (!summary) return;
+    if (startedAt) summary.setAttribute('data-summary-started-at', startedAt);
+    updateSummaryTiming();
+    if (summaryElapsedTimer === null) summaryElapsedTimer = window.setInterval(updateSummaryTiming, 1000);
+  }
+  function stopSummaryTimer(){
+    if (summaryElapsedTimer !== null) window.clearInterval(summaryElapsedTimer);
+    summaryElapsedTimer = null;
+  }
   function pollSummary(runId){
     summaryPollAttempts++;
     var path = runId
@@ -1055,15 +1088,16 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
         if (!pair) return;
         if (!pair.res.ok) throw new Error(pair.json.error || ('HTTP ' + pair.res.status));
         var value = pair.json.summary;
-        if (value && value.status === 'pending' && summaryPollAttempts < 80) {
+        if (value && value.status === 'pending') {
+          startSummaryTimer(value.requested_at);
           if (summaryFeedback) {
             summaryFeedback.className = 'video-ai-feedback is-working';
-            summaryFeedback.textContent = 'MiniMax is building the briefing…';
+            updateSummaryTiming();
           }
-          setTimeout(function(){ pollSummary(runId); }, 1500);
+          setTimeout(function(){ pollSummary(runId); }, summaryPollAttempts < 80 ? 1500 : 5000);
           return;
         }
-        if (value && value.status !== 'pending') window.location.reload();
+        if (value && value.status !== 'pending') { stopSummaryTimer(); window.location.reload(); }
         else if (summaryFeedback) summaryFeedback.textContent = 'Still working. You can leave this page and return later.';
       })
       .catch(function(err){
@@ -1091,6 +1125,7 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
         if (!pair) return;
         if (!pair.res.ok) throw new Error(pair.json.error || ('HTTP ' + pair.res.status));
         pendingSummaryRunId = pair.json.summary && pair.json.summary.id;
+        startSummaryTimer(pair.json.summary && pair.json.summary.requested_at);
         summaryPollAttempts = 0;
         pollSummary(pendingSummaryRunId);
       })
@@ -1124,6 +1159,7 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
       queueSummary({ profile_id: 'builtin-quick', output_language: 'en', research: false }, summaryButton);
     });
   } else if (summary && summary.getAttribute('data-summary-status') === 'pending') {
+    startSummaryTimer(summary.getAttribute('data-summary-started-at'));
     pollSummary(summary.getAttribute('data-active-run-id'));
   }
   if (summary) {

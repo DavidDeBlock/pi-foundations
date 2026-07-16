@@ -438,6 +438,11 @@ describe('GET /videos/:id — AI Insight Card', () => {
     const { body } = await getText(app, `/videos/${id}`)
     expect(body).toContain('class="video-ai-spinner"')
     expect(body).toContain('@keyframes ai-spin')
+    expect(body).toContain('data-summary-started-at="2026-07-16T00:00:00Z"')
+    expect(body).toContain('data-summary-elapsed')
+    expect(body).toContain('Running <strong')
+    expect(body).toContain("summaryPollAttempts < 80 ? 1500 : 5000")
+    expect(body).toContain("window.setInterval(updateSummaryTiming, 1000)")
     expect(body).toContain("summaryFeedback.className = 'video-ai-feedback is-working'")
   })
 

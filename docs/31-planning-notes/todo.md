@@ -1290,3 +1290,8 @@ https://192.168.0.136.nip.io:8080/videos/1eb1686e-fc86-4098-8b52-405d06464c97
 The Insight Card could not be generated. Adjust the controls above and create a new run; the failed attempt stays in history.
 
 Can you review why it could not generate a summary? 
+
+https://192.168.0.136.nip.io:8080/videos/300da935-e6a7-462d-b1b4-7d3297db9175
+
+i'm retrying but it keeps working for several minutes now, can you check if you see something?
+
