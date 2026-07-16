@@ -1252,3 +1252,5 @@ to-issues, to-prd, triage, typescript-implementer, web-searcher, write-a-skill, 
  I can agree with your recommendations, and for the LLM, since I have a big cloud subscription, we can use the cloud one. 
 
  But for now, we can skip the LLM part, We can add it later. 
+
+ The dashboard will serve as my personal home space for email, yt, bookmarks, projects. If you look to the sidepanel its abit messy and not clear. Give me some suggestions on how to approach it and make it visually appealing; No code changes yet since i'm busy with another agent. Also make the the dark theme a bit lighter and more colourfull. 

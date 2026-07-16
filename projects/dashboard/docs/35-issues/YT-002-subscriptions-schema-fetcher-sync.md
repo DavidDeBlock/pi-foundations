@@ -10,14 +10,14 @@ After OAuth is granted, the dashboard auto-imports all of David's subscriptions 
 
 ## Acceptance criteria
 
-- [ ] Migration adds `subscriptions` table per PRD-003 schema: `id, channel_id (UNIQUE), title, thumbnail_url, subscribed_at, is_included (DEFAULT 1), is_important (DEFAULT 0), last_polled_at (nullable), created_at, updated_at`
-- [ ] `SubscriptionsFetcher` deep module exposes `fetchAll(accessToken) → Subscription[]`; paginates `subscriptions.list` with `part=snippet`, `mine=true`, `maxResults=50`; handles empty result
-- [ ] `SubscriptionsSync` deep module exposes `sync(incoming: Subscription[]) → { added, updated, removed, unchanged }`; identity is `channel_id`; INSERT new rows, UPDATE changed fields (`title`, `thumbnail_url`, `subscribed_at`), DELETE rows not in incoming; idempotent on second run (returns `unchanged === incoming.length`)
-- [ ] New rows default to `is_included = true`, `is_important = false`
-- [ ] Daily scheduler: registers a 24h interval that calls `SubscriptionsFetcher` (auto-refreshing token via `YouTubeOAuthClient`) then `SubscriptionsSync`; logs `{added, updated, removed, unchanged, ran_at}`
-- [ ] `POST /api/youtube/sync` triggers a manual sync; returns `{ added, updated, removed, unchanged, ran_at }`
-- [ ] Auto-triggered on first OAuth grant (so the dashboard is populated within ~30s of connecting)
-- [ ] Tests: `SubscriptionsFetcher` against sample Data API responses (single page, multiple pages, empty); `SubscriptionsSync` for empty / all-new / all-same / mixed (add+update+remove) / idempotency scenarios; manual sync endpoint returns correct counts; daily scheduler is registered on boot
+- [x] Migration adds `subscriptions` table per PRD-003 schema: `id, channel_id (UNIQUE), title, thumbnail_url, subscribed_at, is_included (DEFAULT 1), is_important (DEFAULT 0), last_polled_at (nullable), created_at, updated_at`
+- [x] `SubscriptionsFetcher` deep module exposes `fetchAll(accessToken) → Subscription[]`; paginates `subscriptions.list` with `part=snippet`, `mine=true`, `maxResults=50`; handles empty result
+- [x] `SubscriptionsSync` deep module exposes `sync(incoming: Subscription[]) → { added, updated, removed, unchanged }`; identity is `channel_id`; INSERT new rows, UPDATE changed fields (`title`, `thumbnail_url`, `subscribed_at`), DELETE rows not in incoming; idempotent on second run (returns `unchanged === incoming.length`)
+- [x] New rows default to `is_included = true`, `is_important = false`
+- [x] Daily scheduler: registers a 24h interval that calls `SubscriptionsFetcher` (auto-refreshing token via `YouTubeOAuthClient`) then `SubscriptionsSync`; logs `{added, updated, removed, unchanged, ran_at}`
+- [x] `POST /api/youtube/sync` triggers a manual sync; returns `{ added, updated, removed, unchanged, ran_at }`
+- [x] Auto-triggered on first OAuth grant (so the dashboard is populated within ~30s of connecting)
+- [x] Tests: `SubscriptionsFetcher` against sample Data API responses (single page, multiple pages, empty); `SubscriptionsSync` for empty / all-new / all-same / mixed (add+update+remove) / idempotency scenarios; manual sync endpoint returns correct counts; daily scheduler is registered on boot
 - [ ] Manual smoke: connect YouTube → see subscriptions in DB; call sync again → `unchanged === total`
 
 ## Blocked by

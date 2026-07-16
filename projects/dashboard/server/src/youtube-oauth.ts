@@ -40,6 +40,7 @@ import { randomBytes } from 'node:crypto'
 import { Hono } from 'hono'
 import type { Database } from './db.js'
 import type { TokenCipher, StateSigner } from './token-encryption.js'
+import type { YouTubeSubscriptionsSync } from './youtube-subscriptions-sync.js'
 import type { AuthVariables } from './auth.js'
 import {
   createYouTubeAccount,
@@ -353,6 +354,16 @@ export interface YouTubeApiDeps {
   readonly cipher: TokenCipher
   readonly client: YouTubeOAuthClient
   readonly stateSigner: StateSigner
+  /**
+   * Optional subscriptions sync (issue YT-002). When provided,
+   * the OAuth callback fires a fire-and-forget sync right after
+   * the account row is created/updated, so the user's Subscriptions
+   * page is populated within ~30s of granting OAuth instead of
+   * waiting for the next daily tick. Errors are logged but do NOT
+   * fail the OAuth flow — the daily scheduler + manual "Sync now"
+   * button are the durable backstops.
+   */
+  readonly autoSyncOnGrant?: YouTubeSubscriptionsSync
 }
 
 /**
@@ -468,6 +479,33 @@ export function youtubeApi(deps: YouTubeApiDeps): Hono<{ Variables: AuthVariable
         c,
         `store_failed: ${err instanceof Error ? err.message : 'unknown'}`,
       )
+    }
+
+    // Fire-and-forget subscriptions auto-sync (issue YT-002).
+    // Goal: the user's Subscriptions page is populated within
+    // ~30s of granting OAuth instead of waiting for the next
+    // daily tick. We deliberately do NOT await this — the user
+    // has just landed on /settings/youtube and the sync is a
+    // background import. Errors are logged so the operator sees
+    // them; they don't fail the OAuth flow because the daily
+    // scheduler + manual Sync-now button are the durable backstops.
+    if (deps.autoSyncOnGrant !== undefined) {
+      void deps.autoSyncOnGrant
+        .sync()
+        .then((result) => {
+          // eslint-disable-next-line no-console
+          console.log(
+            `[youtube-oauth] auto-sync on grant: +${result.added} ~${result.updated} -${result.removed} =${result.unchanged} (${result.total} total)`,
+          )
+        })
+        .catch((err: unknown) => {
+          // eslint-disable-next-line no-console
+          console.error(
+            `[youtube-oauth] auto-sync on grant failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          )
+        })
     }
 
     return c.redirect('/settings/youtube?status=connected', 302)

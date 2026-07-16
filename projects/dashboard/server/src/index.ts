@@ -10,6 +10,11 @@ import { EmailSyncWorker } from './email-sync-worker.js'
 import { EmailSyncScheduler } from './email-sync-scheduler.js'
 import { GmailClient } from './gmail-client.js'
 import { YouTubeOAuthClient } from './youtube-oauth.js'
+import { YouTubeSubscriptionsSync } from './youtube-subscriptions-sync.js'
+import {
+  YouTubeSubscriptionsScheduler,
+  DEFAULT_YOUTUBE_SYNC_INTERVAL_HOURS,
+} from './youtube-subscriptions-scheduler.js'
 
 async function main(): Promise<void> {
   const config = await loadConfig()
@@ -61,12 +66,29 @@ async function main(): Promise<void> {
     : null
   if (syncScheduler) syncScheduler.start()
 
+  // YouTube subscriptions scheduler (issue YT-002). Mirrors the
+  // email scheduler's pattern: intervalHours=0 → manual-only mode,
+  // otherwise a daily 24h tick that runs `subscriptionsSync.sync()`.
+  // The OAuth callback also fires a one-shot sync on grant
+  // (auto-sync), so the operator usually sees results within ~30s
+  // of connecting — this scheduler is the steady-state refresh +
+  // recovery net (e.g. a sync that crashed during auto-sync will
+  // be retried at the next daily tick).
+  const youtubeSyncScheduler = youtube
+    ? new YouTubeSubscriptionsScheduler({
+        sync: youtube.subscriptionsSync,
+        intervalHours: DEFAULT_YOUTUBE_SYNC_INTERVAL_HOURS,
+      })
+    : null
+  if (youtubeSyncScheduler) youtubeSyncScheduler.start()
+
   // Graceful shutdown. Best-effort cleanup of the timer so a
   // deployed dashboard doesn't keep ticking after `pm2 stop`.
   const shutdown = (signal: NodeJS.Signals): void => {
     // eslint-disable-next-line no-console
     console.log(`[dashboard] ${signal} received; stopping scheduler and exiting`)
     if (syncScheduler) syncScheduler.stop()
+    if (youtubeSyncScheduler) youtubeSyncScheduler.stop()
     db.close()
     process.exit(0)
   }
@@ -191,6 +213,14 @@ function buildYouTubeDeps(
     redirectUri: youtubeOauthRedirectUri,
   })
 
+  // Subscriptions sync (issue YT-002). Reuses the same `client`
+  // for token refresh — no separate OAuth plumbing needed.
+  const subscriptionsSync = new YouTubeSubscriptionsSync({
+    db,
+    cipher: tokenCipher,
+    oauthClient: client,
+  })
+
   return {
     tokenCipher,
     stateSigner,
@@ -198,6 +228,7 @@ function buildYouTubeDeps(
     oauthClientSecret: youtubeOauthClientSecret,
     redirectUri: youtubeOauthRedirectUri,
     client,
+    subscriptionsSync,
   }
 }
 

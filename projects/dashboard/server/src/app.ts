@@ -20,6 +20,8 @@ import { emailViewApi } from './email-view.js'
 import type { EmailSyncWorker } from './email-sync-worker.js'
 import { youtubeApi, type YouTubeOAuthClient } from './youtube-oauth.js'
 import { youtubeSettingsView, youtubeSettingsSetupOnly } from './youtube-settings.js'
+import type { YouTubeSubscriptionsSync } from './youtube-subscriptions-sync.js'
+import { youtubeSyncApi } from './youtube-subscriptions-api.js'
 
 export interface EmailDeps {
   /** AES-256-GCM cipher for OAuth tokens at rest. */
@@ -64,6 +66,14 @@ export interface YouTubeDeps {
    * touch the table helpers directly.
    */
   readonly client: YouTubeOAuthClient
+  /**
+   * Subscriptions sync orchestrator (issue YT-002). Used by:
+   *   * `POST /api/youtube/sync` — manual trigger endpoint.
+   *   * The OAuth callback handler — fire-and-forget auto-sync
+   *     right after the account row is created/updated.
+   *   * The daily scheduler (constructed in `index.ts`).
+   */
+  readonly subscriptionsSync: YouTubeSubscriptionsSync
 }
 
 export interface AppDeps {
@@ -204,6 +214,13 @@ export function createApp({
         cipher: youtube.tokenCipher,
         stateSigner: youtube.stateSigner,
         client: youtube.client,
+        autoSyncOnGrant: youtube.subscriptionsSync,
+      }),
+    )
+    app.route(
+      '/api/youtube',
+      youtubeSyncApi({
+        sync: youtube.subscriptionsSync,
       }),
     )
     app.route(

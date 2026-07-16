@@ -45,6 +45,10 @@ const MIGRATIONS = [
     name: '008_youtube_accounts',
     filename: '008_youtube_accounts.sql',
   },
+  {
+    name: '009_subscriptions',
+    filename: '009_subscriptions.sql',
+  },
 ] as const
 
 export interface RunMigrationsOptions {
