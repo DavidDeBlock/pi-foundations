@@ -357,6 +357,19 @@ describe('searchVideos — sorting', () => {
 })
 
 describe('searchVideos — filters', () => {
+  it('excludes videos from subscriptions that are currently excluded', () => {
+    insertVideo(env.db, makeInput({ videoId: 'aaaa' }))
+    env.db.run(
+      `UPDATE subscriptions SET is_included = 0 WHERE channel_id = 'UCaaaaaaa000000000000aab'`,
+    )
+
+    const r = searchVideos(env.db)
+
+    expect(r.items).toEqual([])
+    expect(r.total).toBe(0)
+    expect(countVideos(env.db)).toBe(1)
+  })
+
   it('filters by channel_id', () => {
     upsertSubscription(env.db, {
       googleAccountId: 'acct-1',

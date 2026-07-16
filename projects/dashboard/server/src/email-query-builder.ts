@@ -186,7 +186,7 @@ export function buildThreadQuery(threadId: string): ThreadQuery {
   return {
     sql: `
       SELECT id, account_id, thread_id, subject, sender, sender_email,
-             to_addrs, cc_addrs, received_at, snippet, body_plain,
+             to_addrs, cc_addrs, received_at, snippet, body_plain, body_html,
              is_unread, labels, synced_at
         FROM emails
        WHERE thread_id = ?
@@ -208,7 +208,7 @@ export function buildDetailQuery(id: string): DetailQuery {
   return {
     sql: `
       SELECT id, account_id, thread_id, subject, sender, sender_email,
-             to_addrs, cc_addrs, received_at, snippet, body_plain,
+             to_addrs, cc_addrs, received_at, snippet, body_plain, body_html,
              is_unread, labels, synced_at
         FROM emails
        WHERE id = ?

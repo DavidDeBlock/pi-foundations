@@ -53,6 +53,10 @@ const MIGRATIONS = [
     name: '010_videos',
     filename: '010_videos.sql',
   },
+  {
+    name: '011_email_html_body',
+    filename: '011_email_html_body.sql',
+  },
 ] as const
 
 export interface RunMigrationsOptions {

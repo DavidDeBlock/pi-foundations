@@ -763,6 +763,36 @@ describe('sync — email_tags untouched (#025)', () => {
     )
     expect(after[0]?.count).toBe(0)
   })
+
+  it('stores the HTML alternative alongside the plain-text body', async () => {
+    const env = await buildTestEnv()
+    const message = buildEmail({
+      id: 'm-rich',
+      bodyPlain: 'Plain fallback',
+      bodyHtml: '<p><strong>Rich body</strong></p>',
+    })
+    const stub = buildStubClient({
+      fetchPage: pageFetch([{ id: message.id, threadId: message.threadId }]),
+      fetchMessage: messageFetch(new Map([[message.id, message]])),
+    })
+    const worker = new EmailSyncWorker({
+      db: env.db,
+      cipher: env.cipher,
+      buildGmailClient: () => stub,
+      nowMs: env.nowMsFn,
+    })
+
+    await worker.sync({ accountId: env.accountId })
+
+    const row = env.db.get<{ body_plain: string; body_html: string | null }>(
+      'SELECT body_plain, body_html FROM emails WHERE id = ?',
+      [message.id],
+    )
+    expect(row).toEqual({
+      body_plain: 'Plain fallback',
+      body_html: '<p><strong>Rich body</strong></p>',
+    })
+  })
 })
 
 describe('sync — pagination + resume from cursor', () => {

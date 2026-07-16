@@ -41,6 +41,7 @@ export interface EmailDetail {
   readonly receivedAt: string
   readonly snippet: string
   readonly bodyPlain: string
+  readonly bodyHtml: string | null
   readonly isUnread: boolean
   readonly labels: readonly string[]
   readonly syncedAt: string
@@ -75,6 +76,7 @@ interface RawDetailRow {
   received_at: string
   snippet: string
   body_plain: string
+  body_html: string | null
   is_unread: number | bigint
   labels: string
   synced_at: string
@@ -134,6 +136,7 @@ function rowToDetail(r: RawDetailRow): EmailDetail {
     receivedAt: r.received_at,
     snippet: r.snippet,
     bodyPlain: r.body_plain,
+    bodyHtml: r.body_html,
     isUnread: !!r.is_unread,
     labels: parseJsonArray(r.labels),
     syncedAt: r.synced_at,

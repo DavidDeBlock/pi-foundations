@@ -647,10 +647,10 @@ function upsertEmail(
   db.run(
     `INSERT INTO emails (
         id, account_id, thread_id, subject, sender, sender_email,
-        to_addrs, cc_addrs, received_at, snippet, body_plain,
+        to_addrs, cc_addrs, received_at, snippet, body_plain, body_html,
         is_unread, labels, synced_at
       ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       )
       ON CONFLICT(id) DO UPDATE SET
         account_id    = excluded.account_id,
@@ -663,6 +663,7 @@ function upsertEmail(
         received_at   = excluded.received_at,
         snippet       = excluded.snippet,
         body_plain    = excluded.body_plain,
+        body_html     = excluded.body_html,
         is_unread     = excluded.is_unread,
         labels        = excluded.labels,
         synced_at     = excluded.synced_at
@@ -679,6 +680,7 @@ function upsertEmail(
       email.internalDate,
       email.snippet,
       email.bodyPlain,
+      email.bodyHtml ?? null,
       email.isUnread ? 1 : 0,
       labelsJson,
       syncedAt,

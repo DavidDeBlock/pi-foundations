@@ -51,6 +51,7 @@ export interface DbEmailState {
   readonly receivedAt: string
   readonly snippet: string
   readonly bodyPlain: string
+  readonly bodyHtml?: string | null
   readonly isUnread: boolean
   readonly labels: readonly string[]
 }
@@ -176,6 +177,7 @@ function emailChanged(db: DbEmailState, incoming: RawEmail): boolean {
   if (!arrayEq(db.ccAddrs, incoming.cc.map((a) => a.email))) return true
   if (db.snippet !== incoming.snippet) return true
   if (db.bodyPlain !== incoming.bodyPlain) return true
+  if ((db.bodyHtml ?? null) !== (incoming.bodyHtml ?? null)) return true
   if (db.isUnread !== incoming.isUnread) return true
   if (!arrayEq(db.labels, [...incoming.labels])) return true
   if (db.threadId !== incoming.threadId) return true
@@ -220,11 +222,12 @@ export function readDbState(db: {
     received_at: string
     snippet: string
     body_plain: string
+    body_html: string | null
     is_unread: number | bigint
     labels: string
   }>(`SELECT id, thread_id, subject, sender, sender_email,
                 to_addrs, cc_addrs, received_at, snippet,
-                body_plain, is_unread, labels
+                body_plain, body_html, is_unread, labels
            FROM emails`)
   const emails = new Map<string, DbEmailState>()
   for (const r of rows) {
@@ -239,6 +242,7 @@ export function readDbState(db: {
       receivedAt: r.received_at,
       snippet: r.snippet,
       bodyPlain: r.body_plain,
+      bodyHtml: r.body_html,
       isUnread: !!r.is_unread,
       labels: parseJsonArray(r.labels),
     })

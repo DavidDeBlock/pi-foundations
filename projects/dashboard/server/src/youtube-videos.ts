@@ -165,6 +165,9 @@ const MAX_LIST_LIMIT = 200
 
 /**
  * Paginated, filterable list of videos for `GET /api/videos`.
+ * Videos from currently excluded subscriptions are omitted. Their rows
+ * remain stored so re-including a channel restores its existing history,
+ * and direct detail links continue to work.
  *
  * Sort order: `discovered_at DESC, id ASC`. The `id ASC` tiebreaker
  * keeps pagination stable when many videos share the same
@@ -187,7 +190,7 @@ export function searchVideos(
   const offset = (page - 1) * limit
 
   // ─── WHERE assembly ────────────────────────────────────────────────
-  const where: string[] = []
+  const where: string[] = ['s.is_included = 1']
   const params: Array<string | number> = []
   if (options.channelId) {
     where.push('v.channel_id = ?')
@@ -211,7 +214,9 @@ export function searchVideos(
   // DISTINCT base) so the `total` matches the filtered query.
   const totalRow = db.get<{ c: number }>(
     `SELECT COUNT(*) AS c FROM (
-       SELECT DISTINCT v.id FROM videos v${whereSql}
+       SELECT DISTINCT v.id
+         FROM videos v
+         JOIN subscriptions s ON s.channel_id = v.channel_id${whereSql}
      )`,
     params,
   )

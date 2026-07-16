@@ -34,6 +34,7 @@ import {
   getEmailAccount,
   updateEmailAccountTokens,
 } from './email-accounts.js'
+import { htmlToPlainText } from './email-body.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ export interface RawEmail {
   readonly to: readonly RawEmailAddress[]
   readonly cc: readonly RawEmailAddress[]
   readonly bodyPlain: string
+  readonly bodyHtml?: string | null
   readonly labels: readonly string[]
   readonly isUnread: boolean
 }
@@ -381,6 +383,7 @@ interface GmailMessageFull {
   snippet?: string
   labelIds?: string[]
   payload?: {
+    mimeType?: string
     headers?: Array<{ name?: string; value?: string }>
     body?: { data?: string }
     parts?: GmailMessagePart[]
@@ -398,7 +401,8 @@ interface GmailMessagePart {
 
 function parseGmailMessage(msg: GmailMessageFull): RawEmail {
   const headers = parseHeaders(msg.payload?.headers ?? [])
-  const bodyPlain = extractPlainTextBody(msg.payload) ?? ''
+  const bodyHtml = extractHtmlBody(msg.payload)
+  const bodyPlain = extractPlainTextBody(msg.payload) ?? (bodyHtml ? htmlToPlainText(bodyHtml) : '')
   const from = parseAddress(headers['from'] ?? '')
   const to = parseAddressList(headers['to'] ?? '')
   const cc = parseAddressList(headers['cc'] ?? [])
@@ -417,6 +421,7 @@ function parseGmailMessage(msg: GmailMessageFull): RawEmail {
     to,
     cc,
     bodyPlain,
+    bodyHtml,
     labels: msg.labelIds ?? [],
     isUnread: (msg.labelIds ?? []).includes('UNREAD'),
   }
@@ -441,7 +446,9 @@ function extractPlainTextBody(
 
   // Simple (non-multipart) message: the body sits directly on `payload.body`.
   if (payload.body?.data && !payload.parts) {
-    return decodeBase64Url(payload.body.data)
+    return payload.mimeType?.toLowerCase() === 'text/html'
+      ? null
+      : decodeBase64Url(payload.body.data)
   }
 
   // Multipart: walk the part tree depth-first. Prefer text/plain when
@@ -456,11 +463,25 @@ function extractPlainTextBody(
       }
     }
     for (const part of flat) {
-      if (part.body?.data) return decodeBase64Url(part.body.data)
+      if (part.body?.data && part.mimeType?.startsWith('text/') && part.mimeType !== 'text/html') {
+        return decodeBase64Url(part.body.data)
+      }
     }
   }
 
   return null
+}
+
+function extractHtmlBody(payload: GmailMessageFull['payload']): string | null {
+  if (!payload) return null
+  if (payload.body?.data && !payload.parts && payload.mimeType?.toLowerCase() === 'text/html') {
+    return decodeBase64Url(payload.body.data)
+  }
+  if (!payload.parts) return null
+  const part = flattenParts(payload.parts).find(
+    (candidate) => candidate.mimeType?.toLowerCase() === 'text/html' && candidate.body?.data,
+  )
+  return part?.body?.data ? decodeBase64Url(part.body.data) : null
 }
 
 function flattenParts(parts: GmailMessagePart[]): GmailMessagePart[] {

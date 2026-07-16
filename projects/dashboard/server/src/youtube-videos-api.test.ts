@@ -159,6 +159,21 @@ describe('GET /api/videos', () => {
     expect(body.total).toBe(0)
   })
 
+  it('does not list videos from an excluded subscription', async () => {
+    env.seed()
+    env.db.run(
+      `UPDATE subscriptions SET is_included = 0 WHERE channel_id = 'UCaaaaaaa000000000000aab'`,
+    )
+
+    const res = await req(env.app, '/api/videos', {
+      headers: { authorization: basic(PASSWORD) },
+    })
+    const body = await asJson<{ items: unknown[]; total: number }>(res)
+
+    expect(body.items).toEqual([])
+    expect(body.total).toBe(0)
+  })
+
   it('paginates with page + limit', async () => {
     for (let i = 0; i < 5; i++) env.seed({ videoId: `vv${i}`, title: `Title ${i}` })
     const res = await req(env.app, '/api/videos?page=2&limit=2', {

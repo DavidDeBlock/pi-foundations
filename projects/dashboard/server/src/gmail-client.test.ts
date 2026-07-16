@@ -321,6 +321,60 @@ describe('GmailClient.getMessage', () => {
     expect(msg.isUnread).toBe(false)
   })
 
+  it('converts a non-multipart HTML-only message to readable plain text', async () => {
+    const data = Buffer.from(
+      '<html><head><style>.hidden{display:none}</style></head><body><h1>Weekly&nbsp;update</h1><p>Hello <strong>David</strong>,</p><ul><li>First item</li><li>Second &amp; final</li></ul><script>alert(1)</script></body></html>',
+      'utf8',
+    ).toString('base64url')
+    const gmailRes = {
+      id: 'm-html-simple',
+      threadId: 't-html-simple',
+      payload: {
+        mimeType: 'text/html',
+        headers: [{ name: 'Subject', value: 'HTML only' }],
+        body: { data },
+      },
+    }
+    const { fn } = buildStub([
+      {
+        url: 'irrelevant',
+        responseFactory: () => new Response(JSON.stringify(gmailRes), { status: 200 }),
+      },
+    ])
+
+    const msg = await new GmailClient({ ...clientDeps(env), fetchFn: fn }).getMessage('m-html-simple')
+
+    expect(msg.bodyPlain).toContain('Weekly update')
+    expect(msg.bodyPlain).toContain('Hello David,')
+    expect(msg.bodyPlain).toContain('- First item')
+    expect(msg.bodyPlain).toContain('- Second & final')
+    expect(msg.bodyPlain).not.toMatch(/<[^>]+>|alert\(1\)|display:none/)
+    expect(msg.bodyHtml).toContain('<h1>Weekly&nbsp;update</h1>')
+  })
+
+  it('converts an HTML-only multipart message instead of exposing markup', async () => {
+    const html = Buffer.from('<div>Welcome<br>back, &#68;avid.</div>', 'utf8').toString('base64url')
+    const gmailRes = {
+      id: 'm-html-part',
+      threadId: 't-html-part',
+      payload: {
+        headers: [{ name: 'Subject', value: 'HTML part' }],
+        parts: [{ mimeType: 'text/html', body: { data: html } }],
+      },
+    }
+    const { fn } = buildStub([
+      {
+        url: 'irrelevant',
+        responseFactory: () => new Response(JSON.stringify(gmailRes), { status: 200 }),
+      },
+    ])
+
+    const msg = await new GmailClient({ ...clientDeps(env), fetchFn: fn }).getMessage('m-html-part')
+
+    expect(msg.bodyPlain).toBe('Welcome\nback, David.')
+    expect(msg.bodyHtml).toBe('<div>Welcome<br>back, &#68;avid.</div>')
+  })
+
   it('recurses into nested multipart bodies', async () => {
     const inner = Buffer.from('Deep body', 'utf8').toString('base64url')
     const gmailRes = {
@@ -353,6 +407,7 @@ describe('GmailClient.getMessage', () => {
     const c = new GmailClient({ ...clientDeps(env), fetchFn: fn })
     const msg = await c.getMessage('m3')
     expect(msg.bodyPlain).toBe('Deep body') // prefers text/plain over deeper HTML
+    expect(msg.bodyHtml).toBe('hi')
   })
 
   it('rejects an empty id', async () => {

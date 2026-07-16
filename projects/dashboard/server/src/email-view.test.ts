@@ -64,6 +64,7 @@ interface SeedEmail {
   readonly to?: readonly string[]
   readonly cc?: readonly string[]
   readonly bodyPlain?: string
+  readonly bodyHtml?: string | null
   readonly snippet?: string
   readonly receivedAt: string
   readonly isUnread?: boolean
@@ -77,10 +78,10 @@ function seedEmail(db: Database, e: SeedEmail): string {
   db.run(
     `INSERT INTO emails (
         id, account_id, thread_id, subject, sender, sender_email,
-        to_addrs, cc_addrs, received_at, snippet, body_plain,
+        to_addrs, cc_addrs, received_at, snippet, body_plain, body_html,
         is_unread, labels, synced_at
       ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       )`,
     [
       id,
@@ -94,6 +95,7 @@ function seedEmail(db: Database, e: SeedEmail): string {
       e.receivedAt,
       e.snippet ?? '',
       e.bodyPlain ?? '',
+      e.bodyHtml ?? null,
       e.isUnread ? 1 : 0,
       JSON.stringify(e.labels ?? []),
       e.receivedAt,
@@ -706,6 +708,40 @@ describe('GET /email/:id (detail page)', () => {
     expect(html).toContain('Here are the latest numbers from the project.')
     // The ISO datetime is in <time datetime=...> for machine readers.
     expect(html).toMatch(/<time[^>]*datetime="2024-06-01T10:00:00\.000Z"/)
+  })
+
+  it('renders legacy HTML-only bodies in a sandboxed frame without active content', async () => {
+    const id = seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-html', subject: 'HTML newsletter',
+      sender: 'News <news@example.com>', senderEmail: 'news@example.com',
+      bodyPlain: '<html><body><h1>Today&nbsp;in tech</h1><p>Hello <strong>David</strong>.</p><script>alert(1)</script></body></html>',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+
+    const res = await authed(env, `/email/${id}`)
+    const html = await res.text()
+
+    expect(html).toContain('Today&amp;nbsp;in tech')
+    expect(html).toContain('email-html-body')
+    expect(html).toContain('sandbox')
+    expect(html).toContain('Content-Security-Policy')
+    expect(html).not.toContain('alert(1)')
+  })
+
+  it('renders a stored HTML alternative instead of the plain fallback', async () => {
+    const id = seedEmail(env.db, {
+      accountId: 'acc-1', threadId: 't-rich', subject: 'Rich email',
+      sender: 'News <news@example.com>', senderEmail: 'news@example.com',
+      bodyPlain: 'Plain fallback',
+      bodyHtml: '<div style="color:red"><strong>Rich content</strong></div>',
+      receivedAt: '2024-06-01T10:00:00.000Z',
+    })
+
+    const html = await (await authed(env, `/email/${id}`)).text()
+
+    expect(html).toContain('Rich content')
+    expect(html).toContain('srcdoc=')
+    expect(html).not.toContain('<pre class="email-detail-body">Plain fallback</pre>')
   })
 
   it('shows a "View all messages in this thread" link to /email/thread/:id', async () => {

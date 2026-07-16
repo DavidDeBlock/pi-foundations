@@ -69,6 +69,7 @@ export interface EmailDetailWithHidden {
   readonly receivedAt: string
   readonly snippet: string
   readonly bodyPlain: string
+  readonly bodyHtml: string | null
   readonly isUnread: boolean
   readonly labels: readonly string[]
   readonly syncedAt: string
@@ -241,13 +242,14 @@ export function getByIdIncludingHidden(
     received_at: string
     snippet: string
     body_plain: string
+    body_html: string | null
     is_unread: number | bigint
     labels: string
     synced_at: string
     hidden_at: string | null
   }>(
     `SELECT id, account_id, thread_id, subject, sender, sender_email,
-            to_addrs, cc_addrs, received_at, snippet, body_plain,
+            to_addrs, cc_addrs, received_at, snippet, body_plain, body_html,
             is_unread, labels, synced_at, hidden_at
        FROM emails
       WHERE id = ?`,
@@ -266,6 +268,7 @@ export function getByIdIncludingHidden(
     receivedAt: row.received_at,
     snippet: row.snippet,
     bodyPlain: row.body_plain,
+    bodyHtml: row.body_html,
     isUnread: !!row.is_unread,
     labels: parseJsonArray(row.labels),
     syncedAt: row.synced_at,

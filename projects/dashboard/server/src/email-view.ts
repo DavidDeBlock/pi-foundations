@@ -36,6 +36,7 @@
 import { Hono } from 'hono'
 import type { AuthVariables } from './auth.js'
 import type { Database } from './db.js'
+import { looksLikeHtml, normalizeStoredEmailBody } from './email-body.js'
 import type { EmailSyncWorker } from './email-sync-worker.js'
 import {
   listEmails,
@@ -343,6 +344,7 @@ function renderThreadPage(_threadId: string, messages: ReadonlyArray<{
   readonly cc: readonly string[]
   readonly receivedAt: string
   readonly bodyPlain: string
+  readonly bodyHtml: string | null
   readonly isUnread: boolean
   readonly labels: readonly string[]
 }>): string {
@@ -386,6 +388,7 @@ function renderThreadMessage(m: {
   readonly cc: readonly string[]
   readonly receivedAt: string
   readonly bodyPlain: string
+  readonly bodyHtml: string | null
   readonly isUnread: boolean
   readonly labels: readonly string[]
 }): string {
@@ -409,7 +412,7 @@ function renderThreadMessage(m: {
               ${toLine}
               ${ccLine}
             </dl>
-            <pre class="email-thread-msg-body">${escapeHtml(m.bodyPlain)}</pre>
+            ${renderEmailBody(m.bodyPlain, m.bodyHtml, 'email-thread-msg-body')}
           </article>`
 }
 
@@ -505,7 +508,7 @@ ${COMMON_HEAD}
             ${labelsHtml}
           </header>
           ${tagsHtml}
-          <pre class="email-detail-body">${escapeHtml(d.bodyPlain)}</pre>
+          ${renderEmailBody(d.bodyPlain, d.bodyHtml, 'email-detail-body')}
           <footer class="email-detail-actions" data-email-actions>
             <button type="button" data-email-action="${hideAction}" data-email-hide-button title="${hideTitle}">${hideLabel}</button>
             <button type="button" data-email-action="summarize" disabled title="Summarize is wired in issue #027">Summarize</button>
@@ -911,6 +914,27 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;')
 }
 
+function renderEmailBody(bodyPlain: string, bodyHtml: string | null, className: string): string {
+  // Rows synced before migration 011 may contain raw HTML in body_plain.
+  const html = bodyHtml ?? (looksLikeHtml(bodyPlain) ? bodyPlain : null)
+  if (html === null) {
+    return `<pre class="${className}">${escapeHtml(normalizeStoredEmailBody(bodyPlain))}</pre>`
+  }
+
+  const safeBody = html
+    .replace(/<(script|iframe|object|embed|form)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '')
+    .replace(/<(?:meta|base|link)\b[^>]*>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/\s(?:href|src)\s*=\s*(["'])\s*javascript:[\s\S]*?\1/gi, '')
+  const srcdoc = `<!doctype html><html><head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: cid:; style-src 'unsafe-inline'; font-src data:;">
+<base target="_blank">
+<style>:root{color-scheme:light only}html{background:#fff}body{box-sizing:border-box;margin:0;padding:20px;color:#1f2937;background:#fff;font:14px/1.55 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{max-width:100%}a{color:#2563eb}</style>
+</head><body>${safeBody}</body></html>`
+  return `<iframe class="${className} email-html-body" title="Rendered email content" sandbox referrerpolicy="no-referrer" loading="lazy" srcdoc="${escapeHtml(srcdoc)}"></iframe>`
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────
 
 const EMAIL_VIEW_STYLES = `
@@ -952,6 +976,7 @@ const EMAIL_VIEW_STYLES = `
 .email-detail-meta a:hover { text-decoration: underline; }
 .email-detail-labels { margin-bottom: 1rem; }
 .email-detail-body { white-space: pre-wrap; word-wrap: break-word; font-family: inherit; margin: 0 0 1.5rem; font-size: 0.95rem; line-height: 1.5; }
+.email-html-body { display: block; width: 100%; min-height: 32rem; border: 1px solid var(--border); border-radius: 0.5rem; background: #fff; color-scheme: light; }
 .email-detail-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding-top: 1rem; border-top: 1px solid var(--border); }
 .email-detail-actions button { padding: 0.4rem 0.85rem; font-size: 0.85rem; border: 1px solid var(--border); border-radius: 0.375rem; background: var(--surface); color: var(--text); cursor: pointer; }
 .email-detail-actions button:disabled { cursor: not-allowed; opacity: 0.5; }
@@ -973,6 +998,7 @@ const EMAIL_VIEW_STYLES = `
 .email-thread-msg-meta dt { color: var(--muted); font-weight: 500; }
 .email-thread-msg-meta dd { margin: 0; }
 .email-thread-msg-body { white-space: pre-wrap; word-wrap: break-word; font-family: inherit; margin: 0; font-size: 0.9rem; line-height: 1.5; }
+.email-thread-msg-body.email-html-body { min-height: 20rem; }
 /* ─── Tags (#025) ────────────────────────────────────────────────── */
 .email-detail-tags { margin: 0 0 1.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
 .email-detail-tags-heading { margin: 0.5rem 0 0.5rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
