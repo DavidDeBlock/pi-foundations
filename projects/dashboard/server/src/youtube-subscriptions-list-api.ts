@@ -30,6 +30,8 @@ import { Hono } from 'hono'
 import type { AuthVariables } from './auth.js'
 import type { Database } from './db.js'
 import {
+  attachTagByNameToSubscription,
+  detachTagFromSubscription,
   getSubscriptionById,
   searchSubscriptions,
   SUBSCRIPTION_FILTERS,
@@ -80,12 +82,14 @@ export function subscriptionsApi(
       )
     }
     const search = c.req.query('search') ?? ''
+    const tagId = c.req.query('tag_id') || undefined
     const page = parsePositiveInt(c.req.query('page'))
     const limit = parsePositiveInt(c.req.query('limit'))
 
     const result = searchSubscriptions(deps.db, {
       filter: filter as never,
       search,
+      ...(tagId ? { tagId } : {}),
       page,
       limit,
     })
@@ -95,6 +99,41 @@ export function subscriptionsApi(
       page: result.page,
       limit: result.limit,
     })
+  })
+
+  // ─── POST /:id/tags ───────────────────────────────────────────────
+  api.post('/:id/tags', async (c) => {
+    const id = c.req.param('id')
+    if (getSubscriptionById(deps.db, id) === null) {
+      return c.json({ ok: false, error: 'not_found' }, 404)
+    }
+    let body: { name?: unknown }
+    try {
+      body = await c.req.json() as typeof body
+    } catch {
+      return c.json({ ok: false, error: 'malformed_json' }, 400)
+    }
+    if (typeof body !== 'object' || body === null || typeof body.name !== 'string') {
+      return c.json({ ok: false, error: 'invalid_name', message: 'name must be a string' }, 400)
+    }
+    if (body.name.trim() === '' || body.name.length > 200) {
+      return c.json({ ok: false, error: 'invalid_name', message: 'name must be 1–200 characters' }, 400)
+    }
+    const tag = attachTagByNameToSubscription(deps.db, id, body.name)
+    if (!tag) {
+      return c.json({ ok: false, error: 'invalid_name', message: 'name normalized to empty' }, 400)
+    }
+    return c.json(tag, 201)
+  })
+
+  // ─── DELETE /:id/tags/:tagId ─────────────────────────────────────
+  api.delete('/:id/tags/:tagId', (c) => {
+    const id = c.req.param('id')
+    if (getSubscriptionById(deps.db, id) === null) {
+      return c.json({ ok: false, error: 'not_found' }, 404)
+    }
+    detachTagFromSubscription(deps.db, id, c.req.param('tagId'))
+    return c.body(null, 204)
   })
 
   // ─── PATCH /:id ─────────────────────────────────────────────────────
@@ -256,6 +295,7 @@ interface ApiSubscriptionItem {
   readonly last_backfilled_at: string | null
   readonly backfill_error: string | null
   readonly backfill_retryable: boolean
+  readonly tags: Subscription['tags']
 }
 
 function toApiItem(s: Subscription): ApiSubscriptionItem {
@@ -276,6 +316,7 @@ function toApiItem(s: Subscription): ApiSubscriptionItem {
     last_backfilled_at: s.lastBackfilledAt,
     backfill_error: s.backfillError,
     backfill_retryable: s.backfillRetryable,
+    tags: s.tags,
   }
 }
 

@@ -17,6 +17,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { Database } from './db.js'
+import { normalize } from './tag-normalizer.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -65,6 +66,12 @@ export interface Subscription {
   readonly backfillRetryable: boolean
   readonly createdAt: string
   readonly updatedAt: string
+  readonly tags: readonly SubscriptionTag[]
+}
+
+export interface SubscriptionTag {
+  readonly id: string
+  readonly name: string
 }
 
 /** Raw row shape, as returned by `SELECT *`. Used only by the
@@ -106,20 +113,23 @@ export function listSubscriptions(
   db: Database,
   googleAccountId?: string,
 ): Subscription[] {
+  let rows: SubscriptionRow[]
   if (googleAccountId !== undefined) {
-    const rows = db.all<SubscriptionRow>(
+    rows = db.all<SubscriptionRow>(
       `SELECT * FROM subscriptions
         WHERE google_account_id = ?
         ORDER BY channel_title COLLATE NOCASE ASC, id ASC`,
       [googleAccountId],
     )
-    return rows.map(rowToSubscription)
+  } else {
+    rows = db.all<SubscriptionRow>(
+      `SELECT * FROM subscriptions
+        ORDER BY channel_title COLLATE NOCASE ASC, id ASC`,
+    )
   }
-  const rows = db.all<SubscriptionRow>(
-    `SELECT * FROM subscriptions
-      ORDER BY channel_title COLLATE NOCASE ASC, id ASC`,
-  )
-  return rows.map(rowToSubscription)
+  const items = rows.map(rowToSubscription)
+  const tagMap = listTagsForSubscriptions(db, items.map((item) => item.id))
+  return items.map((item) => ({ ...item, tags: tagMap.get(item.id) ?? [] }))
 }
 
 /** Options for the filtered + paginated list used by `GET
@@ -137,6 +147,8 @@ export interface SearchSubscriptionsOptions {
   /** Case-insensitive substring match against `channel_title`.
    *  Empty / undefined → no filter. */
   readonly search?: string
+  /** Match subscriptions carrying this dashboard tag. */
+  readonly tagId?: string
   /** 1-based page number. Out-of-range values return an empty
    *  array. Default `1`. */
   readonly page?: number
@@ -180,9 +192,26 @@ export function searchSubscriptions(
   const params: Array<string | number> = []
   if (filter === 'included') where.push('is_included = 1')
   else if (filter === 'excluded') where.push('is_included = 0')
+  if (options.tagId) {
+    where.push(`EXISTS (
+      SELECT 1 FROM subscription_tags filter_st
+      WHERE filter_st.subscription_id = subscriptions.id
+        AND filter_st.tag_id = ?
+    )`)
+    params.push(options.tagId)
+  }
   if (search !== '') {
-    where.push('channel_title LIKE ? COLLATE NOCASE')
-    params.push(`%${search}%`)
+    where.push(`(
+      channel_title LIKE ? COLLATE NOCASE
+      OR EXISTS (
+        SELECT 1
+          FROM subscription_tags search_st
+          JOIN tags search_t ON search_t.id = search_st.tag_id
+         WHERE search_st.subscription_id = subscriptions.id
+           AND search_t.name LIKE ? COLLATE NOCASE
+      )
+    )`)
+    params.push(`%${search}%`, `%${search}%`)
   }
   const whereSql = where.length === 0 ? '' : `WHERE ${where.join(' AND ')}`
 
@@ -205,8 +234,10 @@ export function searchSubscriptions(
       LIMIT ? OFFSET ?`,
     [...params, limit, offset],
   )
+  const items = rows.map(rowToSubscription)
+  const tagMap = listTagsForSubscriptions(db, items.map((item) => item.id))
   return {
-    items: rows.map(rowToSubscription),
+    items: items.map((item) => ({ ...item, tags: tagMap.get(item.id) ?? [] })),
     total,
     page,
     limit,
@@ -251,7 +282,8 @@ function clampPage(value: number | undefined): number {
  */
 export function getSubscriptionById(db: Database, id: string): Subscription | null {
   const row = db.get<SubscriptionRow>(`SELECT * FROM subscriptions WHERE id = ?`, [id])
-  return row ? rowToSubscription(row) : null
+  if (!row) return null
+  return { ...rowToSubscription(row), tags: listTagsForSubscription(db, id) }
 }
 
 /**
@@ -266,7 +298,8 @@ export function getSubscriptionByChannelId(
     `SELECT * FROM subscriptions WHERE channel_id = ?`,
     [channelId],
   )
-  return row ? rowToSubscription(row) : null
+  if (!row) return null
+  return { ...rowToSubscription(row), tags: listTagsForSubscription(db, row.id) }
 }
 
 /** Count of subscriptions, optionally filtered by account. */
@@ -475,6 +508,71 @@ export function updateSubscriptionToggles(
   return result.changes > 0
 }
 
+/** Attach one normalized shared tag to a subscription. Idempotent. */
+export function attachTagByNameToSubscription(
+  db: Database,
+  subscriptionId: string,
+  rawName: string,
+): SubscriptionTag | null {
+  const canonical = normalize(rawName)
+  if (canonical === '') return null
+  return db.transaction(() => {
+    let tag = db.get<{ id: string }>('SELECT id FROM tags WHERE name = ?', [canonical])
+    if (!tag) {
+      tag = { id: randomUUID() }
+      db.run('INSERT INTO tags (id, name) VALUES (?, ?)', [tag.id, canonical])
+    }
+    db.run(
+      'INSERT OR IGNORE INTO subscription_tags (subscription_id, tag_id) VALUES (?, ?)',
+      [subscriptionId, tag.id],
+    )
+    return { id: tag.id, name: canonical }
+  })
+}
+
+/** Remove only the subscription-level relationship; manual video tags remain. */
+export function detachTagFromSubscription(
+  db: Database,
+  subscriptionId: string,
+  tagId: string,
+): boolean {
+  return db.run(
+    'DELETE FROM subscription_tags WHERE subscription_id = ? AND tag_id = ?',
+    [subscriptionId, tagId],
+  ).changes > 0
+}
+
+export function listTagsForSubscription(
+  db: Database,
+  subscriptionId: string,
+): SubscriptionTag[] {
+  return listTagsForSubscriptions(db, [subscriptionId]).get(subscriptionId) ?? []
+}
+
+/** Batch hydration used by the list API to avoid one tag query per row. */
+export function listTagsForSubscriptions(
+  db: Database,
+  subscriptionIds: readonly string[],
+): Map<string, SubscriptionTag[]> {
+  const result = new Map<string, SubscriptionTag[]>()
+  if (subscriptionIds.length === 0) return result
+  const placeholders = subscriptionIds.map(() => '?').join(',')
+  const rows = db.all<{ subscription_id: string; id: string; name: string }>(
+    `SELECT st.subscription_id, t.id, t.name
+       FROM subscription_tags st
+       JOIN tags t ON t.id = st.tag_id
+      WHERE st.subscription_id IN (${placeholders})
+      ORDER BY t.name COLLATE NOCASE, t.id`,
+    [...subscriptionIds],
+  )
+  for (const row of rows) {
+    const tags = result.get(row.subscription_id) ?? []
+    tags.push({ id: row.id, name: row.name })
+    result.set(row.subscription_id, tags)
+  }
+  return result
+}
+
 /**
  * Stamp `last_polled_at` on one subscription row. Used by the
  * RSS poller (YT-004). `at` defaults to now. No-op on missing id.
@@ -513,6 +611,7 @@ function rowToSubscription(row: SubscriptionRow): Subscription {
     backfillRetryable: !!row.backfill_retryable,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    tags: [],
   }
 }
 

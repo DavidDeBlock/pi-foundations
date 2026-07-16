@@ -68,6 +68,16 @@ From PRD: [PRD-004](../35-prds/PRD-004-youtube-library-history-playlists-backfil
 | [YT-013](./YT-013-watch-history-ui-watched-state.md) | Watch History UI and watched-state integration | AFK | YT-012 |
 | [YT-014](./YT-014-youtube-library-e2e-migration-docs.md) | YouTube library E2E, migration rehearsal, and docs | AFK (manual smoke) | YT-009, YT-011, YT-013 |
 
+## v3.2 — YouTube discovery controls + focus player (PRD-005)
+
+From PRD: [PRD-005](../35-prds/PRD-005-youtube-discovery-tags-and-focus-player.md)
+
+| # | Title | Type | Blocked by |
+|---|-------|------|------------|
+| [YT-015](./YT-015-subscription-tags-effective-video-tags.md) | Subscription tags and effective video-tag filtering | AFK | YT-003, YT-005, YT-008 |
+| [YT-016](./YT-016-new-videos-sort-date-range.md) | New Videos sorting and published-date range | AFK | YT-005, YT-013 |
+| [YT-017](./YT-017-youtube-focus-player.md) | Embedded and pop-out YouTube focus player | AFK (manual smoke) | YT-005 |
+
 ## v4 — Email mirror (PRD-002)
 
 From PRD: [PRD-002](../35-prds/PRD-002-email-mirror.md)
@@ -151,6 +161,19 @@ Notes on parallelism:
 - After YT-008, backfill (YT-009), playlist ingestion (YT-010), and history import (YT-012) can be implemented independently.
 - YT-011 and YT-013 are UI integrations over their respective ingestion slices.
 - YT-014 is the release gate and waits for every user-visible branch.
+
+## v3.2 (YouTube discovery + player) dependency graph
+
+```text
+YT-003 + YT-005 + YT-008 ── YT-015 ── YT-016
+             YT-005 ────────────────── YT-017
+```
+
+Notes on parallelism:
+- YT-015 and YT-017 can proceed independently.
+- YT-015 and YT-016 both touch the canonical video query and filter bar, so they
+  should land sequentially even though their product behavior is independent.
+- YT-017 is isolated to video detail, player routing, CSP, and browser behavior.
 
 ## Slicing rationale
 

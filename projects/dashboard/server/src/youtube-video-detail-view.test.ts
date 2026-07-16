@@ -22,7 +22,7 @@ import { auth, type AuthVariables } from './auth.js'
 import { InMemoryTokenStore } from './token-store.js'
 import { youtubeVideoDetailView } from './youtube-video-detail-view.js'
 import { insertVideo, type VideoInsertInput } from './youtube-videos.js'
-import { upsertSubscription } from './youtube-subscriptions.js'
+import { attachTagByNameToSubscription, upsertSubscription } from './youtube-subscriptions.js'
 
 const PASSWORD = 'secret'
 const MIGRATIONS_DIR = resolve(process.cwd(), 'migrations')
@@ -142,6 +142,46 @@ describe('GET /videos/:id — scaffold', () => {
     expect(body).toContain('href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"')
   })
 
+  it('renders a responsive privacy-enhanced player without autoplay', async () => {
+    const id = env.seed({ title: 'A focused video' })
+    const res = await env.app.request(`/videos/${id}`, {
+      headers: { authorization: basic(PASSWORD) },
+    })
+    const body = await res.text()
+    expect(res.headers.get('content-security-policy')).toBe(
+      'frame-src https://www.youtube-nocookie.com',
+    )
+    expect(body).toContain('class="video-player-frame"')
+    expect(body).toContain(
+      'src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0&amp;playsinline=1"',
+    )
+    expect(body).not.toContain('autoplay=1')
+    expect(body).toContain('title="Play A focused video by Alpha"')
+    expect(body).toContain('allow="autoplay; encrypted-media; picture-in-picture; fullscreen"')
+    expect(body).toContain('allowfullscreen')
+    expect(body).not.toContain('modestbranding')
+    expect(body).not.toContain('showinfo')
+  })
+
+  it('offers pop-out and explicit YouTube fallback actions', async () => {
+    const id = env.seed()
+    const { body } = await getText(env.app, `/videos/${id}`)
+    expect(body).toContain(`href="/videos/${id}/player"`)
+    expect(body).toContain('data-popout-player')
+    expect(body).toContain('Pop out player')
+    expect(body).toContain('Open on YouTube')
+    expect(body).toContain('Private, deleted, age-restricted, or embed-disabled')
+  })
+
+  it('does not construct an embed URL from an invalid stored video id', async () => {
+    const id = env.seed({ videoId: 'bad\"><script', title: '<unsafe>' })
+    const { body } = await getText(env.app, `/videos/${id}`)
+    expect(body).not.toContain('youtube-nocookie.com/embed/')
+    expect(body).toContain('Its stored YouTube ID is invalid')
+    expect(body).toContain('&lt;unsafe&gt;')
+    expect(body).not.toContain('<unsafe>')
+  })
+
   it('shows derived watch count and last watched time without playback progress', async () => {
     const id = env.seed()
     env.db.run(`INSERT INTO youtube_history_imports
@@ -177,6 +217,62 @@ describe('GET /videos/:id — scaffold', () => {
     expect(body).toContain('data-video-all-tags')
     expect(body).toContain('"launch"')
     expect(body).toContain('"queue"')
+  })
+})
+
+// ─── Focus player ────────────────────────────────────────────────────────
+
+describe('GET /videos/:id/player — focus player', () => {
+  it('returns 401 unauthenticated', async () => {
+    const id = env.seed()
+    const res = await env.app.request(`/videos/${id}/player`)
+    expect(res.status).toBe(401)
+  })
+
+  it('returns the existing authenticated 404 for an unknown video', async () => {
+    const { status, body } = await getText(env.app, '/videos/no-such-id/player')
+    expect(status).toBe(404)
+    expect(body).toBe('Video not found')
+  })
+
+  it('renders an autoplaying full-viewport privacy-enhanced iframe', async () => {
+    const id = env.seed({ title: 'Focus <demo>' })
+    env.db.run(`UPDATE youtube_channels SET title = 'Alpha & <Beta>' WHERE channel_id = 'UCaaaaaaa000000000000aab'`)
+    const res = await env.app.request(`/videos/${id}/player`, {
+      headers: { authorization: basic(PASSWORD) },
+    })
+    const body = await res.text()
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-security-policy')).toBe(
+      'frame-src https://www.youtube-nocookie.com',
+    )
+    expect(body).toContain('class="focus-player-canvas"')
+    expect(body).toContain(
+      'src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?autoplay=1&amp;rel=0&amp;playsinline=1"',
+    )
+    expect(body).toContain('title="Play Focus &lt;demo&gt; by Alpha &amp; &lt;Beta&gt;"')
+    expect(body).toContain('allow="autoplay; encrypted-media; picture-in-picture; fullscreen"')
+    expect(body).toContain('allowfullscreen')
+    expect(body).not.toContain('Focus <demo>')
+  })
+
+  it('contains no dashboard chrome, metadata, transcript, or watch mutation code', async () => {
+    const id = env.seed()
+    const before = env.db.get<{ count: number }>(
+      'SELECT COUNT(*) AS count FROM youtube_watch_events',
+    )!.count
+    const { body } = await getText(env.app, `/videos/${id}/player`)
+    expect(body).not.toContain('site-header')
+    expect(body).not.toContain('sidebar')
+    expect(body).not.toContain('video-detail-title')
+    expect(body).not.toContain('video-detail-meta')
+    expect(body).not.toContain('Transcript')
+    expect(body).not.toContain('Video briefing')
+    expect(body).not.toContain('Open on YouTube')
+    expect(body).not.toContain('/api/videos/')
+    expect(env.db.get<{ count: number }>(
+      'SELECT COUNT(*) AS count FROM youtube_watch_events',
+    )!.count).toBe(before)
   })
 })
 
@@ -228,6 +324,17 @@ describe('GET /videos/:id — folder select', () => {
 // ─── Tag chips ──────────────────────────────────────────────────────────
 
 describe('GET /videos/:id — tag chips', () => {
+  it('shows inherited tags with a channel indicator and subscription edit link', async () => {
+    const subscription = env.db.get<{ id: string }>('SELECT id FROM subscriptions LIMIT 1')!
+    attachTagByNameToSubscription(env.db, subscription.id, 'research')
+    const id = env.seed()
+    const { body } = await getText(env.app, `/videos/${id}`)
+    expect(body).toContain('data-tag-source="subscription"')
+    expect(body).toContain('video-detail-tag-channel')
+    expect(body).toContain('Manage research on subscription')
+    expect(body).not.toContain('aria-label="Remove tag research"')
+  })
+
   it('renders one chip per attached tag with a × button', async () => {
     env.db.run(
       `INSERT INTO tags (id, name) VALUES ('t-1', 'launch'), ('t-2', 'queue')`,
@@ -398,5 +505,18 @@ describe('GET /videos/:id — inline script', () => {
     expect(body).toContain('data-edit-video-title')
     expect(body).toContain('data-video-folder-select')
     expect(body).toContain('data-video-tag-remove')
+  })
+
+  it('opens a resizable 16:9 popup and preserves native new-tab fallback', async () => {
+    const id = env.seed()
+    const { body } = await getText(env.app, `/videos/${id}`)
+    expect(body).toContain("var width = 960")
+    expect(body).toContain("var height = 540")
+    expect(body).toContain("popup=yes,resizable=yes,scrollbars=no")
+    expect(body).toContain("var popup = window.open('', 'dashboard-youtube-focus-' + videoId, features)")
+    expect(body).toContain('if (!popup) return')
+    expect(body).toContain('ev.preventDefault()')
+    expect(body).toContain('popup.location.href = popoutLink.href')
+    expect(body).toContain('target="_blank"')
   })
 })

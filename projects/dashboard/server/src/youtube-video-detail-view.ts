@@ -31,7 +31,7 @@ import {
   renderAppNavigation,
   renderSidebarFooter,
 } from './view-shared.js'
-import { getVideoDetail, type VideoDetail } from './youtube-videos.js'
+import { getVideoDetail, type EffectiveVideoTag, type VideoDetail } from './youtube-videos.js'
 import { listAllFoldersWithCounts } from './folders.js'
 import { listAllTagsWithUsage } from './tags.js'
 import {
@@ -54,12 +54,22 @@ export interface YouTubeVideoDetailViewDeps {
 /**
  * Mounted at `/videos`. Adds:
  *   GET /videos/:id  — detail page with edit affordances.
+ *   GET /videos/:id/player — minimal focus-player document.
  * 404 when `:id` is unknown.
  */
 export function youtubeVideoDetailView(
   deps: YouTubeVideoDetailViewDeps,
 ): Hono<{ Variables: AuthVariables }> {
   const api = new Hono<{ Variables: AuthVariables }>()
+
+  api.get('/:id/player', (c) => {
+    const id = c.req.param('id')
+    if (!id) return c.text('not found', 404)
+    const detail = getVideoDetail(deps.db, id)
+    if (detail === null) return c.text('Video not found', 404)
+    c.header('Content-Security-Policy', YOUTUBE_FRAME_CSP)
+    return c.html(renderPlayerPage(detail))
+  })
 
   api.get('/:id', (c) => {
     const id = c.req.param('id')
@@ -70,6 +80,7 @@ export function youtubeVideoDetailView(
     const tags = listAllTagsWithUsage(deps.db)
     const transcript = getVideoTranscript(deps.db, id)
     const summary = getVideoSummary(deps.db, id)
+    c.header('Content-Security-Policy', YOUTUBE_FRAME_CSP)
     return c.html(
       renderPage({
         detail,
@@ -105,7 +116,8 @@ function renderPage(opts: RenderPageOptions): string {
   const { detail } = opts
   const tagsJson = JSON.stringify(opts.allTags.map((t) => t.name))
   const folderSelect = renderFolderSelect(opts.folders, detail.folderId)
-  const tagChips = detail.tags.map((t) => renderTagChip(t, detail.id)).join('')
+  const tagChips = detail.tags.map((t) => renderTagChip(t, detail.channelTitle)).join('')
+  const player = renderVideoPlayer(detail, false)
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -153,10 +165,19 @@ ${COMMON_HEAD}
           <span>Saved in</span>${detail.playlists.map((playlist) => `<a href="/playlists/${encodeURIComponent(playlist.id)}">${escapeHtml(playlist.title)}</a>`).join('')}
         </section>` : ''}
 
-        <section class="video-detail-thumb">
-          ${detail.thumbnailUrl
-            ? `<a href="${escapeHtml(detail.link)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(detail.thumbnailUrl)}" alt="" loading="lazy"></a>`
-            : '<div class="video-detail-thumb-fallback" aria-hidden="true"></div>'}
+        <section class="video-detail-player-section" aria-labelledby="video-player-heading">
+          <div class="video-detail-player-heading">
+            <div>
+              <span class="video-detail-player-eyebrow">Focus player</span>
+              <h2 id="video-player-heading">Watch without the feed</h2>
+            </div>
+            <div class="video-detail-player-actions">
+              <a class="video-detail-popout" href="/videos/${encodeURIComponent(detail.id)}/player" target="_blank" rel="noopener" data-popout-player>Pop out player</a>
+              <a class="video-detail-youtube-link" href="${escapeHtml(detail.link)}" target="_blank" rel="noopener noreferrer">Open on YouTube ↗</a>
+            </div>
+          </div>
+          ${player}
+          <p class="video-detail-player-note">Playback availability is controlled by YouTube. Private, deleted, age-restricted, or embed-disabled videos may need to be opened on YouTube.</p>
         </section>
 
         <section class="video-detail-folder">
@@ -187,6 +208,59 @@ ${COMMON_HEAD}
   ${HAMBURGER_SCRIPT_TAG}
   <script type="application/json" id="video-all-tags" data-video-all-tags>${tagsJson}</script>
   <script>${VIDEO_DETAIL_SCRIPT}</script>
+</body>
+</html>`
+}
+
+const YOUTUBE_FRAME_CSP = 'frame-src https://www.youtube-nocookie.com'
+const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/
+
+function youtubeEmbedUrl(videoId: string, autoplay: boolean): string | null {
+  if (!YOUTUBE_VIDEO_ID.test(videoId)) return null
+  const params = autoplay
+    ? '?autoplay=1&amp;rel=0&amp;playsinline=1'
+    : '?rel=0&amp;playsinline=1'
+  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}${params}`
+}
+
+function renderVideoPlayer(detail: VideoDetail, autoplay: boolean): string {
+  const embedUrl = youtubeEmbedUrl(detail.videoId, autoplay)
+  if (embedUrl === null) {
+    return `<div class="video-player-unavailable" role="status">
+      <strong>This video cannot be embedded.</strong>
+      <span>Its stored YouTube ID is invalid. Use Open on YouTube instead.</span>
+    </div>`
+  }
+  return `<div class="video-player-frame">
+    <iframe src="${embedUrl}"
+            title="Play ${escapeHtml(detail.title)} by ${escapeHtml(detail.channelTitle)}"
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+            referrerpolicy="strict-origin-when-cross-origin"
+            allowfullscreen></iframe>
+  </div>`
+}
+
+function renderPlayerPage(detail: VideoDetail): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>${escapeHtml(detail.title)} — Focus player</title>
+  <style>
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; }
+    .focus-player-canvas { width: 100%; height: 100%; display: grid; place-items: center; background: #000; }
+    .video-player-frame { width: 100%; max-height: 100%; aspect-ratio: 16 / 9; }
+    .video-player-frame iframe { display: block; width: 100%; height: 100%; border: 0; }
+    .video-player-unavailable { box-sizing: border-box; max-width: 34rem; margin: 1rem; padding: 1.25rem; color: #fff; background: #171717; border: 1px solid #404040; border-radius: .75rem; font: 16px/1.5 system-ui, sans-serif; text-align: center; }
+    .video-player-unavailable strong, .video-player-unavailable span { display: block; }
+    .video-player-unavailable span { margin-top: .35rem; color: #c7c7c7; }
+    @media (min-aspect-ratio: 16/9) { .video-player-frame { width: auto; height: 100%; aspect-ratio: 16 / 9; } }
+  </style>
+</head>
+<body>
+  <main class="focus-player-canvas">${renderVideoPlayer(detail, true)}</main>
 </body>
 </html>`
 }
@@ -322,12 +396,21 @@ function renderFolderSelect(
 }
 
 function renderTagChip(
-  tag: { readonly id: string; readonly name: string },
-  _videoId: string,
+  tag: EffectiveVideoTag,
+  channelTitle: string,
 ): string {
-  return `<span class="video-detail-tag" data-video-tag data-tag-id="${escapeHtml(tag.id)}" data-tag-name="${escapeHtml(tag.name)}">
-    ${escapeHtml(tag.name)}
-    <button type="button" class="video-detail-tag-x" data-video-tag-remove data-tag-id="${escapeHtml(tag.id)}" aria-label="Remove tag ${escapeHtml(tag.name)}">\u00d7</button>
+  const inherited = tag.source !== 'manual'
+  const title = tag.source === 'both'
+    ? 'This tag is both added to the video and inherited from its subscription'
+    : inherited
+      ? 'Inherited from the subscription; manage it on the Subscriptions page'
+      : 'Added directly to this video'
+  const action = tag.source === 'subscription'
+    ? `<a class="video-detail-tag-source" href="/subscriptions?search=${encodeURIComponent(channelTitle)}" aria-label="Manage ${escapeHtml(tag.name)} on subscription">↗</a>`
+    : `<button type="button" class="video-detail-tag-x" data-video-tag-remove data-tag-id="${escapeHtml(tag.id)}" aria-label="Remove tag ${escapeHtml(tag.name)}">\u00d7</button>`
+  return `<span class="video-detail-tag${inherited ? ' video-detail-tag-inherited' : ''}" data-video-tag data-tag-id="${escapeHtml(tag.id)}" data-tag-name="${escapeHtml(tag.name)}" data-tag-source="${tag.source}" data-manage-subscription-url="/subscriptions?search=${encodeURIComponent(channelTitle)}" title="${escapeHtml(title)}">
+    ${inherited ? '<span class="video-detail-tag-channel" aria-hidden="true">↳</span>' : ''}${escapeHtml(tag.name)}
+    ${action}
   </span>`
 }
 
@@ -380,9 +463,18 @@ const VIDEO_DETAIL_STYLES = `
 .video-detail-unwatched { color:var(--muted); }
 .video-detail-playlists { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, #8b5cf6 8%, var(--surface)); color: var(--muted); font-size: .8rem; }
 .video-detail-playlists a { padding: 4px 9px; border: 1px solid color-mix(in srgb, #8b5cf6 45%, var(--border)); border-radius: 999px; color: #a78bfa; text-decoration: none; }
-.video-detail-thumb { margin: 16px 0 24px; }
-.video-detail-thumb img { width: 100%; max-width: 560px; aspect-ratio: 16/9; object-fit: cover; border-radius: 12px; box-shadow: 0 14px 35px rgba(3,8,20,.24); }
-.video-detail-thumb-fallback { width: 100%; max-width: 480px; aspect-ratio: 16/9; background: var(--surface-2, rgba(127,127,127,0.1)); border-radius: 6px; }
+.video-detail-player-section { margin: 20px 0 26px; }
+.video-detail-player-heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 12px; }
+.video-detail-player-eyebrow { display: block; margin-bottom: 3px; color: var(--accent); font-size: .68rem; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+.video-detail-player-heading h2 { margin: 0; font-size: 1.05rem; }
+.video-detail-player-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.video-detail-player-actions a { padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--surface-2, rgba(127,127,127,.08)); text-decoration: none; font-size: .82rem; font-weight: 650; }
+.video-detail-player-actions .video-detail-popout { color: white; border-color: color-mix(in srgb, var(--accent) 65%, var(--border)); background: var(--accent); }
+.video-player-frame { width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 13px; background: #000; box-shadow: 0 16px 38px rgba(3,8,20,.3); }
+.video-player-frame iframe { display: block; width: 100%; height: 100%; border: 0; }
+.video-player-unavailable { display: grid; gap: 5px; place-items: center; box-sizing: border-box; min-height: 230px; padding: 24px; border: 1px solid var(--border); border-radius: 13px; color: var(--text); background: #090909; text-align: center; }
+.video-player-unavailable span { color: var(--muted); }
+.video-detail-player-note { margin: 10px 2px 0; color: var(--muted); font-size: .78rem; line-height: 1.45; }
 .video-detail-folder h2, .video-detail-tags h2 { margin: 24px 0 8px; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 .video-detail-folder-select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font: inherit; min-width: 240px; }
 .video-detail-folder-status { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); }
@@ -390,6 +482,10 @@ const VIDEO_DETAIL_STYLES = `
 .video-detail-folder-status.error-flash { color: var(--danger); }
 .video-detail-tag-list { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .video-detail-tag { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px 4px 10px; background: var(--surface-2, rgba(127,127,127,0.1)); color: var(--text); border-radius: 4px; font-size: 0.92rem; }
+.video-detail-tag-inherited { border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border)); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.video-detail-tag-channel { color: var(--accent); font-size: .75rem; }
+.video-detail-tag-source { color: var(--muted); text-decoration: none; padding: 0 3px; }
+.video-detail-tag-source:hover, .video-detail-tag-source:focus-visible { color: var(--accent); }
 .video-detail-tag-x { background: transparent; border: 0; cursor: pointer; color: var(--muted); font-size: 1rem; padding: 0 4px; }
 .video-detail-tag-x:hover { color: var(--danger); }
 .video-detail-tag-input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font: inherit; min-width: 160px; }
@@ -443,6 +539,8 @@ const VIDEO_DETAIL_STYLES = `
 @media (max-width: 720px) {
   .video-detail-header { grid-template-columns: 1fr; }
   .video-detail-edit-btn { justify-self: start; }
+  .video-detail-player-heading { align-items: start; flex-direction: column; }
+  .video-detail-player-actions { justify-content: flex-start; }
 }
 `
 
@@ -453,6 +551,26 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
   if (!article) return;
   var videoId = article.getAttribute('data-video-id');
   if (!videoId) return;
+
+  // Open a same-origin blank window synchronously from the user's click so
+  // popup policies see the gesture. If blocked, do not cancel the anchor's
+  // native target=_blank navigation: the player route still opens as a tab.
+  var popoutLink = article.querySelector('[data-popout-player]');
+  if (popoutLink) {
+    popoutLink.addEventListener('click', function(ev){
+      var width = 960;
+      var height = 540;
+      var left = Math.round((typeof window.screenX === 'number' ? window.screenX : 0) + Math.max(0, (window.outerWidth - width) / 2));
+      var top = Math.round((typeof window.screenY === 'number' ? window.screenY : 0) + Math.max(0, (window.outerHeight - height) / 2));
+      var features = 'popup=yes,resizable=yes,scrollbars=no,width=' + width + ',height=' + height + ',left=' + left + ',top=' + top;
+      var popup = window.open('', 'dashboard-youtube-focus-' + videoId, features);
+      if (!popup) return;
+      ev.preventDefault();
+      popup.opener = null;
+      popup.location.href = popoutLink.href;
+      popup.focus();
+    });
+  }
 
   // ── Status helper ─────────────────────────────────────────────
   // Flashes success/error in the given status element for 2.5s.
@@ -614,7 +732,8 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
         var tagId = pair.json.id;
         var list = article.querySelector('[data-video-tag-list]');
         if (list && tagId) {
-          if (!list.querySelector('[data-tag-id="' + tagId + '"]')) {
+          var existingChip = list.querySelector('[data-tag-id="' + tagId + '"]');
+          if (!existingChip) {
             var inputEl = tagInput;
             var addBtn = tagAdd;
             var span = document.createElement('span');
@@ -622,6 +741,7 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
             span.setAttribute('data-video-tag', '');
             span.setAttribute('data-tag-id', tagId);
             span.setAttribute('data-tag-name', name);
+            span.setAttribute('data-tag-source', pair.json.source || 'manual');
             span.appendChild(document.createTextNode(name + ' '));
             var x = document.createElement('button');
             x.type = 'button';
@@ -633,6 +753,22 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
             span.appendChild(x);
             list.insertBefore(span, inputEl);
             if (addBtn) list.insertBefore(addBtn, inputEl.nextSibling);
+          } else if (pair.json.source === 'both') {
+            existingChip.setAttribute('data-tag-source', 'both');
+            existingChip.classList.add('video-detail-tag-inherited');
+            existingChip.title = 'This tag is both added to the video and inherited from its subscription';
+            if (!existingChip.querySelector('[data-video-tag-remove]')) {
+              var sourceLink = existingChip.querySelector('.video-detail-tag-source');
+              if (sourceLink) sourceLink.remove();
+              var remove = document.createElement('button');
+              remove.type = 'button';
+              remove.className = 'video-detail-tag-x';
+              remove.setAttribute('data-video-tag-remove', '');
+              remove.setAttribute('data-tag-id', tagId);
+              remove.setAttribute('aria-label', 'Remove tag ' + name);
+              remove.textContent = '\u00d7';
+              existingChip.appendChild(remove);
+            }
           }
         }
         if (tagInput) tagInput.value = '';
@@ -671,8 +807,21 @@ export const VIDEO_DETAIL_SCRIPT = `(function(){
           if (!res.ok && res.status !== 204) {
             throw new Error('HTTP ' + res.status);
           }
-          chip.remove();
-          flashStatus(tagStatus, 'tag removed', true);
+          if (chip.getAttribute('data-tag-source') === 'both') {
+            chip.setAttribute('data-tag-source', 'subscription');
+            chip.title = 'Inherited from the subscription; manage it on the Subscriptions page';
+            x.remove();
+            var manage = document.createElement('a');
+            manage.className = 'video-detail-tag-source';
+            manage.href = chip.getAttribute('data-manage-subscription-url') || '/subscriptions';
+            manage.setAttribute('aria-label', 'Manage ' + (chip.getAttribute('data-tag-name') || 'tag') + ' on subscription');
+            manage.textContent = '↗';
+            chip.appendChild(manage);
+            flashStatus(tagStatus, 'manual source removed; still inherited', true);
+          } else {
+            chip.remove();
+            flashStatus(tagStatus, 'tag removed', true);
+          }
         })
         .catch(function(err){
           x.disabled = false;

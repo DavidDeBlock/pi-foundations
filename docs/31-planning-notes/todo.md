@@ -1264,3 +1264,9 @@ Let's add some more things regarding YouTube. I want to add my watch history, an
 
 Maybe it's a good idea to create the plans first so you can implement them individually. We have a docs folder under the dashboard directory, so either place them in plans, PRDs, or issues, like you want. I suggest creating PRDs first and then creating the separate issues pointing to that PRD so you are always on track with what to implement. 
  
+
+ 1.It would be nice to add some tags to the subscriptions as well, so the videos from those subscriptions already have a tag on them. Add some filters so I can search on tags as well.
+
+ 2. On the new video sections, I want some sorting options, and I also want to select from to date. 
+
+ 3.I want to have an embedded YouTube player so I only see the movie or the video without anything else. And I also want to open it in a separate window so I can full-screen it as well or have it smaller or resizable, but I don't want anything else. I don't want to see the comments. I don't want to see the new video feed on the right, just the video. 

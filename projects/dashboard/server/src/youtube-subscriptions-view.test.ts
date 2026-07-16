@@ -25,7 +25,7 @@ import { resolve } from 'node:path'
 import { auth, type AuthVariables } from './auth.js'
 import { InMemoryTokenStore } from './token-store.js'
 import { subscriptionsViewApi } from './youtube-subscriptions-view.js'
-import { upsertSubscription } from './youtube-subscriptions.js'
+import { attachTagByNameToSubscription, upsertSubscription } from './youtube-subscriptions.js'
 import { randomUUID } from 'node:crypto'
 
 const MIGRATIONS_DIR = resolve(process.cwd(), 'migrations')
@@ -154,6 +154,22 @@ describe('/subscriptions empty states', () => {
 // ─── List rendering ───────────────────────────────────────────────────────
 
 describe('/subscriptions list rendering', () => {
+  it('renders editable tags and an autocomplete-backed tag filter', async () => {
+    seedFixture()
+    const alpha = env.db.get<{ id: string }>("SELECT id FROM subscriptions WHERE channel_id = 'UCa'")!
+    const tag = attachTagByNameToSubscription(env.db, alpha.id, 'Data Science')!
+    const res = await env.app.request(`/subscriptions?tag_id=${tag.id}`, {
+      headers: { authorization: basic(PASSWORD) },
+    })
+    const html = await res.text()
+    expect(html).toContain('#data-science')
+    expect(html).toContain('data-subscription-tag-remove')
+    expect(html).toContain('data-subscription-tag-input')
+    expect(html).toContain('data-tag-filter-form')
+    expect(html).toContain(`name="tag_id" value="${tag.id}"`)
+    expect(html).toContain('value="data-science"')
+  })
+
   it('renders every seeded row in title-ASC order', async () => {
     seedFixture()
     const res = await env.app.request('/subscriptions', {

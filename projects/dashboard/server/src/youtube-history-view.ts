@@ -59,10 +59,11 @@ function renderEvent(item: WatchHistoryEvent): string {
   const youtubeLink = item.youtubeVideoId ? `https://www.youtube.com/watch?v=${encodeURIComponent(item.youtubeVideoId)}` : null
   const href = canonicalLink ?? youtubeLink
   const repeat = item.watchCount > 1 ? `<span class="history-repeat" title="Watched ${item.watchCount} times">${item.watchCount}× watched</span>` : '<span class="history-watched">Watched</span>'
+  const tags = item.tags.map((tag) => `<span class="history-tag${tag.source !== 'manual' ? ' history-tag-inherited' : ''}" title="${tag.source === 'both' ? 'Manual and inherited from subscription' : tag.source === 'subscription' ? 'Inherited from subscription' : 'Manual video tag'}">${tag.source !== 'manual' ? '↳' : '#'}${escapeHtml(tag.name)}</span>`).join('')
   return `<li class="history-event" data-history-event>
     ${href ? `<a class="history-event-link" href="${escapeHtml(href)}"${canonicalLink ? '' : ' target="_blank" rel="noopener noreferrer"'}>` : '<div class="history-event-link">'}
       <span class="history-thumb">${thumbnail}</span>
-      <span class="history-copy"><strong>${title}</strong><span class="history-meta">${escapeHtml(item.channelTitle ?? 'Unknown channel')} · <time datetime="${escapeHtml(item.watchedAt)}">${escapeHtml(formatDate(item.watchedAt))}</time></span><span class="history-states">${repeat}${canonicalLink ? '<span>Open details →</span>' : '<span>Snapshot only</span>'}</span></span>
+      <span class="history-copy"><strong>${title}</strong><span class="history-meta">${escapeHtml(item.channelTitle ?? 'Unknown channel')} · <time datetime="${escapeHtml(item.watchedAt)}">${escapeHtml(formatDate(item.watchedAt))}</time></span><span class="history-states">${repeat}${tags}${canonicalLink ? '<span>Open details →</span>' : '<span>Snapshot only</span>'}</span></span>
     ${href ? '</a>' : '</div>'}
   </li>`
 }
@@ -111,6 +112,8 @@ const STYLES = `
 .history-meta { color:var(--muted); font-size:.86rem; }
 .history-states { display:flex; gap:8px; flex-wrap:wrap; color:var(--muted); font-size:.78rem; }
 .history-watched,.history-repeat { border-radius:999px; padding:2px 8px; color:#34d399; background:color-mix(in srgb,#10b981 12%,transparent); border:1px solid color-mix(in srgb,#10b981 35%,var(--border)); }
+.history-tag { border-radius:999px; padding:2px 8px; color:var(--muted); background:var(--surface-2); border:1px solid var(--border); }
+.history-tag-inherited { color:var(--text); border-color:color-mix(in srgb,var(--accent) 28%,var(--border)); background:color-mix(in srgb,var(--accent) 7%,var(--surface)); }
 .history-empty { text-align:center; padding:52px 20px; border:1px dashed var(--border); border-radius:14px; background:var(--surface); }
 .history-empty>span { display:block; font-size:2rem; color:var(--accent); }.history-empty h2 { margin:10px 0 5px; }.history-empty p { color:var(--muted); margin:0 auto 22px; max-width:520px; }
 .history-pagination { display:flex; justify-content:space-between; align-items:center; padding:20px 0; color:var(--muted); }.history-pagination a { color:var(--accent); text-decoration:none; }.history-pagination a[aria-disabled=true] { pointer-events:none; color:var(--muted); }

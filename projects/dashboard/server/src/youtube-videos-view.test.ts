@@ -131,8 +131,53 @@ describe('GET /videos', () => {
     expect(html).toContain('data-videos-channel')
     expect(html).toContain('data-videos-folder')
     expect(html).toContain('data-videos-tag')
+    expect(html).toContain('data-videos-published-from')
+    expect(html).toContain('data-videos-published-to')
+    expect(html).toContain('data-videos-sort-choice')
+    expect(html).toContain('Recently discovered')
+    expect(html).toContain('Last 7 days')
+    expect(html).toContain('Last 30 days')
     // Empty-state copy when there are no videos
     expect(html).toContain('No videos yet')
+  })
+
+  it('reflects sort and inclusive date controls and summarizes the active range', async () => {
+    env.seed({ videoId: 'range-card', publishedAt: '2024-02-29T23:59:59Z' })
+    const html = await getText(await get(
+      env.app,
+      '/videos?sort=published_at&order=asc&published_from=2024-02-29&published_to=2024-02-29',
+    ))
+    expect(html).toContain('<option value="published_at:asc" selected>Oldest published</option>')
+    expect(html).toContain('name="sort" value="published_at"')
+    expect(html).toContain('name="order" value="asc"')
+    expect(html).toContain('name="published_from" type="date" value="2024-02-29"')
+    expect(html).toContain('name="published_to" type="date" value="2024-02-29"')
+    expect(html).toContain('Published 2024-02-29 to 2024-02-29')
+    expect(html).toContain('aria-label="Remove publication date range"')
+  })
+
+  it.each([
+    'sort=unknown',
+    'order=sideways',
+    'published_from=2025-02-29',
+    'published_from=2026-08-01&published_to=2026-07-01',
+  ])('renders an accessible explanation for invalid view parameters: %s', async (query) => {
+    env.seed({ videoId: 'still-visible' })
+    const response = await get(env.app, `/videos?${query}`)
+    expect(response.status).toBe(400)
+    const html = await getText(response)
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('These view settings could not be applied')
+    expect(html).toContain('Never Gonna Give You Up')
+    expect(html).toContain('Reset sorting and dates')
+  })
+
+  it('escapes XSS-shaped invalid date values in the view', async () => {
+    const response = await get(env.app, '/videos?published_from=%22%3E%3Csvg%2Fonload%3Dalert(1)%3E')
+    const html = await getText(response)
+    expect(response.status).toBe(400)
+    expect(html).toContain('&quot;&gt;&lt;svg/onload=alert(1)&gt;')
+    expect(html).not.toContain('<svg/onload=alert(1)>')
   })
 
   it('renders the YouTube sidebar with Videos active + links to /subscriptions + /settings/youtube', async () => {
@@ -376,5 +421,30 @@ describe('GET /videos — pagination', () => {
     expect(html).toContain('Page 1 of 3')
     // Filter params must survive on the next/prev links
     expect(html).toContain('channel_id=UCaaaaaaa000000000000aab')
+  })
+
+  it('preserves sort, range, source, playlist, folder, tag, watch state, and limit in pagination', async () => {
+    env.db.run(`INSERT INTO folders (id, parent_id, name) VALUES ('page-folder', NULL, 'Page folder')`)
+    env.db.run(`INSERT INTO tags (id, name) VALUES ('page-tag', 'Page tag')`)
+    env.db.run(`INSERT INTO youtube_playlists
+      (google_account_id, playlist_id, title, privacy_status, is_included)
+      VALUES ('acct-1', 'PL-page', 'Page playlist', 'private', 1)`)
+    for (let i = 0; i < 3; i++) {
+      const id = env.seed({ videoId: `page-video-${i}`, publishedAt: `2026-07-0${i + 1}T12:00:00Z` })
+      env.db.run(`UPDATE videos SET folder_id = 'page-folder' WHERE id = ?`, [id])
+      env.db.run(`INSERT INTO video_tags (video_id, tag_id) VALUES (?, 'page-tag')`, [id])
+      env.db.run(`INSERT INTO youtube_playlist_items
+        (google_account_id, playlist_id, playlist_item_id, video_id, position, synced_at)
+        VALUES ('acct-1', 'PL-page', ?, ?, ?, '2026-07-16T00:00:00Z')`, [`item-${i}`, id, i])
+    }
+    const html = await getText(await get(env.app,
+      '/videos?channel_id=UCaaaaaaa000000000000aab&source=playlist&playlist_id=PL-page&folder_id=page-folder&tag_id=page-tag&unwatched=true&sort=title&order=asc&published_from=2026-07-01&published_to=2026-07-03&limit=1',
+    ))
+    for (const value of [
+      'channel_id=UCaaaaaaa000000000000aab', 'source=playlist', 'playlist_id=PL-page',
+      'folder_id=page-folder', 'tag_id=page-tag', 'unwatched=true', 'sort=title',
+      'order=asc', 'published_from=2026-07-01', 'published_to=2026-07-03', 'limit=1',
+    ]) expect(html).toContain(value)
+    expect(html).toContain('page=2')
   })
 })

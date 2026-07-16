@@ -67,12 +67,23 @@ export interface SearchVideosOptions {
   /** Derived watch-state filters. Callers must not set both. */
   readonly watched?: boolean
   readonly unwatched?: boolean
+  /** Allow-listed list ordering. HTTP callers validate raw query values before
+   *  constructing these typed options; the query builder still falls back to
+   *  the documented defaults if called unsafely at runtime. */
+  readonly sort?: VideoSort
+  readonly order?: VideoSortOrder
+  /** Inclusive UTC publication-date bounds in strict YYYY-MM-DD form. */
+  readonly publishedFrom?: string
+  readonly publishedTo?: string
   readonly page?: number
   readonly limit?: number
   /** Optional injected clock to make `discovered_at` ordering
    *  deterministic in tests (the default is fine at runtime). */
   readonly nowMs?: () => number
 }
+
+export type VideoSort = 'discovered_at' | 'published_at' | 'channel' | 'title'
+export type VideoSortOrder = 'asc' | 'desc'
 
 export interface SearchVideosResult {
   readonly items: VideoListItem[]
@@ -97,10 +108,19 @@ export interface VideoListItem {
   readonly discoveredAt: string
   readonly folderId: string | null
   readonly folderName: string | null
-  readonly tags: ReadonlyArray<{ readonly id: string; readonly name: string }>
+  readonly tags: ReadonlyArray<EffectiveVideoTag>
   readonly playlists: ReadonlyArray<{ readonly id: string; readonly title: string }>
   readonly watchCount: number
   readonly lastWatchedAt: string | null
+}
+
+export type EffectiveVideoTagSource = 'manual' | 'subscription' | 'both'
+
+export interface EffectiveVideoTag {
+  readonly id: string
+  readonly name: string
+  readonly source: EffectiveVideoTagSource
+  readonly sources: ReadonlyArray<'manual' | 'subscription'>
 }
 
 export interface VideoDetail extends VideoListItem {
@@ -173,6 +193,13 @@ export function countVideos(db: Database): number {
 const DEFAULT_LIST_LIMIT = 50
 const MAX_LIST_LIMIT = 200
 
+const VIDEO_SORT_SQL: Readonly<Record<VideoSort, string>> = {
+  discovered_at: 'v.discovered_at',
+  published_at: 'julianday(v.published_at)',
+  channel: 'c.title COLLATE NOCASE',
+  title: 'COALESCE(v.local_title_override, v.title) COLLATE NOCASE',
+}
+
 /**
  * Paginated, filterable list of videos for `GET /api/videos`.
  * Videos from currently excluded subscriptions are omitted. Canonical videos
@@ -198,6 +225,11 @@ export function searchVideos(
   const limit = clamp(options.limit ?? DEFAULT_LIST_LIMIT, 1, MAX_LIST_LIMIT)
   const page = options.page !== undefined && options.page >= 1 ? Math.floor(options.page) : 1
   const offset = (page - 1) * limit
+  const sort: VideoSort = options.sort && Object.hasOwn(VIDEO_SORT_SQL, options.sort)
+    ? options.sort
+    : 'discovered_at'
+  const order: VideoSortOrder = options.order === 'asc' ? 'asc' : 'desc'
+  const orderSql = `${VIDEO_SORT_SQL[sort]} ${order.toUpperCase()}, v.id ASC`
 
   // ─── WHERE assembly ────────────────────────────────────────────────
   const playlistContext = options.source === 'playlist' || options.playlistId !== undefined
@@ -215,10 +247,19 @@ export function searchVideos(
     where.push('v.folder_id IS NULL')
   }
   if (options.tagId) {
-    // DISTINCT because JOIN video_tags would otherwise multiply
-    // rows for videos that have multiple tags.
-    where.push('EXISTS (SELECT 1 FROM video_tags vt WHERE vt.video_id = v.id AND vt.tag_id = ?)')
-    params.push(options.tagId)
+    where.push(`(
+      EXISTS (
+        SELECT 1 FROM video_tags filter_vt
+         WHERE filter_vt.video_id = v.id AND filter_vt.tag_id = ?
+      )
+      OR EXISTS (
+        SELECT 1
+          FROM subscriptions filter_s
+          JOIN subscription_tags filter_st ON filter_st.subscription_id = filter_s.id
+         WHERE filter_s.channel_id = v.channel_id AND filter_st.tag_id = ?
+      )
+    )`)
+    params.push(options.tagId, options.tagId)
   }
   if (playlistContext) {
     where.push(`EXISTS (
@@ -234,6 +275,14 @@ export function searchVideos(
     where.push('EXISTS (SELECT 1 FROM youtube_watch_events filter_we WHERE filter_we.video_id = v.id)')
   } else if (options.unwatched) {
     where.push('NOT EXISTS (SELECT 1 FROM youtube_watch_events filter_we WHERE filter_we.video_id = v.id)')
+  }
+  if (options.publishedFrom) {
+    where.push('julianday(v.published_at) >= julianday(?)')
+    params.push(`${options.publishedFrom}T00:00:00.000Z`)
+  }
+  if (options.publishedTo) {
+    where.push('julianday(v.published_at) < julianday(?, \'+1 day\')')
+    params.push(`${options.publishedTo}T00:00:00.000Z`)
   }
   const whereSql = where.length > 0 ? ` WHERE ${where.join(' AND ')}` : ''
 
@@ -263,7 +312,7 @@ export function searchVideos(
             JOIN youtube_channels c ON c.channel_id = v.channel_id
             LEFT JOIN subscriptions s ON s.channel_id = v.channel_id
             LEFT JOIN folders f ON f.id = v.folder_id${whereSql}
-      ORDER BY v.discovered_at DESC, v.id ASC
+      ORDER BY ${orderSql}
       LIMIT ? OFFSET ?`,
     [...params, limit, offset],
   )
@@ -355,15 +404,8 @@ function listPlaylistsForVideos(
 export function listTagsForVideo(
   db: Database,
   videoId: string,
-): ReadonlyArray<{ readonly id: string; readonly name: string }> {
-  return db.all<{ id: string; name: string }>(
-    `SELECT t.id, t.name
-       FROM tags t
-       JOIN video_tags vt ON vt.tag_id = t.id
-      WHERE vt.video_id = ?
-      ORDER BY t.name`,
-    [videoId],
-  )
+): ReadonlyArray<EffectiveVideoTag> {
+  return listTagsForVideos(db, [videoId]).get(videoId) ?? []
 }
 
 /** Attach a tag (by canonical name) to a video, creating the tag
@@ -594,21 +636,50 @@ function rowToVideoListItem(
 export function listTagsForVideos(
   db: Database,
   videoIds: readonly string[],
-): Map<string, Array<{ readonly id: string; readonly name: string }>> {
+): Map<string, EffectiveVideoTag[]> {
   if (videoIds.length === 0) return new Map()
   const placeholders = videoIds.map(() => '?').join(',')
-  const rows = db.all<{ video_id: string; id: string; name: string }>(
-    `SELECT vt.video_id, t.id, t.name
-       FROM video_tags vt
-       JOIN tags t ON t.id = vt.tag_id
-      WHERE vt.video_id IN (${placeholders})
-      ORDER BY t.name`,
-    videoIds,
+  const rows = db.all<{
+    video_id: string
+    id: string
+    name: string
+    is_manual: number | bigint
+    is_subscription: number | bigint
+  }>(
+    `WITH effective_sources AS (
+       SELECT vt.video_id, vt.tag_id, 1 AS is_manual, 0 AS is_subscription
+         FROM video_tags vt
+        WHERE vt.video_id IN (${placeholders})
+       UNION ALL
+       SELECT v.id AS video_id, st.tag_id, 0 AS is_manual, 1 AS is_subscription
+         FROM videos v
+         JOIN subscriptions s ON s.channel_id = v.channel_id
+         JOIN subscription_tags st ON st.subscription_id = s.id
+        WHERE v.id IN (${placeholders})
+     )
+     SELECT es.video_id, t.id, t.name,
+            MAX(es.is_manual) AS is_manual,
+            MAX(es.is_subscription) AS is_subscription
+       FROM effective_sources es
+       JOIN tags t ON t.id = es.tag_id
+      GROUP BY es.video_id, t.id, t.name
+      ORDER BY t.name COLLATE NOCASE, t.id`,
+    [...videoIds, ...videoIds],
   )
-  const out = new Map<string, Array<{ id: string; name: string }>>()
+  const out = new Map<string, EffectiveVideoTag[]>()
   for (const row of rows) {
     const list = out.get(row.video_id) ?? []
-    list.push({ id: row.id, name: row.name })
+    const manual = !!row.is_manual
+    const subscription = !!row.is_subscription
+    list.push({
+      id: row.id,
+      name: row.name,
+      source: manual && subscription ? 'both' : manual ? 'manual' : 'subscription',
+      sources: [
+        ...(manual ? ['manual' as const] : []),
+        ...(subscription ? ['subscription' as const] : []),
+      ],
+    })
     out.set(row.video_id, list)
   }
   return out

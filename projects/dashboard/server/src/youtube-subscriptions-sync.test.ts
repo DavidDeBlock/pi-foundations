@@ -113,6 +113,7 @@ function sub(
     lastBackfilledAt: overrides.lastBackfilledAt ?? null,
     backfillError: overrides.backfillError ?? null,
     backfillRetryable: overrides.backfillRetryable ?? false,
+    tags: overrides.tags ?? [],
     createdAt: '',
     updatedAt: '',
     ...overrides,

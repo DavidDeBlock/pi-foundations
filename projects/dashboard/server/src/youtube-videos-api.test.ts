@@ -215,6 +215,43 @@ describe('GET /api/videos', () => {
     expect(body.page).toBe(1)
   })
 
+  it.each([
+    ['/api/videos?sort=drop_table', 'sort must be one of'],
+    ['/api/videos?order=sideways', 'order must be asc or desc'],
+    ['/api/videos?published_from=2026%2F07%2F01', 'published_from must be a valid date'],
+    ['/api/videos?published_from=2025-02-29', 'published_from must be a valid date'],
+    ['/api/videos?published_to=2026-13-01', 'published_to must be a valid date'],
+    ['/api/videos?published_from=2026-07-10&published_to=2026-07-01', 'published_from must be on or before'],
+  ])('rejects invalid discovery query %s', async (path, message) => {
+    const response = await req(env.app, path, { headers: { authorization: basic(PASSWORD) } })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining(message) })
+  })
+
+  it('applies an inclusive publication range and requested ordering server-side', async () => {
+    env.seed({ videoId: 'range-before', title: 'Before', publishedAt: '2024-02-28T23:59:59Z' })
+    env.seed({ videoId: 'range-late', title: 'Zed', publishedAt: '2024-02-29T23:59:59.999Z' })
+    env.seed({ videoId: 'range-early', title: 'Alpha', publishedAt: '2024-02-29T00:00:00Z' })
+    env.seed({ videoId: 'range-after', title: 'After', publishedAt: '2024-03-01T00:00:00Z' })
+    const response = await req(
+      env.app,
+      '/api/videos?published_from=2024-02-29&published_to=2024-02-29&sort=title&order=asc',
+      { headers: { authorization: basic(PASSWORD) } },
+    )
+    expect(response.status).toBe(200)
+    const body = await asJson<{ items: Array<{ video_id: string }> }>(response)
+    expect(body.items.map((item) => item.video_id)).toEqual(['range-early', 'range-late'])
+  })
+
+  it('returns an empty successful result for a valid range with no matches', async () => {
+    env.seed({ videoId: 'outside-range', publishedAt: '2020-01-01T00:00:00Z' })
+    const response = await req(env.app, '/api/videos?published_from=2026-01-01', {
+      headers: { authorization: basic(PASSWORD) },
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ items: [], total: 0 })
+  })
+
   it('filters by channel_id', async () => {
     upsertSubscription(env.db, {
       googleAccountId: 'acct-1',
@@ -378,7 +415,12 @@ describe('GET /api/videos/:id', () => {
     expect(body.folder_name).toBe('Work')
     expect(body.channel_title).toBe('Alpha')
     expect(body.channel_is_included).toBe(true)
-    expect(body.tags).toEqual([{ id: 'tt-1', name: 'launch' }])
+    expect(body.tags).toEqual([{
+      id: 'tt-1',
+      name: 'launch',
+      source: 'manual',
+      sources: ['manual'],
+    }])
   })
 
   it('returns 404 for an unknown id', async () => {

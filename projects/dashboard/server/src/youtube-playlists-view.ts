@@ -244,7 +244,7 @@ function renderVideoCard(item: YouTubePlaylistVideoItem, playlist: YouTubePlayli
         <span class="playlist-badge" title="YouTube playlist">${escapeHtml(playlist.title)}</span>
         <strong>${escapeHtml(item.title)}</strong>
         <span>${escapeHtml(item.channelTitle)} · ${escapeHtml(formatDate(item.publishedAt))}</span>
-        <span class="video-card-categories">${item.folderName ? `<span>${escapeHtml(item.folderName)}</span>` : ''}${item.tags.map((tag) => `<span>#${escapeHtml(tag.name)}</span>`).join('')}</span>
+        <span class="video-card-categories">${item.folderName ? `<span>${escapeHtml(item.folderName)}</span>` : ''}${item.tags.map((tag) => `<span title="${tag.source === 'both' ? 'Manual and inherited from subscription' : tag.source === 'subscription' ? 'Inherited from subscription' : 'Manual video tag'}">${tag.source !== 'manual' ? '↳' : '#'}${escapeHtml(tag.name)}</span>`).join('')}</span>
         <span class="video-card-states">${statuses}</span>
       </span>
     </a>

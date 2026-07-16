@@ -10,6 +10,7 @@ import { youtubeHistoryView } from './youtube-history-view.js'
 import { youtubeHistoryApi } from './youtube-history-api.js'
 import { YouTubeHistoryImports } from './youtube-history-imports.js'
 import { upsertYouTubeVideo } from './youtube-video-upsert.js'
+import { attachTagByNameToSubscription, upsertSubscription } from './youtube-subscriptions.js'
 
 const PASSWORD = 'secret'
 const MIGRATIONS_DIR = resolve(process.cwd(), 'migrations')
@@ -65,6 +66,14 @@ describe('History UI and API', () => {
 
   it('lists reverse-chronological events, repeat counts, canonical links, UTC dates, and escaped snapshots', async () => {
     importRow()
+    db.run(`INSERT INTO youtube_accounts
+      (id,provider,google_user_id,email_address,access_token_enc,refresh_token_enc,scopes)
+      VALUES ('account-1','youtube','google-1','d@example.com','x','y','youtube.readonly')`)
+    const subscriptionId = upsertSubscription(db, {
+      googleAccountId: 'account-1', channelId: 'UC-history-only', channelTitle: 'History channel',
+      channelThumbnailUrl: null, subscribedAt: '2026-01-01T00:00:00Z',
+    }).id
+    attachTagByNameToSubscription(db, subscriptionId, 'research')
     const video = upsertYouTubeVideo(db, {
       videoId: 'knownVideo1', channelId: 'UC-history-only', channelTitle: 'History channel',
       title: 'Canonical title', publishedAt: '2026-07-01T00:00:00Z', thumbnailUrl: null,
@@ -82,6 +91,8 @@ describe('History UI and API', () => {
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;')
     expect(html).not.toContain('<img src=x onerror=alert(1)>')
     expect(html).toContain('&lt;script&gt;channel()&lt;/script&gt;')
+    expect(html).toContain('↳research')
+    expect(html).toContain('Inherited from subscription')
 
     const body = await (await app.request('/api/youtube/history', { headers: headers() })).json() as { items: Array<{ watch_count: number; video_id: string | null }> }
     expect(body.items).toHaveLength(3)

@@ -23,6 +23,7 @@ import {
   attachTagByNameToVideo,
   detachTagFromVideo,
   getVideoDetail,
+  listTagsForVideo,
 } from './youtube-videos.js'
 
 // ─── Body parsing ────────────────────────────────────────────────────────
@@ -84,7 +85,8 @@ export function youtubeVideoTagsApi(
     const tag = attachTagByNameToVideo(deps.db, id, raw.name as string)
     if (tag === null) return c.json({ error: 'tag name normalized to empty' }, 400)
 
-    return c.json({ id: tag.id, name: tag.name }, 201)
+    const effectiveTag = listTagsForVideo(deps.db, id).find((item) => item.id === tag.id)
+    return c.json(effectiveTag ?? { ...tag, source: 'manual', sources: ['manual'] }, 201)
   })
 
   // ─── DELETE /api/videos/:id/tags/:tagId ──────────────────────────

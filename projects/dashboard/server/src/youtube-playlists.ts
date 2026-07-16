@@ -1,4 +1,5 @@
 import type { Database } from './db.js'
+import { listTagsForVideos, type EffectiveVideoTag } from './youtube-videos.js'
 
 export type PlaylistSyncStatus =
   | 'idle' | 'pending' | 'running' | 'completed' | 'failed' | 'unsupported'
@@ -82,7 +83,7 @@ export interface YouTubePlaylistVideoItem {
   readonly watched: boolean | null
   readonly watchCount: number
   readonly lastWatchedAt: string | null
-  readonly tags: ReadonlyArray<{ readonly id: string; readonly name: string }>
+  readonly tags: ReadonlyArray<EffectiveVideoTag>
 }
 
 export interface YouTubePlaylistVideosResult {
@@ -156,8 +157,15 @@ export function searchYouTubePlaylistVideos(
   if (filters.folderId) { where.push('v.folder_id = ?'); params.push(filters.folderId) }
   else if (filters.unfoldered) where.push('v.folder_id IS NULL')
   if (filters.tagId) {
-    where.push('EXISTS (SELECT 1 FROM video_tags vtag WHERE vtag.video_id = v.id AND vtag.tag_id = ?)')
-    params.push(filters.tagId)
+    where.push(`(
+      EXISTS (SELECT 1 FROM video_tags vtag WHERE vtag.video_id = v.id AND vtag.tag_id = ?)
+      OR EXISTS (
+        SELECT 1 FROM subscriptions filter_s
+        JOIN subscription_tags filter_st ON filter_st.subscription_id = filter_s.id
+        WHERE filter_s.channel_id = v.channel_id AND filter_st.tag_id = ?
+      )
+    )`)
+    params.push(filters.tagId, filters.tagId)
   }
   if (filters.transcript === 'ready') where.push(`EXISTS (SELECT 1 FROM video_transcripts vt WHERE vt.video_id = v.id AND vt.status = 'ready')`)
   if (filters.transcript === 'missing') where.push(`NOT EXISTS (SELECT 1 FROM video_transcripts vt WHERE vt.video_id = v.id AND vt.status = 'ready')`)
@@ -201,7 +209,7 @@ export function searchYouTubePlaylistVideos(
        ORDER BY pi.position ASC, pi.playlist_item_id ASC LIMIT ? OFFSET ?`,
     [...params, limit, (page - 1) * limit],
   )
-  const tagMap = tagsForVideos(db, rows.map((row) => row.id))
+  const tagMap = listTagsForVideos(db, rows.map((row) => row.id))
   return {
     items: rows.map((row) => ({
       playlistItemId: row.playlist_item_id,
@@ -249,27 +257,6 @@ function tableExists(db: Database, table: string): boolean {
     `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`,
     [table],
   ) !== undefined
-}
-
-function tagsForVideos(
-  db: Database,
-  videoIds: readonly string[],
-): Map<string, Array<{ readonly id: string; readonly name: string }>> {
-  const result = new Map<string, Array<{ readonly id: string; readonly name: string }>>()
-  if (videoIds.length === 0) return result
-  const rows = db.all<{ video_id: string; id: string; name: string }>(
-    `SELECT vt.video_id, t.id, t.name FROM video_tags vt
-       JOIN tags t ON t.id = vt.tag_id
-      WHERE vt.video_id IN (${videoIds.map(() => '?').join(',')})
-      ORDER BY t.name COLLATE NOCASE`,
-    [...videoIds],
-  )
-  for (const row of rows) {
-    const tags = result.get(row.video_id) ?? []
-    tags.push({ id: row.id, name: row.name })
-    result.set(row.video_id, tags)
-  }
-  return result
 }
 
 function toView(row: PlaylistRow): YouTubePlaylistView {

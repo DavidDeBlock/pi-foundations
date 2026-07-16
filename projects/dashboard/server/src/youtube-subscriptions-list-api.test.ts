@@ -159,6 +159,7 @@ describe('GET /api/subscriptions', () => {
       'last_backfilled_at',
       'last_polled_at',
       'subscribed_at',
+      'tags',
       'thumbnail_url',
       'title',
     ])

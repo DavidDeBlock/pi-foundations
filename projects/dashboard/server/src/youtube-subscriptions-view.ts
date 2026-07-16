@@ -50,6 +50,7 @@ import {
 } from './youtube-subscriptions.js'
 import { getMostRecentYouTubeAccountId } from './youtube-accounts.js'
 import { getYouTubePreferences } from './youtube-preferences.js'
+import { listAllTags, type TagRecord } from './tags.js'
 
 // ─── Hono sub-app ─────────────────────────────────────────────────────────
 
@@ -69,10 +70,17 @@ export function subscriptionsViewApi(
   api.get('/', (c) => {
     const filter = parseFilter(c.req.query('filter'))
     const search = (c.req.query('search') ?? '').trim()
+    const tagId = c.req.query('tag_id') || undefined
     const page = parsePositiveInt(c.req.query('page')) ?? 1
     const limit = parsePositiveInt(c.req.query('limit')) ?? 50
 
-    const result = searchSubscriptions(deps.db, { filter, search, page, limit })
+    const result = searchSubscriptions(deps.db, {
+      filter,
+      search,
+      ...(tagId ? { tagId } : {}),
+      page,
+      limit,
+    })
     const counts = countIncludedExcluded(deps.db)
     const accountId = getMostRecentYouTubeAccountId(deps.db)
     const backfillDays = accountId
@@ -86,6 +94,8 @@ export function subscriptionsViewApi(
         limit: result.limit,
         filter: result.invalidFilter !== null ? 'all' : filter,
         search,
+        tagId: tagId ?? '',
+        allTags: listAllTags(deps.db),
         counts,
         backfillDays,
       }),
@@ -118,6 +128,8 @@ interface RenderArgs {
   readonly limit: number
   readonly filter: SubscriptionFilter
   readonly search: string
+  readonly tagId: string
+  readonly allTags: readonly TagRecord[]
   readonly counts: { readonly included: number; readonly excluded: number }
   readonly backfillDays: 0 | 7 | 30 | 90
 }
@@ -147,6 +159,7 @@ ${COMMON_HEAD}
         </nav>
         ${renderBackfillPreference(args.backfillDays)}
         ${renderToolbar(args)}
+        <datalist id="subscription-all-tags">${args.allTags.map((tag) => `<option value="${escapeHtml(tag.name)}" data-tag-id="${escapeHtml(tag.id)}"></option>`).join('')}</datalist>
         ${renderCountsLine(args.counts)}
         <div data-sync-banner-slot></div>
         ${args.items.length === 0
@@ -195,7 +208,7 @@ function renderToolbar(args: RenderArgs): string {
   // the current search. The "active" chip uses `data-active` so
   // the JS can detect clicks and re-route the search box.
   const chipHref = (f: SubscriptionFilter): string =>
-    `/subscriptions?filter=${f}${args.search !== '' ? `&search=${encodeURIComponent(args.search)}` : ''}`
+    `/subscriptions?filter=${f}${args.search !== '' ? `&search=${encodeURIComponent(args.search)}` : ''}${args.tagId !== '' ? `&tag_id=${encodeURIComponent(args.tagId)}` : ''}`
 
   const chips = [
     { id: 'all', label: `All (${args.counts.included + args.counts.excluded})`, href: chipHref('all') },
@@ -215,10 +228,23 @@ function renderToolbar(args: RenderArgs): string {
   const searchHtml = `
       <form class="subscriptions-search" method="get" action="/subscriptions" data-subscriptions-search-form role="search">
         <input type="hidden" name="filter" value="${escapeHtml(args.filter)}">
+        ${args.tagId !== '' ? `<input type="hidden" name="tag_id" value="${escapeHtml(args.tagId)}">` : ''}
         <input type="search" name="search" placeholder="Search channels\u2026" value="${escapeHtml(args.search)}" data-subscriptions-search aria-label="Search subscriptions">
         <button type="submit">Search</button>
-        ${args.search !== '' ? `<a class="search-clear" href="/subscriptions?filter=${encodeURIComponent(args.filter)}" aria-label="Clear search">\u00d7</a>` : ''}
+        ${args.search !== '' ? `<a class="search-clear" href="/subscriptions?filter=${encodeURIComponent(args.filter)}${args.tagId !== '' ? `&tag_id=${encodeURIComponent(args.tagId)}` : ''}" aria-label="Clear search">\u00d7</a>` : ''}
       </form>`
+
+  const selectedTag = args.allTags.find((tag) => tag.id === args.tagId)
+  const tagFilterHtml = `<form class="subscriptions-tag-filter" method="get" action="/subscriptions" data-tag-filter-form>
+      <input type="hidden" name="filter" value="${escapeHtml(args.filter)}">
+      ${args.search !== '' ? `<input type="hidden" name="search" value="${escapeHtml(args.search)}">` : ''}
+      <input type="hidden" name="tag_id" value="${escapeHtml(args.tagId)}" data-tag-filter-id>
+      <label class="sr-only" for="subscription-tag-filter">Filter subscriptions by tag</label>
+      <input id="subscription-tag-filter" type="text" list="subscription-all-tags" value="${escapeHtml(selectedTag?.name ?? '')}" placeholder="Filter by tag…" autocomplete="off" data-tag-filter-input>
+      <button type="submit">Filter</button>
+      ${args.tagId !== '' ? `<a class="search-clear" href="/subscriptions?filter=${encodeURIComponent(args.filter)}${args.search !== '' ? `&search=${encodeURIComponent(args.search)}` : ''}" aria-label="Clear tag filter">\u00d7</a>` : ''}
+      <span class="tag-filter-status" data-tag-filter-status aria-live="polite"></span>
+    </form>`
 
   // Sync-now button. Triggers a manual `POST /api/youtube/sync`
   // (YT-002) and renders the count summary in the banner slot
@@ -232,6 +258,7 @@ function renderToolbar(args: RenderArgs): string {
   return `<section class="subscriptions-toolbar">
         <nav class="filter-chips" aria-label="Filter subscriptions">${chipsHtml}</nav>
         <div class="subscriptions-toolbar-right">
+          ${tagFilterHtml}
           ${searchHtml}
           ${syncHtml}
         </div>
@@ -274,7 +301,7 @@ function renderEmpty(args: RenderArgs): string {
     return `<section class="subscriptions-empty" data-subscriptions-empty>
         <div class="empty-icon" aria-hidden="true">\ud83d\udd0d</div>
         <p class="empty-message">No subscriptions match <strong>${escapeHtml(args.search)}</strong>.</p>
-        <a class="empty-cta" href="/subscriptions?filter=${encodeURIComponent(args.filter)}">Clear search \u2192</a>
+        <a class="empty-cta" href="/subscriptions?filter=${encodeURIComponent(args.filter)}${args.tagId !== '' ? `&tag_id=${encodeURIComponent(args.tagId)}` : ''}">Clear search \u2192</a>
       </section>`
   }
   // Filter is "included" or "excluded" and the matching set is empty.
@@ -299,12 +326,21 @@ function renderRow(s: Subscription): string {
   const importantChecked = s.isImportant ? ' checked' : ''
   const transcriptsChecked = s.autoFetchTranscripts ? ' checked' : ''
   const backfillStatus = renderBackfillStatus(s)
+  const tags = s.tags.map((tag) => `<span class="subscription-tag" data-subscription-tag data-tag-id="${escapeHtml(tag.id)}">
+      <span>#${escapeHtml(tag.name)}</span>
+      <button type="button" data-subscription-tag-remove aria-label="Remove tag ${escapeHtml(tag.name)}">\u00d7</button>
+    </span>`).join('')
   return `
         <li class="subscription-row" data-subscription-row data-subscription-id="${escapeHtml(s.id)}">
           <a class="channel-link" href="${escapeHtml(youtubeUrl)}" target="_blank" rel="noopener">
             ${thumbHtml}
             <span class="channel-title">${escapeHtml(s.channelTitle)}</span>
           </a>
+          <div class="subscription-tags" data-subscription-tags>
+            ${tags}
+            <input type="text" list="subscription-all-tags" placeholder="Add tag…" autocomplete="off" data-subscription-tag-input aria-label="Add tag to ${escapeHtml(s.channelTitle)}">
+            <button type="button" data-subscription-tag-add>Add</button>
+          </div>
           <label class="toggle" title="Include in dashboard view">
             <input type="checkbox" data-toggle="is_included" ${includedChecked}>
             <span class="toggle-label">Included</span>
@@ -345,7 +381,7 @@ function renderPagination(args: RenderArgs): string {
   if (pages <= 1) return ''
   const prev = args.page > 1 ? args.page - 1 : null
   const next = args.page < pages ? args.page + 1 : null
-  const baseQuery = `filter=${args.filter}${args.search !== '' ? `&search=${encodeURIComponent(args.search)}` : ''}`
+  const baseQuery = `filter=${args.filter}${args.search !== '' ? `&search=${encodeURIComponent(args.search)}` : ''}${args.tagId !== '' ? `&tag_id=${encodeURIComponent(args.tagId)}` : ''}`
   const pageHref = (p: number): string => `/subscriptions?${baseQuery}&page=${p}`
   return `<nav class="subscriptions-pagination" aria-label="Subscriptions pagination">
         ${prev !== null
@@ -440,10 +476,69 @@ const SUBSCRIPTIONS_PAGE_SCRIPT = `(function(){
       });
     });
 
+    var tagInput = row.querySelector('[data-subscription-tag-input]');
+    var tagAdd = row.querySelector('[data-subscription-tag-add]');
+    var tagList = row.querySelector('[data-subscription-tags]');
+    var subscriptionId = row.getAttribute('data-subscription-id');
+    function addSubscriptionTag() {
+      var name = tagInput && tagInput.value.trim();
+      if (!name || !tagAdd || !tagInput) return;
+      tagInput.disabled = true;
+      tagAdd.disabled = true;
+      var status = row.querySelector('[data-row-status]');
+      flashRowStatus(status, 'adding tag…', 'pending');
+      fetch('/api/subscriptions/' + encodeURIComponent(subscriptionId) + '/tags', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: name }),
+      }).then(readJsonResponse).then(function (payload) {
+        if (!payload) return;
+        if (payload.status !== 201) throw new Error(payload.body.message || payload.body.error || ('HTTP ' + payload.status));
+        var existing = Array.prototype.find.call(tagList.querySelectorAll('[data-subscription-tag]'), function (chip) {
+          return chip.getAttribute('data-tag-id') === payload.body.id;
+        });
+        if (!existing) tagList.insertBefore(createSubscriptionTagChip(payload.body), tagInput);
+        tagInput.value = '';
+        flashRowStatus(status, 'tag saved', 'ok');
+      }).catch(function (err) {
+        flashRowStatus(status, 'tag failed: ' + (err.message || 'network error'), 'error');
+      }).finally(function () {
+        tagInput.disabled = false;
+        tagAdd.disabled = false;
+        tagInput.focus();
+      });
+    }
+    if (tagAdd && tagInput && tagList) {
+      tagAdd.addEventListener('click', addSubscriptionTag);
+      tagInput.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') { event.preventDefault(); addSubscriptionTag(); }
+      });
+      tagList.addEventListener('click', function (event) {
+        var button = event.target.closest && event.target.closest('[data-subscription-tag-remove]');
+        if (!button) return;
+        var chip = button.closest('[data-subscription-tag]');
+        if (!chip) return;
+        button.disabled = true;
+        var status = row.querySelector('[data-row-status]');
+        flashRowStatus(status, 'removing tag…', 'pending');
+        fetch('/api/subscriptions/' + encodeURIComponent(subscriptionId) + '/tags/' + encodeURIComponent(chip.getAttribute('data-tag-id')), {
+          method: 'DELETE', credentials: 'same-origin',
+        }).then(function (res) {
+          if (res.status === 401) { window.location.href = '/api/login'; return null; }
+          if (res.status !== 204) throw new Error('HTTP ' + res.status);
+          chip.remove();
+          flashRowStatus(status, 'tag removed', 'ok');
+        }).catch(function (err) {
+          button.disabled = false;
+          flashRowStatus(status, 'remove failed: ' + (err.message || 'network error'), 'error');
+        });
+      });
+    }
+
     var backfillButton = row.querySelector('[data-backfill-button]');
     var backfillDays = row.querySelector('[data-backfill-days]');
     var backfillResult = row.querySelector('[data-backfill-result]');
-    var subscriptionId = row.getAttribute('data-subscription-id');
     if (backfillButton && backfillDays && backfillResult) {
       backfillButton.addEventListener('click', function () {
         backfillButton.disabled = true;
@@ -470,6 +565,23 @@ const SUBSCRIPTIONS_PAGE_SCRIPT = `(function(){
         pollBackfill(subscriptionId, backfillResult, backfillButton);
       }
     }
+  }
+
+  function createSubscriptionTagChip(tag) {
+    var chip = document.createElement('span');
+    chip.className = 'subscription-tag';
+    chip.setAttribute('data-subscription-tag', '');
+    chip.setAttribute('data-tag-id', tag.id);
+    var label = document.createElement('span');
+    label.textContent = '#' + tag.name;
+    var remove = document.createElement('button');
+    remove.type = 'button';
+    remove.setAttribute('data-subscription-tag-remove', '');
+    remove.setAttribute('aria-label', 'Remove tag ' + tag.name);
+    remove.textContent = '×';
+    chip.appendChild(label);
+    chip.appendChild(remove);
+    return chip;
   }
 
   function readJsonResponse(res) {
@@ -522,6 +634,30 @@ const SUBSCRIPTIONS_PAGE_SCRIPT = `(function(){
   }
 
   document.querySelectorAll('[data-subscription-row]').forEach(wireRow);
+
+  var tagFilterForm = document.querySelector('[data-tag-filter-form]');
+  if (tagFilterForm) {
+    tagFilterForm.addEventListener('submit', function (event) {
+      var input = tagFilterForm.querySelector('[data-tag-filter-input]');
+      var hidden = tagFilterForm.querySelector('[data-tag-filter-id]');
+      var status = tagFilterForm.querySelector('[data-tag-filter-status]');
+      var value = input.value.trim().toLowerCase();
+      if (!value) { hidden.value = ''; return; }
+      var options = document.querySelectorAll('#subscription-all-tags option');
+      var match = Array.prototype.find.call(options, function (option) {
+        return option.value.toLowerCase() === value;
+      });
+      if (!match) {
+        event.preventDefault();
+        status.textContent = 'Choose an existing tag';
+        input.setAttribute('aria-invalid', 'true');
+        return;
+      }
+      hidden.value = match.getAttribute('data-tag-id');
+      input.removeAttribute('aria-invalid');
+      status.textContent = '';
+    });
+  }
 
   var preference = document.querySelector('[data-backfill-preference]');
   var preferenceStatus = document.querySelector('[data-preference-status]');
@@ -653,8 +789,12 @@ const STYLES = `
 .filter-chip-active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .filter-chip-active:hover { filter: brightness(0.95); }
 
-.subscriptions-toolbar-right { margin-left: auto; display: flex; gap: 0.5rem; align-items: center; }
+.subscriptions-toolbar-right { margin-left: auto; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .subscriptions-search { display: inline-flex; gap: 0.4rem; align-items: center; }
+.subscriptions-tag-filter { display: inline-flex; gap: 0.4rem; align-items: center; position: relative; }
+.subscriptions-tag-filter input[type="text"] { padding: 0.4rem 0.7rem; font-size: 0.85rem; border: 1px solid var(--border); border-radius: 0.375rem; background: var(--surface); color: var(--text); width: 10rem; }
+.subscriptions-tag-filter button { padding: 0.4rem 0.7rem; font-size: 0.85rem; border: 1px solid var(--border); border-radius: 0.375rem; background: var(--surface); color: var(--text); cursor: pointer; }
+.tag-filter-status { position: absolute; top: calc(100% + .2rem); left: 0; color: var(--danger); font-size: .72rem; white-space: nowrap; }
 .subscriptions-search input[type="search"] { padding: 0.4rem 0.7rem; font-size: 0.85rem; border: 1px solid var(--border); border-radius: 0.375rem; background: var(--surface); color: var(--text); min-width: 14rem; }
 .subscriptions-search button { padding: 0.4rem 0.85rem; font-size: 0.85rem; border: 1px solid var(--border); border-radius: 0.375rem; background: var(--surface); color: var(--text); cursor: pointer; }
 .subscriptions-search button:hover { background: var(--surface-hover); }
@@ -670,23 +810,30 @@ const STYLES = `
 .subscriptions-counts strong { color: var(--text); font-weight: 600; }
 
 .subscriptions-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
-.subscription-row { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto auto; gap: 0.65rem 1rem; align-items: center; padding: 0.8rem 1rem; background: color-mix(in srgb, var(--surface) 94%, transparent); border: 1px solid var(--border); border-radius: 0.8rem; transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease; }
+.subscription-row { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(170px, .8fr) auto auto auto; gap: 0.65rem 1rem; align-items: center; padding: 0.8rem 1rem; background: color-mix(in srgb, var(--surface) 94%, transparent); border: 1px solid var(--border); border-radius: 0.8rem; transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease; }
 .subscription-row:hover { transform: translateX(3px); border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: var(--surface); }
 .channel-link { display: flex; align-items: center; gap: 0.7rem; min-width: 0; color: var(--text); text-decoration: none; }
 .channel-link:hover .channel-title { color: var(--accent); }
 .channel-thumb { width: 52px; height: 52px; border-radius: 999px; background: var(--surface-hover); object-fit: cover; flex-shrink: 0; display: inline-block; border: 2px solid color-mix(in srgb, var(--accent) 25%, var(--border)); }
 .channel-thumb-fallback { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); font-weight: 600; font-size: 1.1rem; }
 .channel-title { font-weight: 500; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.subscription-tags { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; min-width: 0; }
+.subscription-tag { display: inline-flex; align-items: center; gap: .15rem; padding: .2rem .25rem .2rem .5rem; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); color: var(--text); font-size: .75rem; }
+.subscription-tag button { width: 1.25rem; height: 1.25rem; padding: 0; border: 0; border-radius: 999px; color: var(--muted); background: transparent; cursor: pointer; line-height: 1; }
+.subscription-tag button:hover, .subscription-tag button:focus-visible { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.subscription-tags input { width: 6.5rem; min-width: 5rem; padding: .3rem .45rem; border: 1px solid var(--border); border-radius: .4rem; background: var(--surface); color: var(--text); font-size: .75rem; }
+.subscription-tags > button { padding: .3rem .5rem; border: 1px solid var(--border); border-radius: .4rem; background: var(--surface); color: var(--text); cursor: pointer; font-size: .75rem; }
+.subscription-tags > button:hover, .subscription-tags > button:focus-visible { border-color: var(--accent); color: var(--accent); }
 
 .toggle { display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer; font-size: 0.85rem; color: var(--muted); user-select: none; }
 .toggle input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: var(--accent); cursor: pointer; }
 .toggle-label { white-space: nowrap; }
 
-.backfill-action { grid-column: 2 / 4; display: flex; gap: 0.4rem; justify-content: flex-end; align-items: center; }
+.backfill-action { grid-column: 3 / 5; display: flex; gap: 0.4rem; justify-content: flex-end; align-items: center; }
 .backfill-action button { border: 1px solid var(--border); border-radius: 0.45rem; background: var(--surface); color: var(--text); padding: 0.42rem 0.65rem; cursor: pointer; font-size: 0.8rem; }
 .backfill-action button:hover { border-color: var(--accent); color: var(--accent); }
 .backfill-action button:disabled { opacity: 0.6; cursor: wait; }
-.backfill-result { grid-column: 4; color: var(--muted); font-size: 0.76rem; text-align: right; max-width: 15rem; }
+.backfill-result { grid-column: 5; color: var(--muted); font-size: 0.76rem; text-align: right; max-width: 15rem; }
 .backfill-result[data-backfill-state="completed"] { color: var(--accent); }
 .backfill-result[data-backfill-state="failed"] { color: var(--danger); }
 

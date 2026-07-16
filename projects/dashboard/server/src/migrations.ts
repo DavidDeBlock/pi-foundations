@@ -81,6 +81,10 @@ const MIGRATIONS = [
     name: '017_youtube_watch_history',
     filename: '017_youtube_watch_history.sql',
   },
+  {
+    name: '018_youtube_subscription_tags',
+    filename: '018_youtube_subscription_tags.sql',
+  },
 ] as const
 
 export interface RunMigrationsOptions {

@@ -1,4 +1,5 @@
 import type { Database } from './db.js'
+import { listTagsForVideos, type EffectiveVideoTag } from './youtube-videos.js'
 
 export interface WatchHistoryEvent {
   readonly id: string
@@ -10,6 +11,7 @@ export interface WatchHistoryEvent {
   readonly thumbnailUrl: string | null
   readonly watchedAt: string
   readonly watchCount: number
+  readonly tags: readonly EffectiveVideoTag[]
 }
 
 export interface WatchHistoryResult {
@@ -64,6 +66,10 @@ export function searchWatchHistory(
       LIMIT ? OFFSET ?`,
     [limit, offset],
   )
+  const tagMap = listTagsForVideos(
+    db,
+    rows.flatMap((row) => row.video_id === null ? [] : [row.video_id]),
+  )
   return {
     items: rows.map((row) => ({
       id: row.id,
@@ -75,6 +81,7 @@ export function searchWatchHistory(
       thumbnailUrl: row.thumbnail_url,
       watchedAt: row.watched_at,
       watchCount: Number(row.watch_count),
+      tags: row.video_id === null ? [] : tagMap.get(row.video_id) ?? [],
     })),
     total: Number(totals?.total ?? 0),
     uniqueVideos: Number(totals?.unique_videos ?? 0),

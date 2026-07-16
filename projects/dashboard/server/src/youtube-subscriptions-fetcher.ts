@@ -172,6 +172,7 @@ export function parseSubscription(raw: RawSubscription): Subscription | null {
     backfillRetryable: false,
     createdAt: '',
     updatedAt: '',
+    tags: [],
   }
 }
 

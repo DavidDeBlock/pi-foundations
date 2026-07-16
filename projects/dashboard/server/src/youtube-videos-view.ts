@@ -28,8 +28,14 @@ import {
 } from './view-shared.js'
 import {
   searchVideos,
+  type VideoSort,
+  type VideoSortOrder,
   type VideoListItem,
 } from './youtube-videos.js'
+import {
+  parseVideoDiscoveryQuery,
+  type VideoDiscoveryQuery,
+} from './youtube-video-search-query.js'
 import { listAllFoldersWithCounts } from './folders.js'
 import { listAllTagsWithUsage } from './tags.js'
 import { searchSubscriptions } from './youtube-subscriptions.js'
@@ -67,6 +73,15 @@ export function youtubeVideosView(
     const unwatched = c.req.query('unwatched') === 'true'
     const page = parsePositiveInt(c.req.query('page')) ?? 1
     const limitRaw = parsePositiveInt(c.req.query('limit')) ?? 50
+    const discoveryResult = parseVideoDiscoveryQuery({
+      sort: c.req.query('sort'),
+      order: c.req.query('order'),
+      publishedFrom: c.req.query('published_from'),
+      publishedTo: c.req.query('published_to'),
+    })
+    const discovery: VideoDiscoveryQuery = discoveryResult.ok
+      ? discoveryResult.value
+      : { sort: 'discovered_at' as const, order: 'desc' as const }
 
     const folder =
       folderIdRaw === 'all' || folderIdRaw === ''
@@ -83,6 +98,7 @@ export function youtubeVideosView(
             ...(source ? { source } : {}),
             ...(playlistId ? { playlistId } : {}),
             ...(unwatched ? { unwatched: true } : {}),
+            ...discovery,
             page,
             limit: limitRaw,
           }
@@ -94,6 +110,7 @@ export function youtubeVideosView(
               ...(source ? { source } : {}),
               ...(playlistId ? { playlistId } : {}),
               ...(unwatched ? { unwatched: true } : {}),
+              ...discovery,
               page,
               limit: limitRaw,
             }
@@ -104,6 +121,7 @@ export function youtubeVideosView(
               ...(source ? { source } : {}),
               ...(playlistId ? { playlistId } : {}),
               ...(unwatched ? { unwatched: true } : {}),
+              ...discovery,
               page,
               limit: limitRaw,
             }
@@ -119,8 +137,7 @@ export function youtubeVideosView(
     }))
     const folders = listAllFoldersWithCounts(deps.db)
     const tags = listAllTagsWithUsage(deps.db)
-    return c.html(
-      renderPage({
+    const html = renderPage({
         items: r.items,
         total: r.total,
         page: r.page,
@@ -131,12 +148,17 @@ export function youtubeVideosView(
         source,
         playlistId,
         unwatched,
+        sort: discovery.sort,
+        order: discovery.order,
+        publishedFrom: discoveryResult.ok ? discovery.publishedFrom : c.req.query('published_from') || undefined,
+        publishedTo: discoveryResult.ok ? discovery.publishedTo : c.req.query('published_to') || undefined,
+        queryError: discoveryResult.ok ? undefined : discoveryResult.error,
         channels,
         folders,
         tags,
         playlists: listYouTubePlaylists(deps.db),
-      }),
-    )
+      })
+    return discoveryResult.ok ? c.html(html) : c.html(html, 400)
   })
 
   return api
@@ -155,6 +177,11 @@ interface RenderPageOptions {
   readonly source: 'playlist' | 'history' | undefined
   readonly playlistId: string | undefined
   readonly unwatched: boolean
+  readonly sort: VideoSort
+  readonly order: VideoSortOrder
+  readonly publishedFrom: string | undefined
+  readonly publishedTo: string | undefined
+  readonly queryError: string | undefined
   readonly channels: Array<{ readonly channelId: string; readonly channelTitle: string | null }>
   readonly folders: ReadonlyArray<{
     readonly id: string
@@ -189,6 +216,7 @@ ${COMMON_HEAD}
       </header>
 
       <form method="get" class="videos-filters" data-videos-filters>
+        ${opts.limit !== 50 ? `<input type="hidden" name="limit" value="${opts.limit}">` : ''}
         <div class="videos-filter">
           <label for="channel_id">Channel</label>
           <select id="channel_id" name="channel_id" data-videos-channel>
@@ -247,15 +275,41 @@ ${COMMON_HEAD}
               .join('')}
           </select>
         </div>
+        <div class="videos-filter videos-filter-date">
+          <label for="published_from">From</label>
+          <input id="published_from" name="published_from" type="date" value="${escapeHtml(opts.publishedFrom ?? '')}" data-videos-published-from>
+        </div>
+        <div class="videos-filter videos-filter-date">
+          <label for="published_to">To</label>
+          <input id="published_to" name="published_to" type="date" value="${escapeHtml(opts.publishedTo ?? '')}" data-videos-published-to>
+        </div>
+        <div class="videos-filter videos-filter-sort">
+          <label for="sort_choice">Sort</label>
+          <select id="sort_choice" data-videos-sort-choice>
+            ${renderSortOptions(opts.sort, opts.order)}
+          </select>
+          <input type="hidden" name="sort" value="${escapeHtml(opts.sort)}" data-videos-sort>
+          <input type="hidden" name="order" value="${escapeHtml(opts.order)}" data-videos-order>
+        </div>
         <div class="videos-filter videos-filter-actions">
-          <button type="submit">Filter</button>
+          <button type="submit">Apply</button>
+          <a href="/videos" class="videos-clear-all" data-videos-clear-all>Clear all</a>
         </div>
         <label class="videos-unwatched-toggle"><input type="checkbox" name="unwatched" value="true" ${opts.unwatched ? 'checked' : ''} data-videos-unwatched> <span>Unwatched only</span></label>
+        <div class="videos-date-quick" aria-label="Quick publication date ranges">
+          <span>Quick range</span>
+          <button type="button" data-videos-quick-days="7">Last 7 days</button>
+          <button type="button" data-videos-quick-days="30">Last 30 days</button>
+          <button type="button" data-videos-clear-dates>Clear dates</button>
+        </div>
       </form>
+
+      ${opts.queryError ? `<div class="videos-query-error" role="alert"><strong>These view settings could not be applied.</strong> ${escapeHtml(opts.queryError)}. <a href="${escapeHtml(clearDiscoveryUrl(opts))}">Reset sorting and dates</a>.</div>` : ''}
 
       <p class="videos-counts">
         <strong>${opts.total}</strong> ${opts.total === 1 ? 'video' : 'videos'}
         ${opts.total === 0 ? '\u2014 nothing matches.' : ''}
+        ${renderDateSummary(opts)}
       </p>
 
       ${opts.total === 0 ? renderEmpty(opts) : `<ol class="videos-list">${rows}</ol>`}
@@ -279,7 +333,7 @@ function renderRow(v: VideoListItem): string {
     : `<span class="videos-row-folder videos-row-folder-empty" data-videos-row-folder>Unfoldered</span>`
   const tagChips = v.tags.map(
     (t) =>
-      `<span class="videos-row-tag" data-videos-row-tag="${escapeHtml(t.id)}">${escapeHtml(t.name)}</span>`,
+      `<span class="videos-row-tag${t.source !== 'manual' ? ' videos-row-tag-inherited' : ''}" data-videos-row-tag="${escapeHtml(t.id)}" title="${t.source === 'both' ? 'Added to this video and inherited from its subscription' : t.source === 'subscription' ? 'Inherited from its subscription' : 'Added to this video'}">${t.source !== 'manual' ? '<span aria-hidden="true">↳</span>' : ''}${escapeHtml(t.name)}</span>`,
   )
   const playlistChips = v.playlists.map((playlist) =>
     `<span class="videos-row-playlist">${escapeHtml(playlist.title)}</span>`,
@@ -308,6 +362,7 @@ function renderEmpty(opts: RenderPageOptions): string {
   // Distinct message when filters are active vs not.
   const filtersActive =
     opts.channelId || opts.folderIdRaw !== 'all' || opts.tagId || opts.source || opts.playlistId || opts.unwatched
+    || opts.publishedFrom || opts.publishedTo || opts.sort !== 'discovered_at' || opts.order !== 'desc'
   if (filtersActive) {
     return `<div class="videos-empty">
   <p>No videos match those filters.</p>
@@ -328,13 +383,7 @@ function renderPagination(
 ): string {
   if (totalPages <= 1) return ''
   const params = (page: number): string => {
-    const sp = new URLSearchParams()
-    if (opts.channelId) sp.set('channel_id', opts.channelId)
-    if (opts.folderIdRaw !== 'all') sp.set('folder_id', opts.folderIdRaw)
-    if (opts.tagId) sp.set('tag_id', opts.tagId)
-    if (opts.source) sp.set('source', opts.source)
-    if (opts.playlistId) sp.set('playlist_id', opts.playlistId)
-    if (opts.unwatched) sp.set('unwatched', 'true')
+    const sp = videoListParams(opts)
     sp.set('page', String(page))
     return sp.toString()
   }
@@ -346,6 +395,73 @@ function renderPagination(
   <span class="videos-pagination-info">Page ${cur} of ${totalPages}</span>
   <a href="/videos?${params(Math.min(totalPages, cur + 1))}"${nextDisabled ? ' aria-disabled="true"' : ''}>Next</a>
 </nav>`
+}
+
+const SORT_CHOICES: ReadonlyArray<{
+  readonly sort: VideoSort
+  readonly order: VideoSortOrder
+  readonly label: string
+}> = [
+  { sort: 'discovered_at', order: 'desc', label: 'Recently discovered' },
+  { sort: 'discovered_at', order: 'asc', label: 'Oldest discovered' },
+  { sort: 'published_at', order: 'desc', label: 'Newest published' },
+  { sort: 'published_at', order: 'asc', label: 'Oldest published' },
+  { sort: 'channel', order: 'asc', label: 'Channel A–Z' },
+  { sort: 'channel', order: 'desc', label: 'Channel Z–A' },
+  { sort: 'title', order: 'asc', label: 'Title A–Z' },
+  { sort: 'title', order: 'desc', label: 'Title Z–A' },
+]
+
+function renderSortOptions(sort: VideoSort, order: VideoSortOrder): string {
+  return SORT_CHOICES.map((choice) => {
+    const value = `${choice.sort}:${choice.order}`
+    const selected = choice.sort === sort && choice.order === order ? ' selected' : ''
+    return `<option value="${value}"${selected}>${choice.label}</option>`
+  }).join('')
+}
+
+function videoListParams(opts: RenderPageOptions): URLSearchParams {
+  const sp = new URLSearchParams()
+  if (opts.channelId) sp.set('channel_id', opts.channelId)
+  if (opts.folderIdRaw !== 'all') sp.set('folder_id', opts.folderIdRaw)
+  if (opts.tagId) sp.set('tag_id', opts.tagId)
+  if (opts.source) sp.set('source', opts.source)
+  if (opts.playlistId) sp.set('playlist_id', opts.playlistId)
+  if (opts.unwatched) sp.set('unwatched', 'true')
+  if (opts.sort !== 'discovered_at' || opts.order !== 'desc') {
+    sp.set('sort', opts.sort)
+    sp.set('order', opts.order)
+  }
+  if (opts.publishedFrom) sp.set('published_from', opts.publishedFrom)
+  if (opts.publishedTo) sp.set('published_to', opts.publishedTo)
+  if (opts.limit !== 50) sp.set('limit', String(opts.limit))
+  return sp
+}
+
+function clearDatesUrl(opts: RenderPageOptions): string {
+  const sp = videoListParams(opts)
+  sp.delete('published_from')
+  sp.delete('published_to')
+  return `/videos${sp.size > 0 ? `?${sp.toString()}` : ''}`
+}
+
+function clearDiscoveryUrl(opts: RenderPageOptions): string {
+  const sp = videoListParams(opts)
+  sp.delete('sort')
+  sp.delete('order')
+  sp.delete('published_from')
+  sp.delete('published_to')
+  return `/videos${sp.size > 0 ? `?${sp.toString()}` : ''}`
+}
+
+function renderDateSummary(opts: RenderPageOptions): string {
+  if (!opts.publishedFrom && !opts.publishedTo) return ''
+  const label = opts.publishedFrom && opts.publishedTo
+    ? `${opts.publishedFrom} to ${opts.publishedTo}`
+    : opts.publishedFrom
+      ? `from ${opts.publishedFrom}`
+      : `through ${opts.publishedTo}`
+  return `<span class="videos-active-range">Published ${escapeHtml(label)} <a href="${escapeHtml(clearDatesUrl(opts))}" aria-label="Remove publication date range">×</a></span>`
 }
 
 function renderVideosSidebar(): string {
@@ -411,12 +527,24 @@ const VIDEOS_VIEW_STYLES = `
 .videos-filters { display: flex; gap: 12px; flex-wrap: wrap; padding: 14px; background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 16px; box-shadow: var(--shadow); }
 .videos-filter { display: flex; flex-direction: column; gap: 4px; min-width: 180px; }
 .videos-filter label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
-.videos-filter select, .videos-filter button { min-height: 38px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; }
+.videos-filter select, .videos-filter input, .videos-filter button { min-height: 38px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; }
 .videos-filter button { color: var(--accent-text); background: var(--accent); border-color: var(--accent); font-weight: 600; }
-.videos-filter-actions { align-self: end; }
+.videos-filter-date { min-width: 145px; }
+.videos-filter-sort { min-width: 205px; }
+.videos-filter-actions { align-self: end; flex-direction: row; align-items: center; min-width: auto; }
+.videos-clear-all { min-height: 38px; display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; }
+.videos-clear-all:hover { color: var(--text); background: var(--surface-2); }
 .videos-unwatched-toggle { align-self:end; min-height:38px; display:flex; align-items:center; gap:7px; padding:0 9px; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); cursor:pointer; font-weight:600; }
 .videos-unwatched-toggle input { accent-color:var(--accent); width:17px; height:17px; }
+.videos-date-quick { flex-basis: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 7px; color: var(--muted); font-size: .82rem; }
+.videos-date-quick > span { margin-right: 2px; font-weight: 650; }
+.videos-date-quick button { padding: 5px 9px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); color: var(--text); cursor: pointer; font: inherit; }
+.videos-date-quick button:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.videos-query-error { margin: 0 0 16px; padding: 12px 14px; border: 1px solid color-mix(in srgb, #f59e0b 50%, var(--border)); border-radius: 10px; background: color-mix(in srgb, #f59e0b 10%, var(--surface)); color: var(--text); }
+.videos-query-error a { color: var(--accent); }
 .videos-counts { margin: 0 0 16px; color: var(--muted); }
+.videos-active-range { display: inline-flex; align-items: center; gap: 7px; margin-left: 8px; padding: 3px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border)); color: var(--text); font-size: .82rem; }
+.videos-active-range a { color: var(--accent); text-decoration: none; font-size: 1.05rem; line-height: 1; }
 .videos-list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(270px, 100%), 1fr)); gap: 18px; }
 .videos-row { min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 10px 30px rgba(4, 10, 24, 0.13); transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
 .videos-row:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--accent) 65%, var(--border)); box-shadow: 0 18px 42px color-mix(in srgb, var(--accent) 10%, rgba(4, 10, 24, .3)); }
@@ -432,6 +560,8 @@ const VIDEOS_VIEW_STYLES = `
 .videos-row-folder { padding: 2px 8px; background: var(--accent-bg, rgba(60, 130, 230, 0.1)); color: var(--accent, #3c82e6); border-radius: 4px; }
 .videos-row-folder-empty { color: var(--muted); background: transparent; border: 1px dashed var(--border); }
 .videos-row-tag { padding: 2px 8px; background: var(--surface-2, rgba(127,127,127,0.1)); border-radius: 4px; color: var(--muted); }
+.videos-row-tag-inherited { display: inline-flex; align-items: center; gap: 3px; border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border)); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.videos-row-tag-inherited > span { color: var(--accent); font-size: .7rem; }
 .videos-row-tag-list { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .videos-row-playlist { padding: 2px 8px; border: 1px solid color-mix(in srgb, #8b5cf6 50%, var(--border)); border-radius: 999px; color: #a78bfa; background: color-mix(in srgb, #8b5cf6 10%, transparent); }
 .videos-row-watched { padding:2px 8px; border-radius:999px; color:#34d399; background:color-mix(in srgb,#10b981 12%,transparent); border:1px solid color-mix(in srgb,#10b981 35%,var(--border)); }
@@ -443,12 +573,18 @@ const VIDEOS_VIEW_STYLES = `
 .videos-pagination-info { color: var(--muted); font-size: 0.85rem; }
 @media (max-width: 720px) {
   .videos-main { padding: 18px 12px 48px; }
+  .videos-filter { flex: 1 1 min(180px, 100%); }
+  .videos-filter-date { flex-basis: 135px; min-width: 135px; }
+  .videos-filter-actions { flex-basis: 100%; justify-content: flex-start; }
+  .videos-unwatched-toggle { flex: 1 1 100%; }
+  .videos-active-range { margin: 8px 0 0; }
 }
 `
 
 export const VIDEOS_FILTER_SCRIPT = `(function(){
   var box=document.querySelector('[data-videos-unwatched]');
-  if(!box)return;
+  var form=document.querySelector('[data-videos-filters]');
+  if(!box||!form)return;
   var key='dashboard.youtube.unwatched-only';
   var params=new URLSearchParams(window.location.search);
   if(!params.has('unwatched') && localStorage.getItem(key)==='true'){
@@ -458,6 +594,31 @@ export const VIDEOS_FILTER_SCRIPT = `(function(){
     localStorage.setItem(key,box.checked?'true':'false');
     if(box.form)box.form.submit();
   });
+  var choice=form.querySelector('[data-videos-sort-choice]');
+  var sort=form.querySelector('[data-videos-sort]');
+  var order=form.querySelector('[data-videos-order]');
+  function syncSort(){
+    if(!choice||!sort||!order)return;
+    var parts=choice.value.split(':'); sort.value=parts[0]; order.value=parts[1];
+  }
+  if(choice)choice.addEventListener('change',syncSort);
+  form.addEventListener('submit',syncSort);
+  var from=form.querySelector('[data-videos-published-from]');
+  var to=form.querySelector('[data-videos-published-to]');
+  form.querySelectorAll('[data-videos-quick-days]').forEach(function(button){
+    button.addEventListener('click',function(){
+      if(!from||!to)return;
+      var days=Number(button.getAttribute('data-videos-quick-days'));
+      var today=new Date();
+      var end=new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate()));
+      var start=new Date(end.getTime()); start.setUTCDate(start.getUTCDate()-(days-1));
+      from.value=start.toISOString().slice(0,10); to.value=end.toISOString().slice(0,10);
+    });
+  });
+  var clearDates=form.querySelector('[data-videos-clear-dates]');
+  if(clearDates)clearDates.addEventListener('click',function(){ if(from)from.value=''; if(to)to.value=''; });
+  var clearAll=form.querySelector('[data-videos-clear-all]');
+  if(clearAll)clearAll.addEventListener('click',function(){ localStorage.removeItem(key); });
 })();`
 
 // Inline script for the "Poll now" button on the empty-state copy.

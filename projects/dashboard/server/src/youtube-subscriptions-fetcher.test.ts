@@ -53,6 +53,7 @@ describe('parseSubscription', () => {
       backfillRetryable: false,
       createdAt: '',
       updatedAt: '',
+      tags: [],
     })
   })
 

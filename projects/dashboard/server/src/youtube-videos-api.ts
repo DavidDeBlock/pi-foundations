@@ -21,8 +21,10 @@ import {
   searchVideos,
   updateVideoFolder,
   type VideoDetail,
+  type EffectiveVideoTag,
   type VideoListItem,
 } from './youtube-videos.js'
+import { parseVideoDiscoveryQuery } from './youtube-video-search-query.js'
 
 // ─── Public API shape (issue YT-005 AC) ──────────────────────────────────
 
@@ -39,7 +41,7 @@ interface ApiVideoItem {
   readonly discovered_at: string
   readonly folder_id: string | null
   readonly folder_name: string | null
-  readonly tags: ReadonlyArray<{ readonly id: string; readonly name: string }>
+  readonly tags: ReadonlyArray<EffectiveVideoTag>
   readonly playlists: ReadonlyArray<{ readonly id: string; readonly title: string }>
   readonly watched: boolean
   readonly watch_count: number
@@ -181,6 +183,13 @@ export function youtubeVideosApi(
     if (watchedRaw === 'true' && unwatchedRaw === 'true') {
       return c.json({ error: 'watched and unwatched filters are contradictory' }, 400)
     }
+    const discovery = parseVideoDiscoveryQuery({
+      sort: c.req.query('sort'),
+      order: c.req.query('order'),
+      publishedFrom: c.req.query('published_from'),
+      publishedTo: c.req.query('published_to'),
+    })
+    if (!discovery.ok) return c.json({ error: discovery.error }, 400)
     const page = parsePositiveInt(c.req.query('page')) ?? 1
     const limitRaw = parsePositiveInt(c.req.query('limit')) ?? 50
 
@@ -193,6 +202,7 @@ export function youtubeVideosApi(
             ...(playlistId !== undefined ? { playlistId } : {}),
             ...(watchedRaw === 'true' ? { watched: true } : {}),
             ...(unwatchedRaw === 'true' ? { unwatched: true } : {}),
+            ...discovery.value,
             page,
             limit: limitRaw,
           }
@@ -205,6 +215,7 @@ export function youtubeVideosApi(
               ...(playlistId !== undefined ? { playlistId } : {}),
               ...(watchedRaw === 'true' ? { watched: true } : {}),
               ...(unwatchedRaw === 'true' ? { unwatched: true } : {}),
+              ...discovery.value,
               page,
               limit: limitRaw,
             }
@@ -216,6 +227,7 @@ export function youtubeVideosApi(
               ...(playlistId !== undefined ? { playlistId } : {}),
               ...(watchedRaw === 'true' ? { watched: true } : {}),
               ...(unwatchedRaw === 'true' ? { unwatched: true } : {}),
+              ...discovery.value,
               page,
               limit: limitRaw,
             }

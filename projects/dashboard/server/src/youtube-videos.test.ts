@@ -355,6 +355,87 @@ describe('searchVideos — sorting', () => {
     expect(searchVideos(env.db, { page: -1 }).page).toBe(1)
     expect(searchVideos(env.db, {}).page).toBe(1)
   })
+
+  it.each([
+    ['discovered_at', 'asc', ['sort-alpha', 'sort-beta']],
+    ['discovered_at', 'desc', ['sort-beta', 'sort-alpha']],
+    ['published_at', 'asc', ['sort-beta', 'sort-alpha']],
+    ['published_at', 'desc', ['sort-alpha', 'sort-beta']],
+    ['channel', 'asc', ['sort-alpha', 'sort-beta']],
+    ['channel', 'desc', ['sort-beta', 'sort-alpha']],
+    ['title', 'asc', ['sort-beta', 'sort-alpha']],
+    ['title', 'desc', ['sort-alpha', 'sort-beta']],
+  ] as const)('sorts by %s %s', (sort, order, expected) => {
+    upsertSubscription(env.db, {
+      googleAccountId: 'acct-1',
+      channelId: 'UCbbbbbbb000000000000bab',
+      channelTitle: 'Beta',
+      channelThumbnailUrl: null,
+      subscribedAt: '2024-01-01T00:00:00.000Z',
+    })
+    insertVideo(env.db, makeInput({
+      videoId: 'sort-alpha', title: 'Zebra', publishedAt: '2026-02-02T10:00:00Z',
+    }))
+    insertVideo(env.db, makeInput({
+      videoId: 'sort-beta', channelId: 'UCbbbbbbb000000000000bab',
+      title: 'apple', publishedAt: '2026-02-01T10:00:00Z',
+    }))
+    env.db.run(`UPDATE videos SET discovered_at = '2026-02-01T00:00:00Z' WHERE video_id = 'sort-alpha'`)
+    env.db.run(`UPDATE videos SET discovered_at = '2026-02-02T00:00:00Z' WHERE video_id = 'sort-beta'`)
+
+    expect(searchVideos(env.db, { sort, order }).items.map((item) => item.videoId)).toEqual(expected)
+  })
+
+  it('uses dashboard video ID as a stable final tie-breaker across pages', () => {
+    const ids = ['tie-1', 'tie-2', 'tie-3', 'tie-4'].map((videoId) =>
+      insertVideo(env.db, makeInput({ videoId, title: 'Same title' })),
+    ).sort((a, b) => a.id.localeCompare(b.id))
+
+    const first = searchVideos(env.db, { sort: 'title', order: 'asc', page: 1, limit: 2 })
+    const second = searchVideos(env.db, { sort: 'title', order: 'asc', page: 2, limit: 2 })
+    expect([...first.items, ...second.items].map((item) => item.id)).toEqual(ids.map((item) => item.id))
+  })
+})
+
+describe('searchVideos — publication date range', () => {
+  beforeEach(() => {
+    insertVideo(env.db, makeInput({ videoId: 'feb-28', publishedAt: '2024-02-28T23:59:59Z' }))
+    insertVideo(env.db, makeInput({ videoId: 'leap-day', publishedAt: '2024-02-29T23:59:59.999Z' }))
+    insertVideo(env.db, makeInput({ videoId: 'march-1', publishedAt: '2024-03-01T00:00:00Z' }))
+    insertVideo(env.db, makeInput({ videoId: 'bad-date', publishedAt: 'not-a-timestamp' }))
+  })
+
+  it('supports one-sided ranges and excludes unusable timestamps only when active', () => {
+    expect(searchVideos(env.db).total).toBe(4)
+    expect(searchVideos(env.db, { publishedFrom: '2024-02-29' }).items.map((v) => v.videoId).sort())
+      .toEqual(['leap-day', 'march-1'])
+    expect(searchVideos(env.db, { publishedTo: '2024-02-29' }).items.map((v) => v.videoId).sort())
+      .toEqual(['feb-28', 'leap-day'])
+  })
+
+  it('includes the complete To day and respects leap-day/month boundaries', () => {
+    const result = searchVideos(env.db, {
+      publishedFrom: '2024-02-29',
+      publishedTo: '2024-02-29',
+    })
+    expect(result.items.map((v) => v.videoId)).toEqual(['leap-day'])
+  })
+
+  it('composes date bounds with canonical channel, folder, tag, and unwatched filters', () => {
+    env.db.run(`INSERT INTO folders (id, parent_id, name) VALUES ('range-folder', NULL, 'Range')`)
+    const leap = getVideoByVideoId(env.db, 'leap-day')!
+    updateVideoFolder(env.db, leap.id, 'range-folder')
+    const tag = attachTagByNameToVideo(env.db, leap.id, 'range-tag')!
+    const result = searchVideos(env.db, {
+      channelId: 'UCaaaaaaa000000000000aab',
+      folderId: 'range-folder',
+      tagId: tag.id,
+      unwatched: true,
+      publishedFrom: '2024-02-29',
+      publishedTo: '2024-03-01',
+    })
+    expect(result.items.map((v) => v.videoId)).toEqual(['leap-day'])
+  })
 })
 
 describe('searchVideos — filters', () => {
