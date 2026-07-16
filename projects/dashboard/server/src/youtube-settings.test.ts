@@ -152,6 +152,18 @@ describe('GET /settings/youtube — connected state', () => {
     // prompt. The Disconnect form replaces it in connected state.
     expect(html).not.toContain('href="/api/youtube/oauth/start"')
   })
+
+  it('shows jump links to /videos + /subscriptions when an account is linked', async () => {
+    const res = await env.app.request('/settings/youtube', {
+      headers: { authorization: basicHeader('david', PASSWORD) },
+    })
+    const html = await res.text()
+    // Discoverability for YT-005: links to the new pages.
+    expect(html).toContain('href="/videos"')
+    expect(html).toContain('View new videos')
+    expect(html).toContain('href="/subscriptions"')
+    expect(html).toContain('Manage subscriptions')
+  })
 })
 
 // ─── Flash banner ─────────────────────────────────────────────────────────

@@ -26,6 +26,10 @@ import { youtubeSyncApi } from './youtube-subscriptions-api.js'
 import { subscriptionsApi } from './youtube-subscriptions-list-api.js'
 import { subscriptionsViewApi } from './youtube-subscriptions-view.js'
 import { youtubeRssPollApi } from './youtube-rss-poll-api.js'
+import { youtubeVideosApi } from './youtube-videos-api.js'
+import { youtubeVideoTagsApi } from './youtube-video-tags-api.js'
+import { youtubeVideosView } from './youtube-videos-view.js'
+import { youtubeVideoDetailView } from './youtube-video-detail-view.js'
 
 export interface EmailDeps {
   /** AES-256-GCM cipher for OAuth tokens at rest. */
@@ -244,6 +248,18 @@ export function createApp({
         poller: youtube.rssPoller,
       }),
     )
+    // Videos API (issue YT-005): `/api/videos/*`. Two factories —
+    // one for the resource itself, one for the tag sub-resource.
+    // Same DI surface (just `db`); separate factories because
+    // they have different URL prefix spaces.
+    app.route(
+      '/api/videos',
+      youtubeVideosApi({ db }),
+    )
+    app.route(
+      '/api/videos',
+      youtubeVideoTagsApi({ db }),
+    )
     app.route(
       '/api/subscriptions',
       subscriptionsApi({ db }),
@@ -263,6 +279,18 @@ export function createApp({
     app.route(
       '/subscriptions',
       subscriptionsViewApi({ db }),
+    )
+    // Videos list page (issue YT-005): `/videos`. Same router
+    // also owns the detail page at `/videos/:id` so we mount
+    // both factories on `/videos` and let Hono disambiguate by
+    // method + path.
+    app.route(
+      '/videos',
+      youtubeVideosView({ db }),
+    )
+    app.route(
+      '/videos',
+      youtubeVideoDetailView({ db }),
     )
   } else {
     app.route('/settings/youtube', youtubeSettingsSetupOnly())

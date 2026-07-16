@@ -155,10 +155,12 @@ function renderSidebar(_args: { readonly active: 'subscriptions' }): string {
   // Lightweight sidebar mirroring the home page's top sections.
   // No folder tree here — the subscriptions page has no folders
   // (folders belong to bookmarks). Bookmarks + Email + YouTube
-  // sections, with "Subscriptions" active under YouTube.
+  // sections, with "Subscriptions" active under YouTube. (Videos
+  // gets its own active class on the `/videos` route.)
   const bookmarksActive = ''
   const emailActive = ''
-  const youtubeActive = ' compartment-button-active'
+  const videosActive = ''
+  const subscriptionsActive = ' compartment-button-active'
   return `<aside class="sidebar" data-sidebar>
       <div class="sidebar-section">
         <h2 class="sidebar-title">Dashboard</h2>
@@ -186,8 +188,14 @@ function renderSidebar(_args: { readonly active: 'subscriptions' }): string {
         <h2 class="sidebar-title">YouTube</h2>
         <ul class="compartment-nav">
           <li>
-            <a class="compartment-button${youtubeActive}" href="/subscriptions" data-sidebar-nav="subscriptions">
+            <a class="compartment-button${videosActive}" href="/videos" data-sidebar-nav="videos">
               <span class="compartment-icon" aria-hidden="true">\u25b6</span>
+              <span class="compartment-label">Videos</span>
+            </a>
+          </li>
+          <li>
+            <a class="compartment-button${subscriptionsActive}" href="/subscriptions" data-sidebar-nav="subscriptions">
+              <span class="compartment-icon" aria-hidden="true">\u25cb</span>
               <span class="compartment-label">Subscriptions</span>
             </a>
           </li>

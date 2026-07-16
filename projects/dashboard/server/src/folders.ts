@@ -1,6 +1,50 @@
 import { Hono } from 'hono'
 import type { Database } from './db.js'
 
+// ─── Flat-folder listing with usage counts ────────────────────────────────
+
+interface FolderWithCountRow {
+  id: string
+  name: string
+  bookmark_count: number
+  video_count: number
+}
+
+/**
+ * Flat list of folders with one count column for each existing
+ * resource kind. Used by the YouTube videos view (issue YT-005)
+ * to populate a folder-filter dropdown with usage hints. Book
+ * counts come from `bookmarks`, videos from `videos`. The two
+ * counters are computed independently — a folder can hold either
+ * or both.
+ *
+ * Returns folders that have a 0 count AND folders that have
+ * only video counts (used by YouTube, not bookmarks). The view
+ * uses this so the operator sees folders they've curated for
+ * videos without having to drop a bookmark in first.
+ */
+export function listAllFoldersWithCounts(db: Database): readonly {
+  readonly id: string
+  readonly name: string
+  readonly bookmarkCount: number
+  readonly videoCount: number
+}[] {
+  return db.all<FolderWithCountRow>(
+    `SELECT
+        f.id,
+        f.name,
+        (SELECT COUNT(*) FROM bookmarks b WHERE b.folder_id = f.id) AS bookmark_count,
+        (SELECT COUNT(*) FROM videos v WHERE v.folder_id = f.id) AS video_count
+       FROM folders f
+      ORDER BY f.name COLLATE NOCASE`,
+  ).map((row) => ({
+    id: row.id,
+    name: row.name,
+    bookmarkCount: row.bookmark_count,
+    videoCount: row.video_count,
+  }))
+}
+
 // ─── Public types ──────────────────────────────────────────────────────────
 
 /**

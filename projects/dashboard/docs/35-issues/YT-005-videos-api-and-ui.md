@@ -10,17 +10,17 @@ David can browse new videos at `/videos` (reverse-chronological by `discovered_a
 
 ## Acceptance criteria
 
-- [ ] `GET /api/videos?channel_id=&folder_id=&tag_id=&page=&limit=` returns paginated `{ items: [...], total, page, limit }`; default `limit=50`, sorted by `discovered_at DESC`
-- [ ] Each item: `{ id, video_id, channel_id, channel_title, channel_thumbnail_url, title, published_at, thumbnail_url, link, discovered_at, folder_id, folder_name, tags: [{ id, name }] }`
-- [ ] `GET /api/videos/:id` returns one video with full tag list + folder info
-- [ ] `PATCH /api/videos/:id` accepts `{ folder_id?, title? }`; updates DB; returns updated row
-- [ ] `POST /api/videos/:id/tags` body `{ name }` adds a tag via existing `TagNormalizer` (lowercase, trim, dedupe, slugify); creates tag row if new; returns the tag
-- [ ] `DELETE /api/videos/:id/tags/:tagId` removes the tag link
-- [ ] `/videos` page renders server-side HTML, paginated, with filter controls (channel select, folder select, tag select) matching v1's categorize page patterns
-- [ ] `/videos/:id` page renders server-side HTML with title (inline edit), thumbnail, channel info + link to channel, link to YouTube, folder picker, tag chips + input
-- [ ] Inline title edit + folder move + tag add/remove all use fetch + DOM patch (no full reload), matching v1's UX
-- [ ] Reuses `TagNormalizer` and existing `tag` + `folder` JS modules from v1 (no duplicate normalization or autocomplete code)
-- [ ] Tests: API contract for list (filters, pagination) + get + patch + tag add/remove; UI smoke for the categorize flows
+- [x] `GET /api/videos?channel_id=&folder_id=&tag_id=&page=&limit=` returns paginated `{ items: [...], total, page, limit }`; default `limit=50`, sorted by `discovered_at DESC`
+- [x] Each item: `{ id, video_id, channel_id, channel_title, channel_thumbnail_url, title, published_at, thumbnail_url, link, discovered_at, folder_id, folder_name, tags: [{ id, name }] }`
+- [x] `GET /api/videos/:id` returns one video with full tag list + folder info
+- [x] `PATCH /api/videos/:id` accepts `{ folder_id?, title? }`; updates DB; returns updated row
+- [x] `POST /api/videos/:id/tags` body `{ name }` adds a tag via existing `TagNormalizer` (lowercase, trim, dedupe, slugify); creates tag row if new; returns the tag
+- [x] `DELETE /api/videos/:id/tags/:tagId` removes the tag link
+- [x] `/videos` page renders server-side HTML, paginated, with filter controls (channel select, folder select, tag select) matching v1's categorize page patterns
+- [x] `/videos/:id` page renders server-side HTML with title (inline edit), thumbnail, channel info + link to channel, link to YouTube, folder picker, tag chips + input
+- [x] Inline title edit + folder move + tag add/remove all use fetch + DOM patch (no full reload), matching v1's UX
+- [x] Reuses `TagNormalizer` and existing `tag` + `folder` JS modules from v1 (no duplicate normalization or autocomplete code)
+- [x] Tests: API contract for list (filters, pagination) + get + patch + tag add/remove; UI smoke for the categorize flows
 - [ ] Manual smoke: poll inserts a video (via YT-004) → categorize via folder + tag → reload → categorization persists; tag autocomplete suggests existing tags + allows create-on-the-fly
 
 ## Blocked by

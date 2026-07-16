@@ -17,10 +17,17 @@ import {
   insertVideo,
   listVideoIdsForChannel,
   renameVideoTitle,
-  touchVideoLastPolledAt,
+  searchVideos,
+  getVideoDetail,
+  attachTagByNameToVideo,
+  detachTagFromVideo,
+  listTagsForVideo,
+  listTagsForVideos,
   updateVideoFolder,
+  touchVideoLastPolledAt,
   type VideoInsertInput,
 } from './youtube-videos.js'
+import { normalize } from './tag-normalizer.js'
 import {
   upsertSubscription,
 } from './youtube-subscriptions.js'
@@ -295,5 +302,266 @@ describe('FK enforcement', () => {
     expect(() =>
       env.db.run(`DELETE FROM subscriptions WHERE channel_id = 'UCaaaaaaa000000000000aab'`),
     ).toThrow(/FOREIGN KEY constraint failed/)
+  })
+})
+// ─── Search + list (issue YT-005) ─────────────────────────────────────────
+
+describe('searchVideos — sorting', () => {
+  it('returns empty list when there are no videos', () => {
+    const r = searchVideos(env.db)
+    expect(r.items).toEqual([])
+    expect(r.total).toBe(0)
+    expect(r.page).toBe(1)
+    expect(r.limit).toBe(50)
+  })
+
+  it('sorts by discovered_at DESC', () => {
+    // Two videos with staggered inserted-at times.
+    const t0 = 1_700_000_000_000
+    insertVideo(env.db, makeInput({ videoId: 'aaaa', title: 'A' }), () => t0)
+    insertVideo(env.db, makeInput({ videoId: 'bbbb', title: 'B' }), () => t0 + 1000)
+    const r = searchVideos(env.db)
+    expect(r.items.map((v) => v.videoId)).toEqual(['bbbb', 'aaaa'])
+  })
+
+  it('respects limit + page for pagination', () => {
+    const t0 = 1_700_000_000_000
+    for (let i = 0; i < 5; i++) {
+      insertVideo(env.db, makeInput({ videoId: `vv${i}` }), () => t0 + i * 1000)
+    }
+    const page1 = searchVideos(env.db, { page: 1, limit: 2 })
+    expect(page1.items.map((v) => v.videoId)).toEqual(['vv4', 'vv3'])
+    expect(page1.total).toBe(5)
+    const page2 = searchVideos(env.db, { page: 2, limit: 2 })
+    expect(page2.items.map((v) => v.videoId)).toEqual(['vv2', 'vv1'])
+    const page3 = searchVideos(env.db, { page: 3, limit: 2 })
+    expect(page3.items).toHaveLength(1)
+    expect(page3.items[0]!.videoId).toBe('vv0')
+  })
+
+  it('caps limit at 200 to keep responses bounded', () => {
+    const r = searchVideos(env.db, { limit: 9999 })
+    expect(r.limit).toBe(200)
+  })
+
+  it('clamps invalid limit (0, -1) to the floor of 1', () => {
+    expect(searchVideos(env.db, { limit: 0 }).limit).toBe(1)
+    expect(searchVideos(env.db, { limit: -5 }).limit).toBe(1)
+  })
+
+  it('defaults page to 1 when missing or invalid', () => {
+    expect(searchVideos(env.db, { page: 0 }).page).toBe(1)
+    expect(searchVideos(env.db, { page: -1 }).page).toBe(1)
+    expect(searchVideos(env.db, {}).page).toBe(1)
+  })
+})
+
+describe('searchVideos — filters', () => {
+  it('filters by channel_id', () => {
+    upsertSubscription(env.db, {
+      googleAccountId: 'acct-1',
+      channelId: 'UCbbbbbbb000000000000bab',
+      channelTitle: 'Beta',
+      channelThumbnailUrl: null,
+      subscribedAt: '2024-01-01T00:00:00.000Z',
+    })
+    const t0 = 1_700_000_000_000
+    insertVideo(env.db, makeInput({ videoId: 'aaaa', channelId: 'UCaaaaaaa000000000000aab' }), () => t0)
+    insertVideo(env.db, makeInput({ videoId: 'bbbb', channelId: 'UCbbbbbbb000000000000bab' }), () => t0 + 100)
+    insertVideo(env.db, makeInput({ videoId: 'cccc', channelId: 'UCbbbbbbb000000000000bab' }), () => t0 + 200)
+    const r = searchVideos(env.db, { channelId: 'UCbbbbbbb000000000000bab' })
+    expect(r.total).toBe(2)
+    expect(r.items.map((v) => v.videoId)).toEqual(['cccc', 'bbbb'])
+  })
+
+  it('hydrates channel_title + thumbnail_url', () => {
+    insertVideo(env.db, makeInput())
+    const [item] = searchVideos(env.db).items
+    expect(item!.channelTitle).toBe('Alpha')
+    expect(item!.channelThumbnailUrl).toBeNull()
+  })
+
+  it('filters by folder_id', () => {
+    env.db.run(`INSERT INTO folders (id, parent_id, name) VALUES ('f-1', NULL, 'Work')`)
+    const a = insertVideo(env.db, makeInput({ videoId: 'aaaa' }))
+    const b = insertVideo(env.db, makeInput({ videoId: 'bbbb' }))
+    updateVideoFolder(env.db, a.id, 'f-1')
+    const r = searchVideos(env.db, { folderId: 'f-1' })
+    expect(r.total).toBe(1)
+    expect(r.items[0]!.videoId).toBe('aaaa')
+    expect(r.items[0]!.folderName).toBe('Work')
+    expect(r.items[0]!.folderId).toBe('f-1')
+    // Confirm unfoldered still has the second video
+    expect(b.id).toBeDefined()
+  })
+
+  it('filters by unfoldered:true (folder_id IS NULL)', () => {
+    env.db.run(`INSERT INTO folders (id, parent_id, name) VALUES ('f-1', NULL, 'Work')`)
+    insertVideo(env.db, makeInput({ videoId: 'aaaa' }))
+    updateVideoFolder(env.db, getVideoByVideoId(env.db, 'aaaa')!.id, 'f-1')
+    insertVideo(env.db, makeInput({ videoId: 'bbbb' }))
+    const r = searchVideos(env.db, { unfoldered: true })
+    expect(r.total).toBe(1)
+    expect(r.items[0]!.videoId).toBe('bbbb')
+  })
+
+  it('filters by tag_id', () => {
+    env.db.run(`INSERT INTO folders (id, parent_id, name) VALUES ('f-1', NULL, 'Work')`)
+    insertVideo(env.db, makeInput({ videoId: 'aaaa' }))
+    insertVideo(env.db, makeInput({ videoId: 'bbbb' }))
+    const idA = getVideoByVideoId(env.db, 'aaaa')!.id
+    const idB = getVideoByVideoId(env.db, 'bbbb')!.id
+    const tagA = attachTagByNameToVideo(env.db, idA, 'postgres')!
+    attachTagByNameToVideo(env.db, idB, 'redis')
+    const r = searchVideos(env.db, { tagId: tagA.id })
+    expect(r.total).toBe(1)
+    expect(r.items[0]!.videoId).toBe('aaaa')
+  })
+
+  it('combines channel + folder + tag filters (AND)', () => {
+    upsertSubscription(env.db, {
+      googleAccountId: 'acct-1',
+      channelId: 'UCbbbbbbb000000000000bab',
+      channelTitle: 'Beta',
+      channelThumbnailUrl: null,
+      subscribedAt: '2024-01-01T00:00:00.000Z',
+    })
+    env.db.run(`INSERT INTO folders (id, parent_id, name) VALUES ('f-1', NULL, 'Work')`)
+    // Across both channels, both folders, both tag sets.
+    insertVideo(env.db, makeInput({ videoId: 'aaaa', channelId: 'UCaaaaaaa000000000000aab' }))
+    insertVideo(env.db, makeInput({ videoId: 'bbbb', channelId: 'UCaaaaaaa000000000000aab' }))
+    insertVideo(env.db, makeInput({ videoId: 'cccc', channelId: 'UCbbbbbbb000000000000bab' }))
+    const idA = getVideoByVideoId(env.db, 'aaaa')!.id
+    const idC = getVideoByVideoId(env.db, 'cccc')!.id
+    updateVideoFolder(env.db, idA, 'f-1')
+    const tA = attachTagByNameToVideo(env.db, idA, 'shared')!
+    attachTagByNameToVideo(env.db, idC, 'shared')
+    // Filter: channel=A AND folder=f-1 AND tag=tA.id → only aaaa
+    const r = searchVideos(env.db, {
+      channelId: 'UCaaaaaaa000000000000aab',
+      folderId: 'f-1',
+      tagId: tA.id,
+    })
+    expect(r.total).toBe(1)
+    expect(r.items[0]!.videoId).toBe('aaaa')
+  })
+})
+
+// ─── Detail + tag attach/detach (issue YT-005) ──────────────────────────
+
+describe('getVideoDetail', () => {
+  it('returns null for an unknown id', () => {
+    expect(getVideoDetail(env.db, 'no-such')).toBeNull()
+  })
+
+  it('returns the full record with tags + folder + channel info', () => {
+    env.db.run(`INSERT INTO folders (id, parent_id, name) VALUES ('f-1', NULL, 'Work')`)
+    const { id } = insertVideo(env.db, makeInput())
+    updateVideoFolder(env.db, id, 'f-1')
+    attachTagByNameToVideo(env.db, id, 'launch')
+    attachTagByNameToVideo(env.db, id, 'queue')
+    const d = getVideoDetail(env.db, id)
+    expect(d).not.toBeNull()
+    expect(d!.videoId).toBe('dQw4w9WgXcQ')
+    expect(d!.folderId).toBe('f-1')
+    expect(d!.folderName).toBe('Work')
+    expect(d!.channelTitle).toBe('Alpha')
+    expect(d!.channelIsIncluded).toBe(true)
+    expect(d!.tags.map((t) => t.name)).toEqual(['launch', 'queue'])
+  })
+
+  it('reflects channelIsIncluded=false when the channel is excluded', () => {
+    const { id } = insertVideo(env.db, makeInput())
+    env.db.run(`UPDATE subscriptions SET is_included = 0 WHERE channel_id = 'UCaaaaaaa000000000000aab'`)
+    const d = getVideoDetail(env.db, id)
+    expect(d!.channelIsIncluded).toBe(false)
+  })
+})
+
+describe('listTagsForVideo', () => {
+  it('returns [] when no tags', () => {
+    const { id } = insertVideo(env.db, makeInput())
+    expect(listTagsForVideo(env.db, id)).toEqual([])
+  })
+
+  it('returns attached tags alphabetically', () => {
+    const { id } = insertVideo(env.db, makeInput())
+    attachTagByNameToVideo(env.db, id, 'zeta')
+    attachTagByNameToVideo(env.db, id, 'alpha')
+    attachTagByNameToVideo(env.db, id, 'mike')
+    const tags = listTagsForVideo(env.db, id)
+    expect(tags.map((t) => t.name)).toEqual(['alpha', 'mike', 'zeta'])
+  })
+})
+
+describe('listTagsForVideos (batch)', () => {
+  it('returns a single map with all videos keyed by their id', () => {
+    const a = insertVideo(env.db, makeInput({ videoId: 'aaaa' }))
+    const b = insertVideo(env.db, makeInput({ videoId: 'bbbb' }))
+    const c = insertVideo(env.db, makeInput({ videoId: 'cccc' }))
+    attachTagByNameToVideo(env.db, a.id, 'launch')
+    attachTagByNameToVideo(env.db, b.id, 'queue')
+    const map = listTagsForVideos(env.db, [a.id, b.id, c.id])
+    expect(map.get(a.id)?.map((t) => t.name)).toEqual(['launch'])
+    expect(map.get(b.id)?.map((t) => t.name)).toEqual(['queue'])
+    expect(map.get(c.id)).toBeUndefined()
+  })
+
+  it('returns an empty Map when given no ids (no SQL issued)', () => {
+    expect(listTagsForVideos(env.db, []).size).toBe(0)
+  })
+})
+
+describe('attachTagByNameToVideo', () => {
+  it('returns null for an empty/whitespace tag name', () => {
+    const { id } = insertVideo(env.db, makeInput())
+    expect(attachTagByNameToVideo(env.db, id, '   ')).toBeNull()
+    expect(listTagsForVideo(env.db, id)).toEqual([])
+  })
+
+  it('lowercases (matches existing tag, no duplicate row)', () => {
+    const { id } = insertVideo(env.db, makeInput())
+    attachTagByNameToVideo(env.db, id, 'Postgres')
+    attachTagByNameToVideo(env.db, id, 'postgres')
+    attachTagByNameToVideo(env.db, id, 'POSTGRES')
+    const tags = listTagsForVideo(env.db, id)
+    expect(tags).toHaveLength(1)
+    expect(tags[0]!.name).toBe('postgres')
+  })
+
+  it('uses TagNormalizer contract (canonical form)', () => {
+    const { id } = insertVideo(env.db, makeInput())
+    const tag = attachTagByNameToVideo(env.db, id, '  PostgreSQL Server  ')
+    // TagNormalizer produces 'postgresql-server'
+    expect(tag?.name).toBe(normalize('  PostgreSQL Server  '))
+  })
+
+  it('is idempotent: re-attaching returns the same id', () => {
+    const { id } = insertVideo(env.db, makeInput())
+    const a = attachTagByNameToVideo(env.db, id, 'singleton')!
+    const b = attachTagByNameToVideo(env.db, id, 'singleton')!
+    expect(a.id).toBe(b.id)
+  })
+})
+
+describe('detachTagFromVideo', () => {
+  it('removes a single (video, tag) link', () => {
+    const { id } = insertVideo(env.db, makeInput())
+    const t = attachTagByNameToVideo(env.db, id, 'singleton')!
+    expect(detachTagFromVideo(env.db, id, t.id)).toBe(true)
+    expect(listTagsForVideo(env.db, id)).toEqual([])
+  })
+
+  it('returns false when the link did not exist', () => {
+    const { id } = insertVideo(env.db, makeInput())
+    expect(detachTagFromVideo(env.db, id, 'no-such-tag-id')).toBe(false)
+  })
+
+  it('only removes the one link, not all tags', () => {
+    const { id } = insertVideo(env.db, makeInput())
+    const t1 = attachTagByNameToVideo(env.db, id, 'one')!
+    attachTagByNameToVideo(env.db, id, 'two')
+    detachTagFromVideo(env.db, id, t1.id)
+    expect(listTagsForVideo(env.db, id).map((t) => t.name)).toEqual(['two'])
   })
 })

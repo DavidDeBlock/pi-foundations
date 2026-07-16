@@ -223,6 +223,13 @@ ${COMMON_HEAD}
           ? renderConnectPrompt()
           : renderAccountList(args.accounts)}
 
+      ${!inSetupMode && args.accounts.length > 0
+        ? `<p class="settings-yt-jump-links">
+            <a href="/videos">View new videos \u2192</a>
+            <a href="/subscriptions">Manage subscriptions \u2192</a>
+          </p>`
+        : ''}
+
       <section class="setup-docs">
         <h2>One-time Google Cloud Console setup</h2>
         <p>

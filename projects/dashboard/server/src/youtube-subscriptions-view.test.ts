@@ -367,6 +367,33 @@ describe('/subscriptions layout chrome', () => {
     expect(html).toContain('subscriptions-tab-active')
   })
 
+
+  it('renders a "Videos" tab + sidebar item linking to /videos', async () => {
+    seedFixture()
+    const res = await env.app.request('/subscriptions', {
+      headers: { authorization: basic(PASSWORD) },
+    })
+    const html = await res.text()
+    // Tab + sidebar both link to /videos.
+    expect(html).toMatch(/<a[^>]*href="\/videos"/)
+    expect(html).toContain('data-sidebar-nav="videos"')
+  })
+
+  it('marks /subscriptions active in the sidebar (Videos is not active)', async () => {
+    seedFixture()
+    const res = await env.app.request('/subscriptions', {
+      headers: { authorization: basic(PASSWORD) },
+    })
+    const html = await res.text()
+    // Find each whole <a ...> sidebar nav tag.
+    const videosTag = html.match(/<a [^>]*data-sidebar-nav="videos"[^>]*>/)
+    const subsTag = html.match(/<a [^>]*data-sidebar-nav="subscriptions"[^>]*>/)
+    expect(videosTag).toBeTruthy()
+    expect(videosTag![0]).not.toContain('compartment-button-active')
+    expect(subsTag).toBeTruthy()
+    expect(subsTag![0]).toContain('compartment-button-active')
+  })
+
   it('escapes HTML in channel titles (defence in depth)', async () => {
     seedFixture()
     const acct = seedAccount('xss@example.com')
