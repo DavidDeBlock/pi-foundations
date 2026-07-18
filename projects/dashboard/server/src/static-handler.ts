@@ -51,6 +51,10 @@ const ASSETS: Record<string, Asset> = {
     path: resolve(STATIC_DIR, 'theme.js'),
     contentType: 'application/javascript; charset=utf-8',
   },
+  '/youtube-player.js': {
+    path: resolve(STATIC_DIR, 'youtube-player.js'),
+    contentType: 'application/javascript; charset=utf-8',
+  },
   '/fonts/Inter-Regular.woff2': {
     path: resolve(STATIC_DIR, 'fonts', 'Inter-Regular.woff2'),
     contentType: 'font/woff2',

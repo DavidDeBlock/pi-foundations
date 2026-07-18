@@ -94,6 +94,15 @@ describe('static asset handler (issue #011: styling foundation)', () => {
     expect(await res.text()).toBe(onDisk)
   })
 
+  it('serves the YouTube player tracking client', async () => {
+    const app = new Hono()
+    app.route('/static', staticAssets())
+    const res = await app.request('/static/youtube-player.js')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('application/javascript; charset=utf-8')
+    expect(await res.text()).toContain("'/playback'")
+  })
+
   it('serves all three font files with the font/woff2 content-type', async () => {
     const app = new Hono()
     app.route('/static', staticAssets())

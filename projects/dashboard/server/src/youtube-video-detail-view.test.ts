@@ -166,7 +166,7 @@ describe('GET /videos/:id — scaffold', () => {
     )
     expect(body).toContain('class="video-player-frame"')
     expect(body).toContain(
-      'src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0&amp;playsinline=1"',
+      'src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0&amp;playsinline=1&amp;enablejsapi=1"',
     )
     expect(body).not.toContain('autoplay=1')
     expect(body).toContain('title="Play A focused video by Alpha"')
@@ -261,7 +261,7 @@ describe('GET /videos/:id/player — focus player', () => {
     )
     expect(body).toContain('class="focus-player-canvas"')
     expect(body).toContain(
-      'src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?autoplay=1&amp;rel=0&amp;playsinline=1"',
+      'src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?autoplay=1&amp;rel=0&amp;playsinline=1&amp;enablejsapi=1"',
     )
     expect(body).toContain('title="Play Focus &lt;demo&gt; by Alpha &amp; &lt;Beta&gt;"')
     expect(body).toContain('allow="autoplay; encrypted-media; picture-in-picture; fullscreen"')

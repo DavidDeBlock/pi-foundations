@@ -41,6 +41,7 @@ import { YouTubeHistoryImports } from './youtube-history-imports.js'
 import { getMostRecentYouTubeAccountId, getYouTubeAccount } from './youtube-accounts.js'
 import { YouTubeVideoDescriptionService } from './youtube-video-descriptions.js'
 import { YouTubeVideoDurationFetcher } from './youtube-video-duration-fetcher.js'
+import { YouTubeSearchService } from './youtube-search.js'
 import { NewsStore } from './news/news-store.js'
 import { NewsFetchJob } from './news/news-fetch-job.js'
 import { NewsSchedulerOrchestrator } from './news/news-scheduler-orchestrator.js'
@@ -74,6 +75,7 @@ async function main(): Promise<void> {
         config.youtube.youtubeOauthClientId,
         config.youtube.youtubeOauthClientSecret,
         config.youtube.youtubeOauthRedirectUri,
+        config.youtube.youtubeApiKey,
         db,
         config.llm,
         config.serperApiKey,
@@ -308,6 +310,7 @@ function buildYouTubeDeps(
   youtubeOauthClientId: string,
   youtubeOauthClientSecret: string,
   youtubeOauthRedirectUri: string,
+  youtubeApiKey: string | null,
   db: Database,
   llm: LlmConfig | null,
   serperApiKey: string | null,
@@ -324,6 +327,8 @@ function buildYouTubeDeps(
     oauthClientSecret: youtubeOauthClientSecret,
     redirectUri: youtubeOauthRedirectUri,
   })
+
+  const searchService = new YouTubeSearchService({ db, apiKey: youtubeApiKey })
 
   const descriptionService = new YouTubeVideoDescriptionService({
     db,
@@ -409,6 +414,7 @@ function buildYouTubeDeps(
     backfillService,
     playlistsSync,
     descriptionService,
+    searchService,
     ...(summaryService ? { summaryService } : {}),
   }
 }

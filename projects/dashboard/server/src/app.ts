@@ -46,6 +46,10 @@ import { aiResearchApi, type AiProviderStatus } from './ai-research-settings.js'
 import { aiResearchSettingsView } from './ai-research-settings-view.js'
 import { youtubeVideoDescriptionsApi } from './youtube-video-descriptions-api.js'
 import type { YouTubeVideoDescriptionService } from './youtube-video-descriptions.js'
+import type { YouTubeSearchService } from './youtube-search.js'
+import { youtubeSearchApi } from './youtube-search-api.js'
+import { youtubeSearchView } from './youtube-search-view.js'
+import { youtubePlaybackApi } from './youtube-playback-api.js'
 import { newsWeatherRoute } from './news/news-weather-route.js'
 import type { NewsScheduler } from './news/news-scheduler.js'
 import { newsRefreshApi } from './news/news-refresh-route.js'
@@ -120,6 +124,8 @@ export interface YouTubeDeps {
   readonly playlistsSync: YouTubePlaylistsSync
   /** Persisted authenticated video-description metadata queue (YT-022). */
   readonly descriptionService: YouTubeVideoDescriptionService
+  /** Quota-cached YouTube Data API search and canonical promotion service. */
+  readonly searchService: YouTubeSearchService
 }
 
 export interface AppDeps {
@@ -346,6 +352,8 @@ export function createApp({
       '/api/videos',
       youtubeVideoDescriptionsApi({ db, service: youtube.descriptionService }),
     )
+    app.route('/api/videos', youtubePlaybackApi({ db }))
+    app.route('/api/youtube/search', youtubeSearchApi({ search: youtube.searchService }))
     app.route(
       '/api/subscriptions',
       subscriptionsApi({ db, backfillService: youtube.backfillService }),
@@ -378,6 +386,7 @@ export function createApp({
       '/playlists',
       youtubePlaylistsView({ db }),
     )
+    app.route('/youtube/search', youtubeSearchView({ search: youtube.searchService }))
     // Videos list page (issue YT-005): `/videos`. Same router
     // also owns the detail page at `/videos/:id` so we mount
     // both factories on `/videos` and let Hono disambiguate by

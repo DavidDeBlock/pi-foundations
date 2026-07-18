@@ -70,6 +70,8 @@ export interface YouTubeConfig {
   readonly youtubeOauthClientId: string
   readonly youtubeOauthClientSecret: string
   readonly youtubeOauthRedirectUri: string
+  /** Server-only developer key used for public YouTube search requests. */
+  readonly youtubeApiKey: string | null
 }
 
 /**
@@ -289,6 +291,7 @@ export async function loadConfig(): Promise<Config> {
   const youtubeOauthClientId = process.env.YOUTUBE_OAUTH_CLIENT_ID
   const youtubeOauthClientSecret = process.env.YOUTUBE_OAUTH_CLIENT_SECRET
   const youtubeOauthRedirectUri = process.env.YOUTUBE_OAUTH_REDIRECT_URI
+  const youtubeApiKey = process.env.YOUTUBE_API_KEY?.trim() || null
 
   const missingYoutubeEnv: YouTubeEnvName[] = []
   let youtube: YouTubeConfig | null = null
@@ -325,6 +328,7 @@ export async function loadConfig(): Promise<Config> {
       youtubeOauthClientId,
       youtubeOauthClientSecret,
       youtubeOauthRedirectUri,
+      youtubeApiKey,
     }
   }
 

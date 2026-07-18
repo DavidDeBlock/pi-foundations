@@ -110,6 +110,7 @@ describe('Migrations runner', () => {
       '023_youtube_description_resources',
       '024_youtube_history_html_shorts',
       '025_news',
+      '026_youtube_watch_tracking_search',
     ])
 
     // Spot-check that every table from the PRD schema now exists.
@@ -151,6 +152,9 @@ describe('Migrations runner', () => {
     expect(names).toContain('youtube_playlist_sync_state')
     expect(names).toContain('youtube_history_imports')
     expect(names).toContain('youtube_watch_events')
+    expect(names).toContain('youtube_playback_state')
+    expect(names).toContain('youtube_playback_sessions')
+    expect(names).toContain('youtube_search_cache')
     expect(names).toContain('youtube_history_video_classifications')
     expect(names).toContain('subscription_tags')
     expect(names).toContain('summary_profiles')
@@ -178,11 +182,11 @@ describe('Migrations runner', () => {
   it('is idempotent — running twice does NOT re-apply', async () => {
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const firstApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(firstApplied).toHaveLength(25)
+    expect(firstApplied).toHaveLength(26)
 
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const secondApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(secondApplied).toHaveLength(25)
+    expect(secondApplied).toHaveLength(26)
     // applied_at should be unchanged on re-run (still the original timestamps).
     expect(secondApplied.map((r) => r.name).sort()).toEqual(
       firstApplied.map((r) => r.name).sort(),

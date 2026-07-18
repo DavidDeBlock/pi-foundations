@@ -14,3 +14,4 @@ Architecture Decision Records (ADRs) for the **Dashboard** project. One file per
 | [008](./008-mvp-scope.md) | v1 = read-only Chrome bookmarks + categorize + search | Accepted |
 | [009](./009-youtube-subscriptions-rss.md) | YouTube subscriptions + RSS-based new-video detection (v3.0) | Accepted |
 | [010](./010-news-weather-architecture.md) | News & Weather ingestion + display (v5.0) | Accepted |
+| [011](./011-youtube-local-playback-and-search.md) | Local YouTube playback tracking + cached Data API search | Accepted |

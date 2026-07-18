@@ -32,6 +32,7 @@ export function youtubeHistoryApi(deps: { readonly imports: YouTubeHistoryImport
         thumbnail_url: item.thumbnailUrl,
         watched_at: item.watchedAt,
         watch_count: item.watchCount,
+        source: item.source,
       })),
       total: result.total,
       unique_videos: result.uniqueVideos,

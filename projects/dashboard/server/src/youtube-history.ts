@@ -11,6 +11,7 @@ export interface WatchHistoryEvent {
   readonly thumbnailUrl: string | null
   readonly watchedAt: string
   readonly watchCount: number
+  readonly source: 'takeout' | 'search' | 'playlist' | 'subscription' | 'embedded_player'
   readonly tags: readonly EffectiveVideoTag[]
 }
 
@@ -60,6 +61,7 @@ interface WatchHistoryRow {
   thumbnail_url: string | null
   watched_at: string
   watch_count: number | bigint
+  source: WatchHistoryEvent['source']
 }
 
 export function searchWatchHistory(
@@ -119,7 +121,7 @@ export function searchWatchHistory(
             COALESCE(v.channel_id, we.channel_id_snapshot) AS channel_id,
             COALESCE(yc.title, we.channel_title_snapshot) AS channel_title,
             v.thumbnail_url,
-            we.watched_at,
+            we.watched_at, we.source,
             (SELECT COUNT(*) FROM youtube_watch_events repeated
               WHERE (we.video_id IS NOT NULL AND repeated.video_id = we.video_id)
                  OR (we.video_id IS NULL AND we.youtube_video_id IS NOT NULL
@@ -149,6 +151,7 @@ export function searchWatchHistory(
       thumbnailUrl: row.thumbnail_url,
       watchedAt: row.watched_at,
       watchCount: Number(row.watch_count),
+      source: row.source,
       tags: row.video_id === null ? [] : tagMap.get(row.video_id) ?? [],
     })),
     total: Number(totals?.total ?? 0),

@@ -46,8 +46,8 @@ entirely. Native YouTube title/channel overlays also remain. Do not use deprecat
 - [ ] embed-disabled, private, deleted, and age-restricted outcomes display a
   concise limitation/fallback path where YouTube exposes an error; no OAuth token
   or transcript/summary content is sent to the player
-- [ ] opening or playing the embed does not create a dashboard watch event or
-  imply watched/completed state
+- [ ] opening the page alone does not create a watch event; actual IFrame Player
+  playback is tracked locally per [ADR-011](../40-decisions/011-youtube-local-playback-and-search.md)
 - [ ] server/UI tests cover auth, valid embed construction, CSP, escaping, 404,
   minimal player markup, absence of app chrome, popup-blocked fallback script,
   and responsive/accessibility attributes
@@ -63,4 +63,3 @@ entirely. Native YouTube title/channel overlays also remain. Do not use deprecat
 
 - [YouTube embedded player parameters](https://developers.google.com/youtube/player_parameters)
 - [YouTube privacy-enhanced embeds](https://support.google.com/youtube/answer/171780)
-

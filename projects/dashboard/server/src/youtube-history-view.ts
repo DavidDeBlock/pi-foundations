@@ -141,11 +141,12 @@ function renderEvent(item: WatchHistoryEvent): string {
   const youtubeLink = item.youtubeVideoId ? `https://www.youtube.com/watch?v=${encodeURIComponent(item.youtubeVideoId)}` : null
   const href = canonicalLink ?? youtubeLink
   const repeat = item.watchCount > 1 ? `<span class="history-repeat" title="Watched ${item.watchCount} times">↻ ${item.watchCount}×</span>` : ''
+  const source = item.source === 'takeout' ? 'Takeout' : item.source === 'embedded_player' ? 'Dashboard player' : item.source[0]!.toUpperCase() + item.source.slice(1)
   const tags = item.tags.map((tag) => `<span class="history-tag${tag.source !== 'manual' ? ' history-tag-inherited' : ''}" title="${tag.source === 'both' ? 'Manual and inherited from subscription' : tag.source === 'subscription' ? 'Inherited from subscription' : 'Manual video tag'}">${tag.source !== 'manual' ? '↳' : '#'}${escapeHtml(tag.name)}</span>`).join('')
   return `<li class="history-card" data-history-event>
     ${href ? `<a class="history-card-link" href="${escapeHtml(href)}"${canonicalLink ? '' : ' target="_blank" rel="noopener noreferrer"'}>` : '<div class="history-card-link">'}
       <span class="history-thumb">${thumbnail}<span class="history-watch-badge"><span aria-hidden="true">✓</span> Watched</span>${repeat}</span>
-      <span class="history-copy"><span class="history-channel">${escapeHtml(item.channelTitle ?? 'Unknown channel')}</span><strong>${title}</strong><time datetime="${escapeHtml(item.watchedAt)}">${escapeHtml(formatDate(item.watchedAt))}</time><span class="history-states">${tags}${canonicalLink ? '<span class="history-access">View details <span aria-hidden="true">→</span></span>' : '<span class="history-snapshot">Snapshot only</span>'}</span></span>
+      <span class="history-copy"><span class="history-channel">${escapeHtml(item.channelTitle ?? 'Unknown channel')}</span><strong>${title}</strong><time datetime="${escapeHtml(item.watchedAt)}">${escapeHtml(formatDate(item.watchedAt))} · ${escapeHtml(source)}</time><span class="history-states">${tags}${canonicalLink ? '<span class="history-access">View details <span aria-hidden="true">→</span></span>' : '<span class="history-snapshot">Snapshot only</span>'}</span></span>
     ${href ? '</a>' : '</div>'}
   </li>`
 }

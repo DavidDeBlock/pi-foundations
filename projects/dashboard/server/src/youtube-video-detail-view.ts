@@ -59,6 +59,7 @@ import {
   type VideoDescriptionResource,
   type VideoResourceCategory,
 } from './youtube-description-resources.js'
+import { getPlaybackState, type PlaybackState } from './youtube-playback.js'
 
 // ─── Hono sub-app ─────────────────────────────────────────────────────────
 
@@ -85,7 +86,7 @@ export function youtubeVideoDetailView(
     const detail = getVideoDetail(deps.db, id)
     if (detail === null) return c.text('Video not found', 404)
     c.header('Content-Security-Policy', YOUTUBE_FRAME_CSP)
-    return c.html(renderPlayerPage(detail))
+    return c.html(renderPlayerPage(detail, getPlaybackState(deps.db, id)))
   })
 
   api.get('/:id', (c) => {
@@ -122,6 +123,7 @@ export function youtubeVideoDetailView(
         maxSearchQueries: aiDefaults.maxSearchQueries,
         description,
         resources,
+        playback: getPlaybackState(deps.db, id),
       }),
     )
   })
@@ -151,6 +153,7 @@ interface RenderPageOptions {
   readonly maxSearchQueries: number
   readonly description: VideoDescription | null
   readonly resources: ReadonlyArray<VideoDescriptionResource>
+  readonly playback: PlaybackState | null
 }
 
 function renderPage(opts: RenderPageOptions): string {
@@ -158,7 +161,7 @@ function renderPage(opts: RenderPageOptions): string {
   const tagsJson = JSON.stringify(opts.allTags.map((t) => t.name))
   const folderSelect = renderFolderSelect(opts.folders, detail.folderId)
   const tagChips = detail.tags.map((t) => renderTagChip(t, detail.channelTitle)).join('')
-  const player = renderVideoPlayer(detail, false)
+  const player = renderVideoPlayer(detail, false, opts.playback)
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -197,6 +200,7 @@ ${COMMON_HEAD}
             <dd>${detail.watchCount > 0
               ? `<span class="video-detail-watched">Watched</span> ${detail.watchCount} ${detail.watchCount === 1 ? 'time' : 'times'} · last watched <time datetime="${escapeHtml(detail.lastWatchedAt!)}">${escapeHtml(formatDateFull(detail.lastWatchedAt!))}</time>`
               : '<span class="video-detail-unwatched">Unwatched</span>'}</dd>
+            ${opts.playback ? `<dt>Playback</dt><dd>${opts.playback.completed ? 'Completed' : `${formatTimestamp(Math.round(opts.playback.positionSeconds * 1000))} of ${formatTimestamp(Math.round(opts.playback.durationSeconds * 1000))}`} · ${opts.playback.playCount} ${opts.playback.playCount === 1 ? 'play' : 'plays'}</dd>` : ''}
             <dt>Watch</dt>
             <dd><a href="${escapeHtml(detail.link)}" target="_blank" rel="noopener noreferrer">Open on YouTube \u2197</a></dd>
           </dl>
@@ -251,6 +255,8 @@ ${COMMON_HEAD}
   ${HAMBURGER_SCRIPT_TAG}
   <script type="application/json" id="video-all-tags" data-video-all-tags>${tagsJson}</script>
   <script>${VIDEO_DETAIL_SCRIPT}</script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="/static/youtube-player.js"></script>
 </body>
 </html>`
 }
@@ -261,12 +267,12 @@ const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/
 function youtubeEmbedUrl(videoId: string, autoplay: boolean): string | null {
   if (!YOUTUBE_VIDEO_ID.test(videoId)) return null
   const params = autoplay
-    ? '?autoplay=1&amp;rel=0&amp;playsinline=1'
-    : '?rel=0&amp;playsinline=1'
+    ? '?autoplay=1&amp;rel=0&amp;playsinline=1&amp;enablejsapi=1'
+    : '?rel=0&amp;playsinline=1&amp;enablejsapi=1'
   return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}${params}`
 }
 
-function renderVideoPlayer(detail: VideoDetail, autoplay: boolean): string {
+function renderVideoPlayer(detail: VideoDetail, autoplay: boolean, playback: PlaybackState | null): string {
   const embedUrl = youtubeEmbedUrl(detail.videoId, autoplay)
   if (embedUrl === null) {
     return `<div class="video-player-unavailable" role="status">
@@ -274,7 +280,7 @@ function renderVideoPlayer(detail: VideoDetail, autoplay: boolean): string {
       <span>Its stored YouTube ID is invalid. Use Open on YouTube instead.</span>
     </div>`
   }
-  return `<div class="video-player-frame">
+  return `<div class="video-player-frame" data-youtube-player data-dashboard-video-id="${escapeHtml(detail.id)}" data-resume-seconds="${playback?.positionSeconds ?? 0}" data-completed="${playback?.completed === true}">
     <iframe src="${embedUrl}"
             title="Play ${escapeHtml(detail.title)} by ${escapeHtml(detail.channelTitle)}"
             allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
@@ -283,7 +289,7 @@ function renderVideoPlayer(detail: VideoDetail, autoplay: boolean): string {
   </div>`
 }
 
-function renderPlayerPage(detail: VideoDetail): string {
+function renderPlayerPage(detail: VideoDetail, playback: PlaybackState | null): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -303,7 +309,9 @@ function renderPlayerPage(detail: VideoDetail): string {
   </style>
 </head>
 <body>
-  <main class="focus-player-canvas">${renderVideoPlayer(detail, true)}</main>
+  <main class="focus-player-canvas">${renderVideoPlayer(detail, true, playback)}</main>
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="/static/youtube-player.js"></script>
 </body>
 </html>`
 }

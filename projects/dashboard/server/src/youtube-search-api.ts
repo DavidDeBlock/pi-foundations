@@ -1,0 +1,5 @@
+import { Hono } from 'hono'
+import { YouTubeSearchError, YouTubeSearchNotFoundError, type YouTubeSearchService } from './youtube-search.js'
+
+export function youtubeSearchApi(deps:{readonly search:YouTubeSearchService}):Hono{const app=new Hono();app.get('/',async(c)=>{try{const r=await deps.search.search(c.req.query('q')??'');return c.json({items:r.items.map(i=>({video_id:i.videoId,title:i.title,channel_id:i.channelId,channel_title:i.channelTitle,published_at:i.publishedAt,thumbnail_url:i.thumbnailUrl,description:i.description,duration_seconds:i.durationSeconds,view_count:i.viewCount,embeddable:i.embeddable})),cached:r.cached})}catch(e){return failure(c,e)}});app.post('/:videoId/open',async(c)=>{try{return c.json({video_id:await deps.search.open(c.req.param('videoId'))},201)}catch(e){return failure(c,e)}});return app}
+function failure(c:any,e:unknown):Response{if(e instanceof RangeError)return c.json({error:e.message},400);if(e instanceof YouTubeSearchNotFoundError)return c.json({error:'Video is no longer available.'},404);if(e instanceof YouTubeSearchError)return c.json({error:e.message},502);return c.json({error:'YouTube search failed.'},500)}
