@@ -108,8 +108,8 @@ function renderWeatherBlock(
     return `<section class="news-weather" data-weather="empty">
       <div class="news-weather-empty" role="status">
         <span class="news-weather-empty-icon" aria-hidden="true">⛅</span>
-        <h2>Weather data not yet available</h2>
-        <p>Refresh in a few seconds — the first snapshot arrives within a minute of boot.</p>
+        <h2>Weergegevens nog niet beschikbaar</h2>
+        <p>Even geduld — de eerste meting komt binnen een minuut na het opstarten.</p>
       </div>
     </section>`
   }
@@ -118,24 +118,28 @@ function renderWeatherBlock(
   const condition = current.weather_code !== undefined
     ? wmoLabel(current.weather_code)
     : '—'
+  const currentIcon = current.weather_code !== undefined
+    ? wmoIcon(current.weather_code)
+    : '⛅'
   return `<section class="news-weather" data-weather="ready">
     <div class="news-weather-current">
+      <span class="news-weather-icon-current" aria-hidden="true">${currentIcon}</span>
       <div class="news-weather-temperature">
         <span class="news-weather-temp-value">${formatTemperature(current.temperature_2m)}</span>
         <span class="news-weather-temp-unit">°C</span>
         <span class="news-weather-condition">${escapeHtml(condition)}</span>
       </div>
       <dl class="news-weather-stats">
-        <div><dt>Feels like</dt><dd>${formatTemperature(current.apparent_temperature)}</dd></div>
-        <div><dt>Rain</dt><dd>${formatMillimetres(current.precipitation)}</dd></div>
-        <div><dt>Precipitation</dt><dd>${formatMillimetres(current.rain)}</dd></div>
+        <div><dt>Voelt als</dt><dd>${formatTemperature(current.apparent_temperature)}</dd></div>
+        <div><dt>Regen</dt><dd>${formatMillimetres(current.precipitation)}</dd></div>
+        <div><dt>Neerslag</dt><dd>${formatMillimetres(current.rain)}</dd></div>
         <div><dt>Wind</dt><dd>${formatWind(current.wind_speed_10m)}</dd></div>
-        <div><dt>Gusts</dt><dd>${formatWind(current.wind_gusts_10m)}</dd></div>
-        <div><dt>Today min/max</dt><dd>${formatTemperature(today?.temperature_2m_min)} / ${formatTemperature(today?.temperature_2m_max)}</dd></div>
+        <div><dt>Windstoten</dt><dd>${formatWind(current.wind_gusts_10m)}</dd></div>
+        <div><dt>Vandaag min/max</dt><dd>${formatTemperature(today?.temperature_2m_min)} / ${formatTemperature(today?.temperature_2m_max)}</dd></div>
       </dl>
     </div>
-    <div class="news-weather-forecast" aria-label="7-day forecast">
-      <h3>7-day forecast</h3>
+    <div class="news-weather-forecast" aria-label="Weersvoorspelling komende 7 dagen">
+      <h3>Weersvoorspelling komende 7 dagen</h3>
       <ol class="news-weather-days">${snapshot.daily.map((day, i) => renderForecastDay(day, i === 0, nowMs)).join('')}</ol>
     </div>
   </section>`
@@ -149,12 +153,14 @@ function renderForecastDay(
 ): string {
   const label = forecastDayLabel(day.time, isToday, nowMs)
   const code = day.weather_code !== undefined ? wmoLabel(day.weather_code) : '—'
+  const icon = day.weather_code !== undefined ? wmoIcon(day.weather_code) : '⛅'
   const min = formatTemperature(day.temperature_2m_min)
   const max = formatTemperature(day.temperature_2m_max)
   const pop = day.precipitation_probability_max !== undefined
     ? `${Math.round(day.precipitation_probability_max)}%`
     : '—'
   return `<li class="news-weather-day" data-day="${escapeHtml(day.time)}">
+    <span class="news-weather-day-icon" aria-hidden="true">${icon}</span>
     <span class="news-weather-day-label">${escapeHtml(label)}</span>
     <span class="news-weather-day-cond" title="${escapeHtml(code)}">${escapeHtml(code)}</span>
     <span class="news-weather-day-temps"><strong>${max}</strong>° / ${min}°</span>
@@ -269,42 +275,93 @@ function renderMetaLine(
 
 /**
  * Map Open-Meteo's `weather_code` integer to a short,
- * human-readable label. Codes are documented at
+ * human-readable Dutch label. Codes are documented at
  * https://open-meteo.com/en/docs (WMO Weather interpretation
- * codes). Anything not in the table renders as "Unknown".
+ * codes). Anything not in the table renders as "Onbekend".
+ *
+ * Labels follow KNMI / KMI-Belgium style since the dashboard
+ * is wired for a Flemish audience (routes through
+ * https://192.168.0.136.nip.io). Edit freely — these are
+ * project-controlled strings, not API-provided.
  */
 function wmoLabel(code: number): string {
-  // Index by code. Keep this list local; it's stable per WMO.
   switch (code) {
-    case 0: return 'Clear'
-    case 1: return 'Mainly clear'
-    case 2: return 'Partly cloudy'
-    case 3: return 'Overcast'
-    case 45: return 'Fog'
-    case 48: return 'Depositing rime fog'
-    case 51: return 'Light drizzle'
-    case 53: return 'Moderate drizzle'
-    case 55: return 'Dense drizzle'
-    case 56: return 'Light freezing drizzle'
-    case 57: return 'Dense freezing drizzle'
-    case 61: return 'Light rain'
-    case 63: return 'Moderate rain'
-    case 65: return 'Heavy rain'
-    case 66: return 'Light freezing rain'
-    case 67: return 'Heavy freezing rain'
-    case 71: return 'Light snow'
-    case 73: return 'Moderate snow'
-    case 75: return 'Heavy snow'
-    case 77: return 'Snow grains'
-    case 80: return 'Light rain showers'
-    case 81: return 'Moderate rain showers'
-    case 82: return 'Violent rain showers'
-    case 85: return 'Light snow showers'
-    case 86: return 'Heavy snow showers'
-    case 95: return 'Thunderstorm'
-    case 96: return 'Thunderstorm with light hail'
-    case 99: return 'Thunderstorm with heavy hail'
-    default: return 'Unknown'
+    case 0: return 'Helder'
+    case 1: return 'Overwegend helder'
+    case 2: return 'Gedeeltelijk bewolkt'
+    case 3: return 'Bewolkt'
+    case 45: return 'Mist'
+    case 48: return 'Rijpmist'
+    case 51: return 'Lichte motregen'
+    case 53: return 'Matige motregen'
+    case 55: return 'Dichte motregen'
+    case 56: return 'Lichte aanvriezende motregen'
+    case 57: return 'Dichte aanvriezende motregen'
+    case 61: return 'Lichte regen'
+    case 63: return 'Matige regen'
+    case 65: return 'Zware regen'
+    case 66: return 'Lichte aanvriezende regen'
+    case 67: return 'Zware aanvriezende regen'
+    case 71: return 'Lichte sneeuwval'
+    case 73: return 'Matige sneeuwval'
+    case 75: return 'Zware sneeuwval'
+    case 77: return 'Sneeuwkorrels'
+    case 80: return 'Lichte regenbuien'
+    case 81: return 'Matige regenbuien'
+    case 82: return 'Hevige regenbuien'
+    case 85: return 'Lichte sneeuwbuien'
+    case 86: return 'Zware sneeuwbuien'
+    case 95: return 'Onweer'
+    case 96: return 'Onweer met lichte hagel'
+    case 99: return 'Onweer met zware hagel'
+    default: return 'Onbekend'
+  }
+}
+
+/**
+ * Map Open-Meteo's `weather_code` integer to a single
+ * Unicode emoji that visually represents the category. One
+ * emoji per category (sun family, cloud, drizzle, rain,
+ * snow, fog, thunder) — the Dutch word beside it carries
+ * the precise intensity (light vs heavy vs freezing). Falls
+ * back to a partly-cloudy glyph for unknown codes (matches
+ * the empty-state placeholder).
+ *
+ * No new deps: emoji renders consistently across modern
+ * browsers and OSes. The CSS gives it visual size so the
+ * glyph sits prominently above the Dutch word.
+ */
+function wmoIcon(code: number): string {
+  switch (code) {
+    case 0: return '☀️'   // helder
+    case 1: return '🌤'   // overwegend helder
+    case 2: return '⛅'   // gedeeltelijk bewolkt
+    case 3: return '☁️'   // bewolkt
+    case 45: return '🌫'  // mist
+    case 48: return '🌫'  // rijpmist (closest emoji; freezing nuance carried by the word)
+    case 51: return '🌦'  // lichte motregen
+    case 53: return '🌧'  // matige motregen
+    case 55: return '🌧'  // dichte motregen
+    case 56: return '🌧'  // lichte aanvriezende motregen
+    case 57: return '🌧'  // dichte aanvriezende motregen
+    case 61: return '🌦'  // lichte regen
+    case 63: return '🌧'  // matige regen
+    case 65: return '🌧'  // zware regen
+    case 66: return '🌧'  // lichte aanvriezende regen
+    case 67: return '🌧'  // zware aanvriezende regen
+    case 71: return '🌨'  // lichte sneeuwval
+    case 73: return '❄️'  // matige sneeuwval
+    case 75: return '❄️'  // zware sneeuwval
+    case 77: return '❄️'  // sneeuwkorrels
+    case 80: return '🌦'  // lichte regenbuien
+    case 81: return '🌧'  // matige regenbuien
+    case 82: return '🌧'  // hevige regenbuien
+    case 85: return '🌨'  // lichte sneeuwbuien
+    case 86: return '❄️'  // zware sneeuwbuien
+    case 95: return '⛈'  // onweer
+    case 96: return '⛈'  // onweer met lichte hagel
+    case 99: return '⛈'  // onweer met zware hagel
+    default: return '⛅'
   }
 }
 
@@ -325,26 +382,31 @@ function formatWind(value: number | undefined): string {
   return value === undefined ? '—' : `${Math.round(value)} km/h`
 }
 
-/** Day label for the 7-day forecast row. "Today" / "Tomorrow"
+/** Day label for the 7-day forecast row. "Vandaag" / "Morgen"
  *  for the first two days (when in the right relative
- *  position), else a weekday short-name. */
+ *  position), else a Dutch weekday short-name. */
 function forecastDayLabel(
   iso: string,
   isToday: boolean,
   nowMs: () => number,
 ): string {
-  if (isToday) return 'Today'
+  if (isToday) return 'Vandaag'
   const today = startOfLocalDay(new Date(nowMs()))
   const target = startOfLocalDay(parseLocalDay(iso))
   if (!today || !target) return iso
   const oneDayMs = 86_400_000
   const diffDays = Math.round((target.getTime() - today.getTime()) / oneDayMs)
-  if (diffDays === 1) return 'Tomorrow'
+  if (diffDays === 1) return 'Morgen'
   return weekdayShort(target)
 }
 
 function weekdayShort(date: Date): string {
-  return date.toLocaleDateString('en', { weekday: 'short' })
+  // `nl-BE` locale returns Dutch weekday abbreviations
+  // ("ma", "di", "wo", "do", "vr", "za", "zo"). Capitalise
+  // the first letter so it matches the visual style of the
+  // other card labels ("Vandaag", "Morgen").
+  const raw = date.toLocaleDateString('nl-BE', { weekday: 'short' })
+  return raw.length > 0 ? raw.charAt(0).toUpperCase() + raw.slice(1) : raw
 }
 
 function startOfLocalDay(date: Date): Date | null {
@@ -465,6 +527,7 @@ export const NEWS_WEATHER_STYLES = `
 .news-weather-empty h2{margin:0;font-size:1.2rem}
 .news-weather-empty p{color:var(--muted);margin:0}
 .news-weather-current{display:flex;gap:32px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.news-weather-icon-current{font-size:3.4rem;line-height:1;flex:0 0 auto}
 .news-weather-temperature{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
 .news-weather-temp-value{font:600 3.6rem "Inter",sans-serif;letter-spacing:-.04em}
 .news-weather-temp-unit{font:600 1.2rem "Inter",sans-serif;color:var(--muted)}
@@ -477,6 +540,7 @@ export const NEWS_WEATHER_STYLES = `
 .news-weather-days{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;list-style:none;padding:0;margin:0}
 .news-weather-day{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;border-radius:14px;background:color-mix(in srgb,var(--surface-2) 90%,transparent);border:1px solid var(--border);text-align:center;min-width:0}
 .news-weather-day-label{font-weight:600;font-size:.85rem}
+.news-weather-day-icon{font-size:1.6rem;line-height:1}
 .news-weather-day-cond{color:var(--muted);font-size:.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .news-weather-day-temps{font-size:.82rem;color:var(--muted)}
 .news-weather-day-temps strong{color:var(--text);font-weight:600}

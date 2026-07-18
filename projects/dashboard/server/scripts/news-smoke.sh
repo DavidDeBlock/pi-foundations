@@ -301,12 +301,54 @@ else
   fail "current temperature did not render as 23"
 fi
 
-# WMO weather_code 1 → "Mainly clear"
-if grep -q "Mainly clear" <<<"$NEWS_HTML"; then
-  pass "WMO code 1 mapped to 'Mainly clear'"
+# WMO weather_code 1 → "Overwegend helder" (Dutch for 'Mainly clear').
+if grep -q "Overwegend helder" <<<"$NEWS_HTML"; then
+  pass "WMO code 1 mapped to 'Overwegend helder'"
 else
-  fail "WMO code 1 not mapped to 'Mainly clear'"
+  fail "WMO code 1 not mapped to 'Overwegend helder'"
 fi
+
+# Forecast heading rendered in Dutch.
+if grep -q "Weersvoorspelling komende 7 dagen" <<<"$NEWS_HTML"; then
+  pass "7-day forecast heading rendered in Dutch"
+else
+  fail "7-day forecast heading not in Dutch"
+fi
+
+# First forecast day label rendered in Dutch ('Vandaag').
+if grep -q 'news-weather-day-label">Vandaag</span>' <<<"$NEWS_HTML"; then
+  pass "first forecast day label is 'Vandaag'"
+else
+  fail "first forecast day label not 'Vandaag'"
+fi
+
+# Each of the 7 forecast day cards now carries an emoji icon
+# span. The icon for code 1 is 🌤; for code 3 (which seeded
+# fixtures use for several days) it's ☁️. We just assert
+# presence, not the specific glyph — easier to maintain.
+DAYS=$(grep -oc 'news-weather-day"' <<<"$NEWS_HTML" || true)
+DAY_ICONS=$(grep -oc 'news-weather-day-icon"' <<<"$NEWS_HTML" || true)
+if [ "$DAYS" = "7" ] && [ "$DAY_ICONS" = "7" ]; then
+  pass "7 forecast day cards each carry an emoji icon"
+else
+  fail "expected 7 day cards + 7 day icons, got $DAYS days / $DAY_ICONS icons"
+fi
+
+# Current-condition icon span is rendered (sun family for code 0).
+if grep -q 'class="news-weather-icon-current"' <<<"$NEWS_HTML"; then
+  pass "current-condition icon span rendered"
+else
+  fail "current-condition icon span missing"
+fi
+
+# Stat labels rendered in Dutch.
+for label in 'Voelt als' 'Regen' 'Neerslag' 'Windstoten' 'Vandaag min/max'; do
+  if grep -q "$label" <<<"$NEWS_HTML"; then
+    pass "Dutch stat label rendered: $label"
+  else
+    fail "Dutch stat label missing: $label"
+  fi
+done
 
 # 7-day forecast row
 DAYS=$(grep -oc 'news-weather-day"' <<<"$NEWS_HTML" || true)

@@ -74,7 +74,7 @@ describe('GET /news-weather', () => {
     })
     expect(res.status).toBe(200)
     const body = await res.text()
-    expect(body).toContain('Weather data not yet available')
+    expect(body).toContain('Weergegevens nog niet beschikbaar')
     expect(body).toContain('No news yet')
     expect(body).toContain('No sources enabled')
   })
@@ -100,9 +100,13 @@ describe('GET /news-weather', () => {
     })
     const body = await res.text()
     expect(body).toContain('data-weather="ready"')
-    expect(body).toContain('Clear')
+    // WMO code 0 → 'Helder' in Dutch.
+    expect(body).toContain('Helder')
     // The temperature is rounded to whole degrees: 22 → 22
     expect(body).toContain('news-weather-temp-value">22<')
+    // Current-condition icon is rendered.
+    expect(body).toContain('class="news-weather-icon-current"')
+    expect(body).toMatch(/<span class="news-weather-icon-current"[^>]*>\s*☀️/)
   })
 
   it('renders news cards when articles exist', async () => {

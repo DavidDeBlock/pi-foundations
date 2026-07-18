@@ -147,8 +147,8 @@ describe('NewsWeatherView — empty state', () => {
       nowMs: NOW,
     })
     expect(html).toContain('data-weather="empty"')
-    expect(html).toContain('Weather data not yet available')
-    expect(html).toContain('Refresh in a few seconds')
+    expect(html).toContain('Weergegevens nog niet beschikbaar')
+    expect(html).toContain('Even geduld')
   })
 
   it('shows the no-news line when every category is empty', () => {
@@ -190,14 +190,20 @@ describe('NewsWeatherView — weather block', () => {
     // Current temperature is rounded: 22.5 → 23
     expect(html).toMatch(/news-weather-temp-value">23</)
     expect(html).toContain('°C')
-    expect(html).toContain('Mainly clear')
-    // "Feels like" line includes the rounded apparent temp
-    expect(html).toContain('23')
+    // Dutch condition label for WMO code 1.
+    expect(html).toContain('Overwegend helder')
+    // Current-condition icon span is present and renders an emoji
+    // (the icon for code 1 is '🌤' per wmoIcon()).
+    expect(html).toContain('class="news-weather-icon-current"')
+    expect(html).toMatch(/<span class="news-weather-icon-current"[^>]*>\s*🌤/)
     // 7-day forecast renders 7 cards
     const dayMatches = html.match(/<li class="news-weather-day"/g) ?? []
     expect(dayMatches.length).toBe(7)
-    // Today is the first card
-    expect(html).toMatch(/data-day="2024-07-16"[^>]*>\s*<span class="news-weather-day-label">Today</)
+    // First day card carries its icon (🌤 for code 1 = 'Overwegend
+    // helder', per wmoIcon()) AND Dutch day label "Vandaag".
+    expect(html).toMatch(
+      /data-day="2024-07-16"[^>]*>\s*<span class="news-weather-day-icon"[^>]*>\s*🌤[\s\S]*?<span class="news-weather-day-label">Vandaag</,
+    )
   })
 
   it('renders "—" for missing fields (partial weather)', () => {
@@ -531,14 +537,14 @@ describe('NewsWeatherView — meta line', () => {
 // ─── WMO weather codes ───────────────────────────────────────────────────
 
 describe('NewsWeatherView — WMO weather codes', () => {
-  it('maps the codes referenced in the AC to the documented labels', () => {
+  it('maps the codes referenced in the AC to the documented Dutch labels', () => {
     const cases: Array<[number, string]> = [
-      [0, 'Clear'],
-      [61, 'Light rain'],
-      [95, 'Thunderstorm'],
-      [3, 'Overcast'],
-      [71, 'Light snow'],
-      [99, 'Thunderstorm with heavy hail'],
+      [0, 'Helder'],
+      [61, 'Lichte regen'],
+      [95, 'Onweer'],
+      [3, 'Bewolkt'],
+      [71, 'Lichte sneeuwval'],
+      [99, 'Onweer met zware hagel'],
     ]
     for (const [code, label] of cases) {
       const html = render({
@@ -553,7 +559,7 @@ describe('NewsWeatherView — WMO weather codes', () => {
     }
   })
 
-  it('renders "Unknown" for unmapped codes (defense against future additions)', () => {
+  it('renders "Onbekend" for unmapped codes (defense against future additions)', () => {
     const html = render({
       weather: makeWeather({
         current: { weather_code: 999, temperature_2m: 18 },
@@ -562,6 +568,34 @@ describe('NewsWeatherView — WMO weather codes', () => {
       sources: [],
       nowMs: NOW,
     })
-    expect(html).toContain('Unknown')
+    expect(html).toContain('Onbekend')
+  })
+
+  it('renders an emoji icon for every supported WMO code category', () => {
+    // Sanity check: a sample of codes that cover each
+    // visual category (sun, cloud, fog, drizzle, rain,
+    // snow, thunder) all map to a non-empty emoji span.
+    const sample: Array<[number, string]> = [
+      [0, '☀️'],     // helder
+      [1, '🌤'],     // overwegend helder
+      [2, '⛅'],     // gedeeltelijk bewolkt
+      [3, '☁️'],    // bewolkt
+      [45, '🌫'],   // mist
+      [51, '🌦'],   // lichte motregen
+      [63, '🌧'],   // matige regen
+      [71, '🌨'],   // lichte sneeuwval
+      [95, '⛈'],   // onweer
+    ]
+    for (const [code, icon] of sample) {
+      const html = render({
+        weather: makeWeather({
+          current: { weather_code: code, temperature_2m: 18 },
+        }),
+        articlesByCategory: new Map(),
+        sources: [],
+        nowMs: NOW,
+      })
+      expect(html, `code=${code}`).toContain(icon)
+    }
   })
 })
