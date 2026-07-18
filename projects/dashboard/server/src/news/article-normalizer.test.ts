@@ -182,6 +182,15 @@ describe('normalize', () => {
     })
   })
 
+  it('keeps absolute HTTP(S) article images and rejects unsafe schemes', () => {
+    expect(normalize({ ...baseRaw, imageUrl: 'https://cdn.example.com/a.jpg' })?.imageUrl)
+      .toBe('https://cdn.example.com/a.jpg')
+    expect(normalize({ ...baseRaw, imageUrl: 'javascript:alert(1)' })?.imageUrl)
+      .toBeUndefined()
+    expect(normalize({ ...baseRaw, imageUrl: '/relative.jpg' })?.imageUrl)
+      .toBeUndefined()
+  })
+
   it('returns null when title is empty after trim+collapse', () => {
     expect(normalize({ ...baseRaw, title: '   ' })).toBeNull()
     expect(normalize({ ...baseRaw, title: '' })).toBeNull()

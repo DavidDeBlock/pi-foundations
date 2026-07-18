@@ -31,8 +31,8 @@
 --     whenever the access token is rotated, NOT by the OAuth callback
 --     itself (a callback with a fresh grant doesn't count as a refresh).
 --   * Unique index on (provider, email_address) prevents accidental
---     double-linking. Re-link flow (OAuth callback handler) detaches
---     first, then re-inserts — mirrors the email slice pattern.
+--     double-linking. Re-linking updates credentials on the existing row so
+--     account-owned subscriptions, playlists, and local settings survive.
 
 CREATE TABLE youtube_accounts (
   id                  TEXT PRIMARY KEY,

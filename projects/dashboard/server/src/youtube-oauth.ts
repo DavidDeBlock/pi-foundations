@@ -49,6 +49,7 @@ import {
   getYouTubeAccount,
   getYouTubeAccountByEmail,
   listYouTubeAccounts,
+  reauthorizeYouTubeAccount,
   updateYouTubeAccountLastRefreshedAt,
   updateYouTubeAccountTokens,
   type YouTubeAccount,
@@ -451,21 +452,16 @@ export function youtubeApi(deps: YouTubeApiDeps): Hono<{ Variables: AuthVariable
     ).toISOString()
 
     try {
-      // If a row already exists for (provider, email_address), the
-      // UNIQUE index throws on insert. Replace it: drop the old row
-      // and insert the new one with refreshed tokens. A user wanting
-      // to re-link re-runs the OAuth flow; we manage the swap
-      // transparently here so they don't have to manually disconnect.
+      // The local account id owns subscriptions, playlists, and their local
+      // settings. A repeated OAuth grant updates that entity in place so its
+      // dependent library data survives reauthorization.
       const existing = getYouTubeAccountByEmail(
         deps.db,
         deps.cipher,
         'youtube',
         identity.email,
       )
-      if (existing) {
-        deleteYouTubeAccount(deps.db, existing.id)
-      }
-      createYouTubeAccount(deps.db, deps.cipher, {
+      const connection = {
         provider: 'youtube',
         googleUserId: identity.googleUserId,
         emailAddress: identity.email,
@@ -473,7 +469,14 @@ export function youtubeApi(deps: YouTubeApiDeps): Hono<{ Variables: AuthVariable
         refreshToken: newRefreshToken,
         tokenExpiresAt: expiresAt,
         scopes: typeof tokens.scope === 'string' ? tokens.scope : OAUTH_SCOPE,
-      })
+      } as const
+      if (existing) {
+        if (!reauthorizeYouTubeAccount(deps.db, deps.cipher, existing.id, connection)) {
+          throw new Error('existing YouTube account disappeared during reauthorization')
+        }
+      } else {
+        createYouTubeAccount(deps.db, deps.cipher, connection)
+      }
     } catch (err: unknown) {
       return redirectWithError(
         c,

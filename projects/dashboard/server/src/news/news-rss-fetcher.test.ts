@@ -18,7 +18,7 @@ import {
 // ─── Fixtures ─────────────────────────────────────────────────────────────
 
 const VALID_RSS = `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0">
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
   <channel>
     <title>Example feed</title>
     <link>https://example.com</link>
@@ -29,6 +29,7 @@ const VALID_RSS = `<?xml version="1.0" encoding="UTF-8"?>
       <guid>https://example.com/posts/1</guid>
       <pubDate>Tue, 16 Jul 2024 12:00:00 GMT</pubDate>
       <description>First post body</description>
+      <media:content type="image/jpeg" url="https://cdn.example.com/first.jpg" />
     </item>
     <item>
       <title>Second post</title>
@@ -36,6 +37,7 @@ const VALID_RSS = `<?xml version="1.0" encoding="UTF-8"?>
       <guid>https://example.com/posts/2</guid>
       <pubDate>Tue, 16 Jul 2024 13:00:00 GMT</pubDate>
       <description>Second post body</description>
+      <enclosure type="image/webp" url="https://cdn.example.com/second.webp" />
     </item>
   </channel>
 </rss>`
@@ -112,6 +114,8 @@ describe('NewsRssFetcher', () => {
     // the fetcher prefers `isoDate` (we wrote the code to do so).
     expect(out[0]?.publishedAt).toBe('2024-07-16T12:00:00.000Z')
     expect(out[0]?.description).toBe('First post body')
+    expect(out[0]?.imageUrl).toBe('https://cdn.example.com/first.jpg')
+    expect(out[1]?.imageUrl).toBe('https://cdn.example.com/second.webp')
   })
 
   it('returns [] for a valid but empty feed', async () => {

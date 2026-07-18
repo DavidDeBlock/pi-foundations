@@ -63,6 +63,17 @@ export interface NewsRssFetcherOptions {
   readonly defaultTimeoutMs?: number
 }
 
+interface FeedItemMedia {
+  readonly mediaContent?: MediaNode | ReadonlyArray<MediaNode>
+  readonly mediaThumbnail?: MediaNode | ReadonlyArray<MediaNode>
+}
+
+interface MediaNode {
+  readonly $?: { readonly url?: string; readonly type?: string }
+  readonly url?: string
+  readonly type?: string
+}
+
 /**
  * Fetches RSS 2.0 feeds. The contract:
  *
@@ -79,16 +90,20 @@ export class NewsRssFetcher {
   readonly #httpFetcher: HttpFetcher
   readonly #serverUrl: string
   readonly #defaultTimeoutMs: number
-  readonly #parser: Parser
+  readonly #parser: Parser<Record<string, never>, FeedItemMedia>
 
   constructor(options: NewsRssFetcherOptions = {}) {
     this.#httpFetcher = options.httpFetcher ?? defaultHttpFetcher
     this.#serverUrl = options.serverUrl ?? 'localhost'
     this.#defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS
-    // rss-parser's defaults are fine for RSS 2.0: it handles
-    // CDATA, namespaces, and the single-vs-multi entry case
-    // without further config.
-    this.#parser = new Parser()
+    this.#parser = new Parser<Record<string, never>, FeedItemMedia>({
+      customFields: {
+        item: [
+          ['media:content', 'mediaContent', { keepArray: true }],
+          ['media:thumbnail', 'mediaThumbnail', { keepArray: true }],
+        ],
+      },
+    })
   }
 
   /**
@@ -189,6 +204,7 @@ export class NewsRssFetcher {
         url: link ?? '',
         title,
         description: pickString(item.contentSnippet) ?? pickString(item.content) ?? pickString(item.summary) ?? '',
+        imageUrl: pickArticleImage(item),
         // RSS uses `pubDate` (RFC 822) by default; `isoDate` is
         // populated when the parser can convert. We hand both
         // to the normalizer — it picks whichever parses.
@@ -197,6 +213,33 @@ export class NewsRssFetcher {
     }
     return out
   }
+}
+
+function pickArticleImage(item: Parser.Item & FeedItemMedia): string | undefined {
+  const candidates = [
+    ...asMediaNodes(item.mediaContent),
+    ...asMediaNodes(item.mediaThumbnail),
+  ]
+  for (const node of candidates) {
+    const url = pickString(node?.$?.url) ?? pickString(node?.url)
+    const type = pickString(node?.$?.type) ?? pickString(node?.type)
+    if (url && (!type || type.startsWith('image/'))) return url
+  }
+  if (item.enclosure?.url && (!item.enclosure.type || item.enclosure.type.startsWith('image/'))) {
+    return item.enclosure.url
+  }
+  return imageFromHtml(item.content) ?? imageFromHtml(item.summary)
+}
+
+function asMediaNodes(value: MediaNode | ReadonlyArray<MediaNode> | undefined): ReadonlyArray<MediaNode> {
+  if (!value) return []
+  return Array.isArray(value) ? [...value] : [value as MediaNode]
+}
+
+function imageFromHtml(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const match = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i.exec(value)
+  return match?.[1]
 }
 
 function pickString(value: unknown): string | undefined {

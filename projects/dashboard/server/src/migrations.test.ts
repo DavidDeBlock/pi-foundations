@@ -111,6 +111,7 @@ describe('Migrations runner', () => {
       '024_youtube_history_html_shorts',
       '025_news',
       '026_youtube_watch_tracking_search',
+      '027_news_article_images',
     ])
 
     // Spot-check that every table from the PRD schema now exists.
@@ -182,11 +183,11 @@ describe('Migrations runner', () => {
   it('is idempotent — running twice does NOT re-apply', async () => {
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const firstApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(firstApplied).toHaveLength(26)
+    expect(firstApplied).toHaveLength(27)
 
     await runMigrations(db, { dir: MIGRATIONS_DIR })
     const secondApplied = db.all<{ name: string }>('SELECT name FROM migrations')
-    expect(secondApplied).toHaveLength(26)
+    expect(secondApplied).toHaveLength(27)
     // applied_at should be unchanged on re-run (still the original timestamps).
     expect(secondApplied.map((r) => r.name).sort()).toEqual(
       firstApplied.map((r) => r.name).sort(),
@@ -242,6 +243,7 @@ describe('Migrations runner', () => {
       'url',
       'published_at',
       'fetched_at',
+      'image_url',
     ])
     // Composite PK shows up as two rows with pk > 0 on `id` and `source_id`.
     expect(articleCols.filter((c) => c.pk > 0).map((c) => c.name).sort()).toEqual([

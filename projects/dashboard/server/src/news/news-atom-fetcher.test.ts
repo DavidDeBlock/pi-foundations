@@ -29,6 +29,7 @@ const VALID_ATOM = `<?xml version="1.0" encoding="UTF-8"?>
     <updated>2024-07-16T12:00:00Z</updated>
     <published>2024-07-16T12:00:00Z</published>
     <summary>First entry body</summary>
+    <content type="html">&lt;p&gt;Body&lt;/p&gt;&lt;img src="https://cdn.example.com/atom.jpg"&gt;</content>
   </entry>
   <entry>
     <title>Second entry</title>
@@ -107,6 +108,7 @@ describe('NewsAtomFetcher', () => {
     // Atom `<published>` is ISO 8601; the parser normalizes
     // onto `isoDate` which we prefer.
     expect(out[0]?.publishedAt).toBe('2024-07-16T12:00:00.000Z')
+    expect(out[0]?.imageUrl).toBe('https://cdn.example.com/atom.jpg')
   })
 
   it('emits an empty id when the entry omits <id> (URL fallback at the normalizer)', async () => {

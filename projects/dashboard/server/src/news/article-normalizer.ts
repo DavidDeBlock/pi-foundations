@@ -74,8 +74,24 @@ export function normalize(raw: RawArticle): NormalizedArticle | null {
     id,
     title,
     description,
+    imageUrl: normalizeImageUrl(raw.imageUrl),
     url,
     publishedAt: parsePublishedAt(raw.publishedAt),
+  }
+}
+
+/** Keep remote media passive and predictable: only absolute HTTP(S)
+ * URLs are suitable for an <img src>. Invalid or non-web schemes are
+ * treated exactly like a feed that supplied no image. */
+export function normalizeImageUrl(raw: string | undefined): string | undefined {
+  if (!raw) return undefined
+  try {
+    const url = new URL(raw.trim())
+    return url.protocol === 'http:' || url.protocol === 'https:'
+      ? url.toString()
+      : undefined
+  } catch {
+    return undefined
   }
 }
 

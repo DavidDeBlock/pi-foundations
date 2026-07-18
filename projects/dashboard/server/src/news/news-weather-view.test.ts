@@ -39,6 +39,7 @@ function makeArticle(overrides: Partial<Article> = {}): Article {
     sourceId: 1,
     title: 'Sample title',
     description: 'Sample description',
+    imageUrl: null,
     url: 'https://example.com/article',
     publishedAt: '2024-07-16T11:00:00.000Z',
     fetchedAt: '2024-07-16T12:00:00.000Z',
@@ -263,6 +264,32 @@ describe('NewsWeatherView — weather block', () => {
 // ─── News block — category ordering ──────────────────────────────────────
 
 describe('NewsWeatherView — news by category', () => {
+  it('does not render image placeholders for text-only feed articles', () => {
+    const html = render({
+      weather: makeWeather(),
+      articlesByCategory: new Map([['General', [makeArticle({ imageUrl: null })]]]),
+      sources: [makeSource()],
+      nowMs: NOW,
+    })
+    expect(html).not.toContain('news-card-media-fallback')
+  })
+
+  it('renders category navigation and optional feed images without placeholders', () => {
+    const html = render({
+      weather: makeWeather(),
+      articlesByCategory: new Map([
+        ['General', [makeArticle({ imageUrl: 'https://cdn.example.com/a.jpg?x=1&y=2' })]],
+      ]),
+      sources: [makeSource()],
+      nowMs: NOW,
+    })
+    expect(html).toContain('class="news-category-nav"')
+    expect(html).toContain('href="#news-general"')
+    expect(html).toContain('class="news-item news-item-has-image"')
+    expect(html).toContain('src="https://cdn.example.com/a.jpg?x=1&amp;y=2"')
+    expect(html).toContain('loading="lazy" decoding="async"')
+  })
+
   it('renders all four categories in the fixed order with all sections populated', () => {
     const general = makeArticle({ id: 'g1', title: 'G1', sourceId: 1 })
     const economy = makeArticle({ id: 'e1', title: 'E1', sourceId: 2 })
@@ -335,7 +362,7 @@ describe('NewsWeatherView — news by category', () => {
       sources: [makeSource()],
       nowMs: NOW,
     })
-    const cardCount = (html.match(/news-card-link/g) ?? []).length
+    const cardCount = (html.match(/news-item-link/g) ?? []).length
     expect(cardCount).toBe(MAX_ARTICLES_PER_CATEGORY)
     // The count badge still shows the input length (25) so
     // the operator knows there's more in the DB than what's
@@ -452,7 +479,7 @@ describe('NewsWeatherView — article card', () => {
       sources: [makeSource()],
       nowMs: NOW,
     })
-    expect(html).not.toContain('news-card-description')
+    expect(html).not.toContain('news-item-description')
   })
 
   it('handles unknown source id gracefully (no crash, no broken HTML)', () => {

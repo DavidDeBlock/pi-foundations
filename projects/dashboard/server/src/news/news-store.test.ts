@@ -87,6 +87,7 @@ function makeArticle(overrides: Partial<NormalizedArticle> = {}): NormalizedArti
     id: overrides.id ?? 'https://example.com/posts/1',
     title: overrides.title ?? 'A headline',
     description: overrides.description ?? 'Body',
+    imageUrl: overrides.imageUrl,
     url: overrides.url ?? 'https://example.com/posts/1',
     publishedAt: overrides.publishedAt ?? '2024-07-16T12:00:00.000Z',
   }
@@ -267,6 +268,20 @@ describe('NewsStore.insertArticles', () => {
   it('handles an empty batch as a no-op returning { inserted: 0 }', () => {
     const id = insertSource({ name: 'X' })
     expect(store.insertArticles(id, [])).toEqual({ inserted: 0 })
+  })
+
+  it('stores images and backfills an existing article on a later poll', () => {
+    const id = insertSource({ name: 'X' })
+    store.insertArticles(id, [makeArticle({ id: 'image-later' })])
+    expect(store.listArticlesByCategory('General', 10)[0]?.imageUrl).toBeNull()
+
+    const second = store.insertArticles(id, [makeArticle({
+      id: 'image-later',
+      imageUrl: 'https://cdn.example.com/image.jpg',
+    })])
+    expect(second.inserted).toBe(0)
+    expect(store.listArticlesByCategory('General', 10)[0]?.imageUrl)
+      .toBe('https://cdn.example.com/image.jpg')
   })
 
   it('stores null published_at when the article has no publishedAt', () => {

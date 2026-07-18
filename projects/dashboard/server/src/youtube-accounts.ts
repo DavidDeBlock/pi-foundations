@@ -208,6 +208,39 @@ export function updateYouTubeAccountTokens(
 }
 
 /**
+ * Apply a fresh OAuth grant to an existing local account without changing its
+ * id. The id owns dashboard-local subscriptions, playlists, tags, and sync
+ * preferences, so reauthorization must never replace the row.
+ */
+export function reauthorizeYouTubeAccount(
+  db: Database,
+  cipher: TokenCipher,
+  id: string,
+  input: CreateYouTubeAccountInput,
+): boolean {
+  const result = db.run(
+    `UPDATE youtube_accounts
+       SET google_user_id = ?, email_address = ?,
+           access_token_enc = ?, refresh_token_enc = ?,
+           token_expires_at = ?, scopes = ?,
+           connected_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+           last_refreshed_at = NULL
+       WHERE id = ? AND provider = ?`,
+    [
+      input.googleUserId,
+      input.emailAddress,
+      cipher.encrypt(input.accessToken),
+      cipher.encrypt(input.refreshToken),
+      input.tokenExpiresAt ?? null,
+      input.scopes,
+      id,
+      input.provider,
+    ],
+  )
+  return result.changes > 0
+}
+
+/**
  * Mark an account as having had its access token rotated at `at`
  * (defaults to now). Failure is silent — `last_refreshed_at` is
  * observability metadata, not a correctness signal.

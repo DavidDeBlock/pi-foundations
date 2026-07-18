@@ -24,7 +24,8 @@
 //     * Missing code/state → error redirect.
 //     * No refresh token / bad token exchange / userinfo failure →
 //       all branch into the same error redirect.
-//     * Re-linking the same email replaces the old row.
+//     * Re-linking the same email updates credentials in place so local
+//       YouTube library rows survive.
 //     * GET /connection returns the connected status or {connected:false}.
 //     * DELETE /connection revokes at Google + removes the row.
 //     * Scopes requested match exactly youtube.readonly (regression
@@ -625,7 +626,7 @@ describe('GET /api/youtube/oauth/callback', () => {
     expect(res.headers.get('location')).toMatch(/status=error&reason=userinfo_failed/)
   })
 
-  it('re-linking the same email replaces the prior row', async () => {
+  it('re-linking the same email preserves the local account identity and dependent data', async () => {
     const { env: e, stateSigner: signer } = await envWithSigningKey()
 
     // First link: succeed.
@@ -656,9 +657,26 @@ describe('GET /api/youtube/oauth/callback', () => {
     const firstAccounts = listYouTubeAccounts(e.db, e.cipher)
     expect(firstAccounts).toHaveLength(1)
     expect(firstAccounts[0]!.accessToken).toBe('first-access')
+    const localAccountId = firstAccounts[0]!.id
+    e.db.run(
+      `INSERT INTO youtube_channels (channel_id, title)
+       VALUES ('UC-local', 'Locally mirrored channel')`,
+    )
+    e.db.run(
+      `INSERT INTO subscriptions
+         (id, google_account_id, channel_id, channel_title, subscribed_at)
+       VALUES ('sub-local', ?, 'UC-local', 'Locally mirrored channel',
+               '2026-01-01T00:00:00.000Z')`,
+      [localAccountId],
+    )
+    e.db.run(
+      `INSERT INTO youtube_playlists (google_account_id, playlist_id, title)
+       VALUES (?, 'PL-local', 'Locally mirrored playlist')`,
+      [localAccountId],
+    )
 
-    // Second link of the same email: should delete the first row and
-    // insert a new one — not throw on UNIQUE, not leave two rows.
+    // Second link of the same email updates credentials on the existing
+    // local entity. Its stable id and dependent library rows must survive.
     e.fetchFn.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -685,8 +703,19 @@ describe('GET /api/youtube/oauth/callback', () => {
 
     const secondAccounts = listYouTubeAccounts(e.db, e.cipher)
     expect(secondAccounts).toHaveLength(1)
+    expect(secondAccounts[0]!.id).toBe(localAccountId)
     expect(secondAccounts[0]!.accessToken).toBe('second-access')
     expect(secondAccounts[0]!.refreshToken).toBe('second-refresh')
+    expect(e.db.get(
+      `SELECT id FROM subscriptions
+       WHERE google_account_id = ? AND id = 'sub-local'`,
+      [localAccountId],
+    )).toBeDefined()
+    expect(e.db.get(
+      `SELECT playlist_id FROM youtube_playlists
+       WHERE google_account_id = ? AND playlist_id = 'PL-local'`,
+      [localAccountId],
+    )).toBeDefined()
   })
 
   it('rejects missing code or state (redirects to error)', async () => {

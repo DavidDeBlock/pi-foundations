@@ -46,6 +46,7 @@ interface ArticleRow {
   readonly source_id: number
   readonly title: string
   readonly description: string | null
+  readonly image_url: string | null
   readonly url: string
   readonly published_at: string | null
   readonly fetched_at: string
@@ -181,8 +182,8 @@ export class NewsStore {
         .rawConnection()
         .prepare(
           `INSERT OR IGNORE INTO news_articles
-             (id, source_id, title, description, url, published_at, fetched_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             (id, source_id, title, description, image_url, url, published_at, fetched_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
       for (const a of articles) {
         const info = stmt.run(
@@ -190,11 +191,21 @@ export class NewsStore {
           sourceId,
           a.title,
           a.description,
+          a.imageUrl ?? null,
           a.url,
           a.publishedAt ?? null,
           new Date().toISOString(),
         )
-        if (info.changes > 0) inserted++
+        if (info.changes > 0) {
+          inserted++
+        } else if (a.imageUrl) {
+          this.#db.run(
+            `UPDATE news_articles
+                SET image_url = ?
+              WHERE source_id = ? AND id = ? AND image_url IS NULL`,
+            [a.imageUrl, sourceId, a.id],
+          )
+        }
       }
     })
     return { inserted }
@@ -212,7 +223,7 @@ export class NewsStore {
    */
   listArticlesByCategory(category: string, limit: number): Article[] {
     const rows = this.#db.all<ArticleRow>(
-      `SELECT a.id, a.source_id, a.title, a.description, a.url,
+      `SELECT a.id, a.source_id, a.title, a.description, a.image_url, a.url,
               a.published_at, a.fetched_at
          FROM news_articles a
          JOIN news_sources s ON s.id = a.source_id
@@ -317,6 +328,7 @@ function rowToArticle(row: ArticleRow): Article {
     sourceId: row.source_id,
     title: row.title,
     description: row.description,
+    imageUrl: row.image_url,
     url: row.url,
     publishedAt: row.published_at,
     fetchedAt: row.fetched_at,

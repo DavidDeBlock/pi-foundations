@@ -117,6 +117,10 @@ const MIGRATIONS = [
     name: '026_youtube_watch_tracking_search',
     filename: '026_youtube_watch_tracking_search.sql',
   },
+  {
+    name: '027_news_article_images',
+    filename: '027_news_article_images.sql',
+  },
 ] as const
 
 export interface RunMigrationsOptions {

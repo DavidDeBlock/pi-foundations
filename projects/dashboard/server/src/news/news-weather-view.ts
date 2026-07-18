@@ -181,12 +181,18 @@ function renderCategoryBlocks(
   sources: ReadonlyArray<Source>,
   nowMs: () => number,
 ): string {
-  const sections = CATEGORY_DISPLAY_ORDER.flatMap((category) => {
+  const populatedCategories = CATEGORY_DISPLAY_ORDER.filter(
+    (category) => (articlesByCategory.get(category)?.length ?? 0) > 0,
+  )
+  const sections = populatedCategories.flatMap((category) => {
     const articles = articlesByCategory.get(category) ?? []
-    if (articles.length === 0) return []
     return [renderCategorySection(category, articles, sources, nowMs)]
   }).join('')
-  return `<section class="news-categories" aria-label="News by category">${sections}</section>`
+  const navigation = populatedCategories
+    .map((category) => `<a href="#${categoryId(category)}">${escapeHtml(category)}</a>`)
+    .join('')
+  return `<nav class="news-category-nav" aria-label="News categories">${navigation}</nav>
+  <section class="news-categories" aria-label="News by category">${sections}</section>`
 }
 
 function renderCategorySection(
@@ -200,7 +206,7 @@ function renderCategorySection(
     .slice(0, MAX_ARTICLES_PER_CATEGORY)
     .map((article) => renderArticleCard(article, sourceById, nowMs))
     .join('')
-  return `<article class="news-category" data-category="${escapeHtml(category)}">
+  return `<article class="news-category" id="${categoryId(category)}" data-category="${escapeHtml(category)}">
     <header class="news-category-header">
       <h2>${escapeHtml(category)}</h2>
       <span class="news-category-count">${articles.length} ${articles.length === 1 ? 'article' : 'articles'}</span>
@@ -221,18 +227,29 @@ function renderArticleCard(
   const sourceName = source?.name ?? 'Unknown source'
   const dateLabel = formatPublishedDate(article.publishedAt, nowMs)
   const description = article.description && article.description.trim() !== ''
-    ? `<p class="news-card-description">${escapeHtml(article.description)}</p>`
+    ? `<p class="news-item-description">${escapeHtml(article.description)}</p>`
     : ''
-  return `<li class="news-card">
-    <a class="news-card-link" href="${escapeHtml(article.url)}" target="_blank" rel="noopener">
-      <h3 class="news-card-title">${escapeHtml(article.title)}</h3>
+  const image = article.imageUrl
+    ? `<img class="news-item-image" src="${escapeHtml(article.imageUrl)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.style.display='none'">`
+    : ''
+  return `<li class="news-item${image ? ' news-item-has-image' : ''}">
+    <a class="news-item-link" href="${escapeHtml(article.url)}" target="_blank" rel="noopener">
+      ${image}
+      <span class="news-item-body">
+        <span class="news-item-meta">
+          <span class="news-item-source">${escapeHtml(sourceName)}</span>
+          <span aria-hidden="true">·</span>
+          <time class="news-item-date" datetime="${escapeHtml(article.publishedAt ?? '')}">${escapeHtml(dateLabel)}</time>
+        </span>
+        <h3 class="news-item-title">${escapeHtml(article.title)}</h3>
+        ${description}
+      </span>
     </a>
-    <p class="news-card-meta">
-      <span class="news-card-source">${escapeHtml(sourceName)}</span>
-      <span class="news-card-date" title="${escapeHtml(article.publishedAt ?? 'unknown')}">${escapeHtml(dateLabel)}</span>
-    </p>
-    ${description}
   </li>`
+}
+
+function categoryId(category: string): string {
+  return `news-${category.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
 }
 
 function renderEmptyNews(): string {
@@ -545,21 +562,26 @@ export const NEWS_WEATHER_STYLES = `
 .news-weather-day-temps{font-size:.82rem;color:var(--muted)}
 .news-weather-day-temps strong{color:var(--text);font-weight:600}
 .news-weather-day-pop{font-size:.72rem;color:#60a5fa}
-.news-categories{display:flex;flex-direction:column;gap:30px}
-.news-category{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:18px 22px;box-shadow:var(--shadow)}
-.news-category-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
-.news-category-header h2{font-size:1.3rem;letter-spacing:-.03em;margin:0}
+.news-category-nav{display:flex;gap:8px;overflow-x:auto;margin:0 0 18px;padding:2px 0 8px;scrollbar-width:thin}
+.news-category-nav a{white-space:nowrap;color:var(--muted);text-decoration:none;font-size:.82rem;font-weight:600;padding:8px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface)}
+.news-category-nav a:hover{color:var(--accent-news-weather);border-color:color-mix(in srgb,var(--accent-news-weather) 55%,var(--border))}
+.news-categories{display:flex;flex-direction:column;gap:34px}
+.news-category{scroll-margin-top:88px}
+.news-category-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.news-category-header h2{font-size:1.45rem;letter-spacing:-.035em;margin:0}
 .news-category-count{color:var(--muted);font-size:.78rem}
-.news-category-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:14px}
-.news-card{padding:12px 0;border-bottom:1px solid var(--border)}
-.news-card:last-child{border-bottom:0}
-.news-card-link{color:var(--text);text-decoration:none;display:inline-block}
-.news-card-link:hover .news-card-title{color:var(--accent-news-weather)}
-.news-card-title{font-size:1.05rem;font-weight:600;line-height:1.35;margin:0}
-.news-card-meta{display:flex;gap:10px;font-size:.78rem;color:var(--muted);margin:4px 0 0;flex-wrap:wrap}
-.news-card-source{font-weight:600;color:var(--muted)}
-.news-card-date{color:var(--muted)}
-.news-card-description{margin:8px 0 0;font-size:.92rem;line-height:1.5;color:color-mix(in srgb,var(--text) 85%,var(--muted))}
+.news-category-list{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:32px}
+.news-item{min-width:0;border-bottom:1px solid var(--border)}
+.news-item-link{color:var(--text);text-decoration:none;display:flex;gap:16px;padding:16px 2px;height:100%}
+.news-item-link:hover .news-item-title{color:var(--accent-news-weather)}
+.news-item-image{width:132px;height:88px;flex:0 0 132px;border-radius:10px;object-fit:cover;background:var(--surface-2)}
+.news-item-body{display:block;min-width:0}
+.news-item-title{font-size:1.04rem;font-weight:650;line-height:1.35;margin:7px 0 0;letter-spacing:-.012em}
+.news-item-meta{display:flex;gap:7px;font-size:.74rem;color:var(--muted);margin:0;flex-wrap:wrap}
+.news-item-source{font-weight:700;color:var(--accent-news-weather)}
+.news-item-date{color:var(--muted)}
+.news-item-description{margin:8px 0 0;font-size:.87rem;line-height:1.48;color:color-mix(in srgb,var(--text) 76%,var(--muted));display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .news-empty-line{text-align:center;padding:46px 24px;color:var(--muted);font-size:.95rem;border:1px dashed var(--border);border-radius:16px;background:color-mix(in srgb,var(--surface) 90%,transparent)}
-@media(max-width:800px){.news-main{padding:24px 18px 60px}.news-weather-stats{grid-template-columns:repeat(2,1fr)}.news-weather-days{grid-template-columns:repeat(4,1fr)}}
-@media(max-width:520px){.news-weather-days{grid-template-columns:repeat(3,1fr)}.news-weather-current{flex-direction:column;align-items:flex-start}.news-weather-stats{grid-template-columns:1fr;min-width:0}}`
+@media(max-width:900px){.news-main{padding:24px 18px 60px}.news-weather-stats{grid-template-columns:repeat(2,1fr)}.news-weather-days{grid-template-columns:repeat(4,1fr)}.news-category-list{grid-template-columns:1fr}}
+@media(max-width:620px){.news-weather-days{grid-template-columns:repeat(3,1fr)}.news-weather-current{flex-direction:column;align-items:flex-start}.news-weather-stats{grid-template-columns:1fr;min-width:0}.news-item-image{width:104px;height:72px;flex-basis:104px}.news-item-description{display:none}}
+@media(max-width:420px){.news-item-image{width:88px;height:64px;flex-basis:88px}.news-weather-days{grid-template-columns:repeat(2,1fr)}}`

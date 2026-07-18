@@ -157,6 +157,9 @@ export class NewsAtomFetcher {
           pickString(item.summary) ??
           pickString(item.content) ??
           '',
+        imageUrl: item.enclosure?.url && (!item.enclosure.type || item.enclosure.type.startsWith('image/'))
+          ? item.enclosure.url
+          : imageFromHtml(item.content) ?? imageFromHtml(item.summary),
         // Atom items have `isoDate`; if missing, fall back to
         // `pubDate` (rss-parser sometimes sets it). The
         // normalizer picks whichever parses.
@@ -165,6 +168,12 @@ export class NewsAtomFetcher {
     }
     return out
   }
+}
+
+function imageFromHtml(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const match = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i.exec(value)
+  return match?.[1]
 }
 
 // Re-export the default HTTP fetcher so the constructor

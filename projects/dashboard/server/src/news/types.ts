@@ -81,6 +81,9 @@ export interface RawArticle {
   /** Description / summary (may include HTML; the normalizer
    *  strips). May be empty. */
   readonly description: string
+  /** Optional image advertised by the feed (Media RSS,
+   *  enclosure, or an image embedded in the item body). */
+  readonly imageUrl?: string
   /** Publication timestamp, raw from the feed. The normalizer
    *  parses to ISO 8601 or returns undefined if unparseable. */
   readonly publishedAt: string | undefined
@@ -97,6 +100,8 @@ export interface NormalizedArticle {
   /** Plain text, truncated to 500 chars at a word boundary.
    *  May be empty. */
   readonly description: string
+  /** Valid absolute HTTP(S) image URL, or undefined. */
+  readonly imageUrl?: string
   readonly url: string
   /** ISO 8601 or undefined if the feed's date was unparseable. */
   readonly publishedAt: string | undefined
@@ -110,6 +115,7 @@ export interface Article {
   readonly sourceId: number
   readonly title: string
   readonly description: string | null
+  readonly imageUrl: string | null
   readonly url: string
   readonly publishedAt: string | null
   readonly fetchedAt: string
