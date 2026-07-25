@@ -1,9 +1,10 @@
 {
   "name": "full-lifecycle",
-  "description": "End-to-end: PRD review → build → test → review. Test failures escalate to diagnostic after 2 retries.",
-
+  "description": "End-to-end: PRD review \u2192 build \u2192 test \u2192 review. Test failures escalate to diagnostic after 2 retries.",
+  "breaker": {
+    "max_review_rounds": 2
+  },
   "default_provider": "minimax",
-
   "phases": {
     "issue-readiness": {
       "skill": "/skill:issue-readiness",
@@ -38,7 +39,7 @@
       "timeout_seconds": 300,
       "retries": 0,
       "is_optional": true,
-      "description": "Self-improvement phase — runs after reviewer. Non-blocking."
+      "description": "Self-improvement phase \u2014 runs after reviewer. Non-blocking."
     },
     "diagnostic": {
       "skill": "/skill:diagnose",
@@ -48,7 +49,6 @@
       "retries": 1
     }
   },
-
   "transitions": [
     {
       "from": "issue-readiness",

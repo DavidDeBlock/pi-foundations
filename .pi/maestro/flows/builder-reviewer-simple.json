@@ -1,18 +1,20 @@
 {
   "name": "builder-reviewer-simple",
   "description": "Builder writes code, reviewer validates quality. Retry loops on rejection. Optional scout phase runs first when scout_enabled is true.",
-
+  "breaker": {
+    "max_review_rounds": 2
+  },
   "default_provider": "minimax",
-
   "scout_enabled": true,
   "scout_timeout_seconds": 240,
-
   "evidence_policy": {
-    "required_on_success": ["tested", "reviewed"],
+    "required_on_success": [
+      "tested",
+      "reviewed"
+    ],
     "on_missing_evidence": "warn_but_proceed"
   },
-
-  "phases": {    
+  "phases": {
     "builder": {
       "skill": "/skill:typescript-implementer",
       "model": "MiniMax-M3",
@@ -40,7 +42,7 @@
       "is_local": true,
       "command": "python3 -m maestro.commands.evidence check {issue_number}",
       "timeout_seconds": 30
-    },    
+    },
     "diagnostic": {
       "skill": "/skill:diagnose",
       "model": "MiniMax-M3",
@@ -49,7 +51,7 @@
       "retries": 1
     }
   },
-  "transitions": [    
+  "transitions": [
     {
       "from": "builder",
       "on_success": "test_runner",

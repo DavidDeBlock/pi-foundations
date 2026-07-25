@@ -830,6 +830,11 @@ def _default_monitor_command(monitor_args: Optional[list[str]] = None) -> list[s
         The command list ready for :func:`subprocess.run`.
     """
     if monitor_args is not None:
+        # Keep malformed test/config input from reaching subprocess.run,
+        # where an empty argv raises IndexError rather than producing an
+        # operator-facing launch error.
+        if not monitor_args or any(not isinstance(arg, str) or not arg for arg in monitor_args):
+            return []
         return list(monitor_args)
     maestro_dir = Path(__file__).resolve().parent.parent
     maestro_script = maestro_dir / "maestro.py"
@@ -888,6 +893,12 @@ def launch_monitor(
         ``False`` and ``error`` carries the reason.
     """
     cmd = _default_monitor_command(monitor_args)
+    if not cmd:
+        return LaunchResult(
+            started=False,
+            returncode=None,
+            error="failed to launch monitor: empty monitor command",
+        )
 
     if launch_fn is not None:
         # Test seam: a fake launcher returns a predetermined
@@ -909,6 +920,12 @@ def launch_monitor(
                 started=False,
                 returncode=None,
                 error=f"failed to launch monitor: {e}",
+            )
+        except (TypeError, ValueError, OverflowError) as e:
+            return LaunchResult(
+                started=False,
+                returncode=None,
+                error=f"failed to launch monitor: invalid launcher result ({e})",
             )
         return LaunchResult(
             started=True,
@@ -1145,6 +1162,20 @@ def run_action_menu(
                     repo_root=repo_root,
                     config_path=config_path,
                 )
+            elif choice == "monitor":
+                result = launch_monitor(
+                    launch_fn=launch_fn,
+                    monitor_args=monitor_args,
+                )
+                if not result.started:
+                    # A launch failure must not terminate the menu or
+                    # discard its state.  Report it through the same IO
+                    # seam as the other action errors, then continue the
+                    # top-level loop.
+                    io.notify(
+                        result.error or "failed to launch monitor",
+                        kind="error",
+                    )
             elif choice == "show_config":
                 _show_config(io=io, config_path=config_path)
             elif choice == "edit_config":

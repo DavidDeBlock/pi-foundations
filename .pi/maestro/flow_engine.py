@@ -87,6 +87,7 @@ from projects_registry import (  # noqa: E402
 from session_reader import parse_session_log  # noqa: E402
 from terminal import Terminal  # noqa: E402
 from working_memory import MemoryStore, WorkingMemory  # noqa: E402
+import breaker as _breaker  # noqa: E402
 
 
 # Re-export ``now_iso`` at module level for callers that reach into
@@ -253,13 +254,19 @@ class Transition:
 
 @dataclass(frozen=True)
 class Flow:
-    """A flow config, validated and defaults applied. Immutable."""
+    """A flow config, validated and defaults applied. Immutable.
+
+    ``breaker`` is the raw ``breaker`` section of the flow JSON
+    (circuit-breaker limits, issue #47) — converted to typed
+    :class:`breaker.BreakerLimits` inside :func:`run_flow`.
+    """
     name: str
     description: str
     scout_enabled: bool
     evidence_policy: dict
     phases: dict
     transitions: tuple
+    breaker: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -348,6 +355,10 @@ class FlowOutcome:
       transition table pointed to a non-existent phase
     * ``"exhausted_iterations"`` — flow loop hit the
       ``max_iterations=50`` safety guard
+    * ``"parked"`` — the circuit breaker stopped the flow (issue
+      #47: the reviewer rejection-round cap was reached). The
+      issue requires human intervention before it can re-enter a
+      flow.
     """
     flow_name: str
     issue_num: int
@@ -404,6 +415,30 @@ def load_flow(name: str) -> dict:
     default_retries = 3
     default_timeout = 1800
     flow_provider = config.get("default_provider")
+
+    # Validate the optional circuit-breaker section (issue #47).
+    # Invalid config is a hard error — a silently-misparsed cap
+    # could re-open the unbounded-loop failure mode this section
+    # exists to prevent.
+    breaker_raw = config.get("breaker")
+    if breaker_raw is not None:
+        if not isinstance(breaker_raw, dict):
+            print(
+                f"[ERROR] Invalid 'breaker' section in {flow_file} "
+                f"(must be an object)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        rounds = breaker_raw.get("max_review_rounds")
+        if rounds is not None and (
+            isinstance(rounds, bool) or not isinstance(rounds, int) or rounds < 1
+        ):
+            print(
+                f"[ERROR] Invalid breaker.max_review_rounds in "
+                f"{flow_file}: {rounds!r} (must be an int >= 1)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     for phase_name, phase_config in config["phases"].items():
         # Local-only phases (e.g. the ``close`` evidence-gate phase)
@@ -467,6 +502,7 @@ def _flow_from_config(flow_config: dict) -> "Flow":
         evidence_policy=dict(flow_config.get("evidence_policy") or {}),
         phases=dict(flow_config.get("phases") or {}),
         transitions=tuple(flow_config.get("transitions") or ()),
+        breaker=dict(flow_config.get("breaker") or {}),
     )
 
 
@@ -558,6 +594,34 @@ def get_next_step(transitions: list, current_phase: str, status: str) -> Optiona
     return None
 
 
+# ─── Park helpers (issue #47) ────────────────────────────────────
+
+
+def _evidence_summary(issue_num: int, flow_config: dict) -> str:
+    """Best-effort one-line evidence-state summary for park comments.
+
+    Never raises and never blocks the park: any failure degrades to
+    an ``"unknown"`` summary. Parking is the safe action; the
+    evidence line is informational only.
+    """
+    try:
+        policy = get_evidence_policy(flow_config)
+        required = [EvidenceType(t) for t in policy.get("required_on_success", [])]
+        if not required:
+            return "none required by policy"
+        store = EvidenceStore(issue_num)
+        ok, missing = store.check(required)
+        if ok:
+            present = ", ".join(t.value for t in required)
+            return f"all present ({present})"
+        missing_values = [
+            m.value if isinstance(m, EvidenceType) else str(m) for m in missing
+        ]
+        return f"missing: {', '.join(missing_values)}"
+    except Exception:
+        return "unknown (evidence check failed)"
+
+
 # ─── The deep module: run_flow ──────────────────────────────────────────
 
 
@@ -613,7 +677,7 @@ def run_flow(
     Returns:
         A :class:`FlowOutcome` capturing the whole run. The
         ``status`` field is one of ``"success"``,
-        ``"exhausted_iterations"``, or ``"failed"``.
+        ``"exhausted_iterations"``, ``"parked"``, or ``"failed"``.
     """
     from phase_runner import run_phase as _phase_runner_run_phase
     from diagnostic import run_diagnostic as _diagnostic_run_diagnostic
@@ -629,6 +693,7 @@ def run_flow(
         "phases": dict(flow.phases),
         "transitions": list(flow.transitions),
         "evidence_policy": dict(flow.evidence_policy),
+        "breaker": dict(flow.breaker),
     }
 
     # Display the issue header (matches the pre-issue-#34 terminal
@@ -672,6 +737,13 @@ def run_flow(
     total_tokens_in: int = 0
     total_tokens_out: int = 0
     run_start = time.monotonic()
+
+    # Circuit-breaker state (issue #47). The limits are fixed for the
+    # whole run; the state accumulates reviewer rejection rounds.
+    breaker_limits = _breaker.limits_from_config(flow.breaker)
+    breaker_state = _breaker.BreakerState()
+    parked = False
+    park_reason = ""
 
     while iteration_count < _MAX_ITERATIONS:
         iteration_count += 1
@@ -852,6 +924,39 @@ def run_flow(
             if test_fail_count > 0:
                 test_fail_count = 0
 
+        # ── Circuit breaker (issue #47): count reviewer rejection
+        # rounds. At the cap, park immediately — no diagnostic
+        # detour, no escalation. The park comment is the rescue
+        # brief for the human who re-enters the issue.
+        if current_phase == "reviewer" and status == "reject":
+            breaker_state = _breaker.record_reviewer_rejection(breaker_state)
+            decision = _breaker.evaluate(breaker_state, breaker_limits)
+            if decision.action == _breaker.ACTION_PARK:
+                parked = True
+                park_reason = decision.reason
+                comment = _breaker.format_park_comment(
+                    review_rounds=breaker_state.review_rounds,
+                    max_review_rounds=breaker_limits.max_review_rounds,
+                    last_verdict=details,
+                    evidence_summary=_evidence_summary(
+                        context.issue_num, flow_config
+                    ),
+                )
+                gh.post_phase_comment(
+                    issue_num=context.issue_num,
+                    phase="breaker",
+                    status="parked",
+                    details=comment,
+                )
+                term.failure(f"Parked: {park_reason}")
+                _log.emit(FlowEvent(
+                    kind="breaker_park",
+                    message=park_reason,
+                    timestamp=_flow_logger.now_iso(),
+                    phase="reviewer",
+                ))
+                break
+
         # Determine next step from transitions (only if escalation
         # didn't already set it).
         if next_step is None:
@@ -971,6 +1076,8 @@ def run_flow(
     # ── Build the :class:`FlowOutcome` ──
     if completed_successfully:
         outcome_status = "success"
+    elif parked:
+        outcome_status = "parked"
     elif iteration_count >= _MAX_ITERATIONS:
         outcome_status = "exhausted_iterations"
     else:

@@ -1,19 +1,20 @@
 {
   "name": "builder-test-reviewer",
   "description": "Two-phase loop: Builder writes code (TDD), Reviewer checks quality.",
-  
+  "breaker": {
+    "max_review_rounds": 2
+  },
   "default_provider": "llama-cpp-3090",
-
   "phases": {
-    "builder": { 
-      "skill": "/skill:tdd", 
+    "builder": {
+      "skill": "/skill:tdd",
       "model": "qwen-35b-a3b-118k-bf16",
       "provider": "llama-cpp-3090",
       "timeout_seconds": 1800,
       "retries": 3
     },
-    "reviewer": { 
-      "skill": "/skill:reviewer", 
+    "reviewer": {
+      "skill": "/skill:reviewer",
       "model": "qwen-35b-a3b-118k-bf16",
       "provider": "llama-cpp-3090",
       "timeout_seconds": 900,
@@ -24,28 +25,26 @@
       "timeout_seconds": 300,
       "retries": 0,
       "is_optional": true,
-      "description": "Self-improvement phase — runs after reviewer to extract learnings. Non-blocking."
+      "description": "Self-improvement phase \u2014 runs after reviewer to extract learnings. Non-blocking."
     },
-    "diagnostic": { 
-      "skill": "/skill:debugger", 
+    "diagnostic": {
+      "skill": "/skill:debugger",
       "model": "qwen-35b-a3b-118k-bf16",
       "provider": "llama-cpp-3090",
       "timeout_seconds": 600,
       "retries": 1
     }
   },
-  
   "transitions": [
-    { 
-      "from": "builder", 
+    {
+      "from": "builder",
       "on_success": "reviewer",
       "on_reject": "builder",
-      "on_error": "diagnostic" 
+      "on_error": "diagnostic"
     },
-
-    { 
-      "from": "reviewer", 
-      "on_success": "retrospective", 
+    {
+      "from": "reviewer",
+      "on_success": "retrospective",
       "on_reject": "builder",
       "on_error": "diagnostic",
       "description": "If reviewer rejects code, send critique back to builder. Success advances to retrospective (non-blocking)."

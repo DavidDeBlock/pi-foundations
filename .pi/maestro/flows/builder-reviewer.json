@@ -1,17 +1,19 @@
 {
   "name": "builder-reviewer",
   "description": "Builder writes code, reviewer validates quality. Retry loops on rejection. Optional scout phase runs first when scout_enabled is true.",
-
+  "breaker": {
+    "max_review_rounds": 2
+  },
   "default_provider": "minimax",
-
   "scout_enabled": true,
   "scout_timeout_seconds": 240,
-
   "evidence_policy": {
-    "required_on_success": ["tested", "reviewed"],
+    "required_on_success": [
+      "tested",
+      "reviewed"
+    ],
     "on_missing_evidence": "warn_but_proceed"
   },
-
   "phases": {
     "scout": {
       "skill": "/skill:scout",
@@ -53,7 +55,7 @@
       "timeout_seconds": 300,
       "retries": 1,
       "is_optional": true,
-      "description": "Self-improvement phase — runs after close to extract learnings into .maestro/learnings.md. Non-blocking: failures log but do not break the flow."
+      "description": "Self-improvement phase \u2014 runs after close to extract learnings into .maestro/learnings.md. Non-blocking: failures log but do not break the flow."
     },
     "diagnostic": {
       "skill": "/skill:diagnose",
@@ -69,7 +71,7 @@
       "on_success": "builder",
       "on_reject": "builder",
       "on_error": "builder",
-      "description": "Scout is one-shot — failures are non-fatal; builder proceeds without findings."
+      "description": "Scout is one-shot \u2014 failures are non-fatal; builder proceeds without findings."
     },
     {
       "from": "builder",
