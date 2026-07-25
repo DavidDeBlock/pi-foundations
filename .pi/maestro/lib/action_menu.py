@@ -830,10 +830,17 @@ def _default_monitor_command(monitor_args: Optional[list[str]] = None) -> list[s
         The command list ready for :func:`subprocess.run`.
     """
     if monitor_args is not None:
-        # Keep malformed test/config input from reaching subprocess.run,
-        # where an empty argv raises IndexError rather than producing an
-        # operator-facing launch error.
-        if not monitor_args or any(not isinstance(arg, str) or not arg for arg in monitor_args):
+        # Keep malformed injected/config input from reaching subprocess.run,
+        # where an empty argv raises IndexError and a bare string is treated
+        # as an executable rather than an argv sequence.
+        if (
+            not isinstance(monitor_args, (list, tuple))
+            or not monitor_args
+            or any(
+                not isinstance(arg, str) or not arg.strip()
+                for arg in monitor_args
+            )
+        ):
             return []
         return list(monitor_args)
     maestro_dir = Path(__file__).resolve().parent.parent
@@ -901,14 +908,26 @@ def launch_monitor(
         )
 
     if launch_fn is not None:
+        if not callable(launch_fn):
+            return LaunchResult(
+                started=False,
+                returncode=None,
+                error="failed to launch monitor: invalid launcher",
+            )
         # Test seam: a fake launcher returns a predetermined
-        # exit code without forking a real subprocess. We do
-        # not catch any exception here — the test's launcher
-        # is responsible for returning a value (and for
-        # raising, the state machine surfaces the error
-        # through MenuIO).
+        # exit code without forking a real subprocess.  Keep the
+        # seam subject to the same non-raising contract as the
+        # production launcher: adapter/install errors must return
+        # to the menu rather than tear down the state machine.
         try:
             returncode = launch_fn(cmd)
+            # ``bool`` is an ``int`` subclass, but accepting it here hides a
+            # common adapter bug.  Require the launch seam's documented
+            # integer exit-code contract explicitly.
+            if isinstance(returncode, bool) or not isinstance(returncode, int):
+                raise TypeError(
+                    f"expected integer exit code, got {type(returncode).__name__}"
+                )
         except FileNotFoundError as e:
             return LaunchResult(
                 started=False,
@@ -927,9 +946,19 @@ def launch_monitor(
                 returncode=None,
                 error=f"failed to launch monitor: invalid launcher result ({e})",
             )
+        except Exception as e:
+            # A custom launcher may fail for reasons that are not an
+            # OSError (for example a broken wrapper).  Preserve the
+            # action menu and expose a useful message instead of
+            # leaking the exception through the interactive loop.
+            return LaunchResult(
+                started=False,
+                returncode=None,
+                error=f"failed to launch monitor: {e}",
+            )
         return LaunchResult(
             started=True,
-            returncode=int(returncode) if returncode is not None else 0,
+            returncode=returncode,
             error=None,
         )
 

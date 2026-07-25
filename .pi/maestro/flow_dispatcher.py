@@ -58,6 +58,7 @@ from scout_runner import (  # noqa: E402  (intentional intra-package import)
     _run_scout_phase,
 )
 from github_client import GithubClient  # noqa: E402
+import label_machine as _labels  # noqa: E402  (issue #50: claim/finalize)
 
 # NOTE on patch-friendliness: existing tests patch attributes on the
 # ``flow_engine`` module (``flow_engine.MemoryStore``,
@@ -136,6 +137,15 @@ def build_flow_context(
             _log_warn(f"Could not fetch issue #{issue_num} metadata")
     except Exception as e:
         _log_warn(f"Failed to fetch issue metadata for #{issue_num}: {e}")
+
+    # ── Step 1b: Claim the issue (issue #50) ──
+    # If the issue is pickup-eligible (``ready-for-agent`` as its
+    # sole state label, no ``type:prd``), swap the claim BEFORE any
+    # work starts. GitHub is the authoritative claim store — the
+    # swap is what stops a second run from picking the issue up.
+    # Manual runs on unlabeled issues / PRDs proceed unclaimed and
+    # get no label mutations.
+    claimed = claim_issue(issue_num, gh)
 
     # ── Step 2: Fetch parent PRD if referenced ──
     parent_prd: Optional[str] = None
@@ -238,6 +248,7 @@ def build_flow_context(
         prefetched=prefetched,
         repo_context=repo_context,
         scout_findings=scout_findings,
+        claimed=claimed,
     )
 
 
@@ -248,4 +259,92 @@ def build_flow_context(
 # (``PrefetchedContext`` and the parsed ``scout_findings`` dict) — the
 # formatted strings are a presentation concern that belongs to the
 # runner / prompt builder, not the setup layer.
-__all__ = ["build_flow_context"]
+# ─── Claim / finalize (issue #50) ────────────────────────────────────────
+#
+# The dispatcher owns ALL issue-label side effects. ``run_flow``
+# stays pure of label I/O — it returns honest statuses; the
+# dispatcher claims before work starts and the caller finalizes
+# after the outcome is known.
+
+
+def claim_issue(
+    issue_num: int,
+    gh: GithubClient,
+    cfg: _labels.LabelConfig = _labels.DEFAULT_LABELS,
+) -> bool:
+    """Swap ``ready-for-agent → status:in-progress`` if eligible.
+
+    Fetches the issue's current labels and claims it iff
+    :func:`label_machine.is_pickup_eligible` says yes. Any failure
+    (fetch error, rejected swap) degrades to ``claimed=False`` —
+    never fatal, never a fake claim.
+
+    Returns:
+        ``True`` iff the claim swap was applied.
+    """
+    try:
+        issue = gh.fetch_issue(issue_num)
+        if not issue or not _labels.is_pickup_eligible(issue.labels, cfg):
+            return False
+        ok = gh.update_issue_labels(
+            issue_num,
+            add_labels=[cfg.in_progress],
+            remove_labels=[cfg.ready],
+        )
+        if not ok:
+            _log_warn(f"Claim swap rejected by GitHub for #{issue_num}")
+        return bool(ok)
+    except Exception as e:
+        _log_warn(f"Claim failed for #{issue_num}: {e}")
+        return False
+
+
+def finalize_issue_state(
+    issue_num: int,
+    outcome_status: str,
+    claimed: bool,
+    gh: GithubClient,
+    cfg: _labels.LabelConfig = _labels.DEFAULT_LABELS,
+) -> bool:
+    """Apply the end-of-run label swap for a claimed issue.
+
+    Mapping (issue #50):
+      * ``"success"`` → ``awaiting-manual-check`` ("done, please verify")
+      * ``"parked"``  → ``status:parked`` ("failed, please rescue")
+      * anything else → no swap. Fail closed: a ``failed`` or
+        ``exhausted_iterations`` run leaves ``status:in-progress``
+        in place, so silent re-pickup is impossible and a human
+        must look at the board.
+
+    Unclaimed issues (manual runs, PRDs, audit flows) are never
+    mutated. Never raises.
+    """
+    if not claimed:
+        return False
+    target = {
+        "success": cfg.awaiting_manual_check,
+        "parked": cfg.parked,
+    }.get(outcome_status)
+    if target is None:
+        return False
+    try:
+        swap = _labels.apply_swap([cfg.in_progress], target, cfg)
+        if swap is None:
+            _log_warn(
+                f"Forbidden label transition in_progress → {target} "
+                f"for #{issue_num}"
+            )
+            return False
+        if not swap.add:
+            return True  # already in the target state
+        return bool(gh.update_issue_labels(
+            issue_num,
+            add_labels=list(swap.add),
+            remove_labels=list(swap.remove),
+        ))
+    except Exception as e:
+        _log_warn(f"Finalize label swap failed for #{issue_num}: {e}")
+        return False
+
+
+__all__ = ["build_flow_context", "claim_issue", "finalize_issue_state"]

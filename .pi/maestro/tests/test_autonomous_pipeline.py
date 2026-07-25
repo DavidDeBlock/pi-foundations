@@ -52,7 +52,7 @@ def test_autonomous_setup():
 
 
 def test_autonomous_run_empty_backlog():
-    """Test autonomous pipeline run with empty needs-triage backlog."""
+    """Test autonomous pipeline run with empty ready-for-agent backlog."""
     from pipelines.autonomous import setup, run
     
     mock_term = MagicMock()
@@ -76,9 +76,9 @@ def test_autonomous_run_empty_backlog():
         run(ctx)
         
         # Verify GitHub calls were made for both labels
-        assert mock_gh.fetch_issues_by_label.call_count == 2, "Should fetch needs-triage and parent-prd"
+        assert mock_gh.fetch_issues_by_label.call_count == 2, "Should fetch ready-for-agent and parent-prd"
         fetch_calls = [c[0][0] for c in mock_gh.fetch_issues_by_label.call_args_list]
-        assert 'needs-triage' in fetch_calls, "Should fetch needs-triage issues"
+        assert 'ready-for-agent' in fetch_calls, "Should fetch ready-for-agent issues"
         assert 'parent-prd' in fetch_calls, "Should fetch parent-prd issues"
         
         # Dashboard should have been initialized and scorecard printed
@@ -90,24 +90,27 @@ def test_autonomous_run_empty_backlog():
 
 
 def test_autonomous_run_with_backlog():
-    """Test autonomous pipeline run with issues in needs-triage backlog."""
+    """Test autonomous pipeline run with issues in ready-for-agent backlog."""
     from pipelines.autonomous import setup, run
     
-    # Create mock issue objects
+    # Create mock issue objects — pickup-eligible per issue #50:
+    # sole state label is ready-for-agent, no type:prd.
     mock_issue_1 = MagicMock()
     mock_issue_1.number = 42
     mock_issue_1.title = "Fix login bug"
+    mock_issue_1.labels = ["ready-for-agent"]
     
     mock_issue_2 = MagicMock()
     mock_issue_2.number = 43
     mock_issue_2.title = "Add payment gateway"
+    mock_issue_2.labels = ["ready-for-agent"]
     
     mock_term = MagicMock()
     mock_gh = MagicMock()
     
-    # Mock: 2 issues in needs-triage, no parent-prd issues
+    # Mock: 2 issues ready for the agent, no parent-prd issues
     mock_gh.fetch_issues_by_label.side_effect = [
-        [mock_issue_1, mock_issue_2],  # needs-triage
+        [mock_issue_1, mock_issue_2],  # ready-for-agent
         []                              # parent-prd
     ]
     
@@ -117,9 +120,9 @@ def test_autonomous_run_with_backlog():
     ctx.set_variable = MagicMock()
     ctx.get_summary.return_value = {"completed_steps": 2, "failed_steps": 0, "errors": []}
     
-    # Mock run_flow to return success for both issues
-    # Note: close_issue is called by autonomous.py AFTER ctx.run_flow() returns,
-    # so we don't need to call it here.
+    # Mock run_flow to return success for both issues.
+    # Issue #50: success swaps the issue to awaiting-manual-check
+    # (in the dispatcher finalizer); the pipeline no longer closes.
     def mock_run_flow(flow_name, issue_num):
         if flow_name == "builder-reviewer":
             return True
@@ -138,11 +141,9 @@ def test_autonomous_run_with_backlog():
         # Verify flow was called for each issue
         assert ctx.run_flow.call_count == 2, "Should run flow on both issues"
         
-        # Verify close_issue was called for successful flows
-        assert mock_gh.close_issue.call_count == 2, "Should close both completed issues"
-        close_calls = [c[0][0] for c in mock_gh.close_issue.call_args_list]
-        assert 42 in close_calls, "Should close issue #42"
-        assert 43 in close_calls, "Should close issue #43"
+        # Issue #50: success lands on awaiting-manual-check — a human
+        # verifies and closes. The pipeline never closes issues.
+        mock_gh.close_issue.assert_not_called()
         
         # Dashboard should have been updated with progress
         assert mock_dashboard.set_current_phase.called, "Dashboard should set phase"
@@ -163,9 +164,9 @@ def test_autonomous_run_prd_audit():
     mock_term = MagicMock()
     mock_gh = MagicMock()
     
-    # Mock: no needs-triage issues, but one parent-prd issue
+    # Mock: no ready-for-agent issues, but one parent-prd issue
     mock_gh.fetch_issues_by_label.side_effect = [
-        [],                              # needs-triage (empty)
+        [],                              # ready-for-agent (empty)
         [mock_prd]                       # parent-prd
     ]
     
@@ -207,17 +208,18 @@ def test_autonomous_run_mixed_success_failure():
     """Test autonomous pipeline handles mixed success/failure correctly."""
     from pipelines.autonomous import setup, run
     
-    # Create mock issue objects
+    # Create mock issue objects — pickup-eligible (issue #50)
     mock_issue = MagicMock()
     mock_issue.number = 42
     mock_issue.title = "Flaky issue"
+    mock_issue.labels = ["ready-for-agent"]
     
     mock_term = MagicMock()
     mock_gh = MagicMock()
     
-    # Mock: one needs-triage issue that fails, no parent-prd issues
+    # Mock: one ready-for-agent issue that fails, no parent-prd issues
     mock_gh.fetch_issues_by_label.side_effect = [
-        [mock_issue],  # needs-triage (1 issue)
+        [mock_issue],  # ready-for-agent (1 issue)
         []             # parent-prd (empty)
     ]
     
@@ -245,6 +247,7 @@ def test_autonomous_run_mixed_success_failure():
         assert ctx.run_flow.call_count == 1, "Should attempt flow despite failure"
         
         # close_issue should NOT be called for failed flows
+        # (nor for successful ones anymore — issue #50)
         mock_gh.close_issue.assert_not_called()
     
     print("✓ test_autonomous_run_mixed_success_failure passed")

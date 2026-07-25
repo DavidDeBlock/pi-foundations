@@ -1,70 +1,6 @@
 {
-  "501327": {
-    "pid": 501327,
-    "flow_name": "unknown",
-    "issue_num": 0,
-    "phase_name": "scout",
-    "cmd": [
-      "pi",
-      "--mode",
-      "rpc",
-      "--provider",
-      "minimax",
-      "--model",
-      "MiniMax-M3",
-      "--session-dir",
-      "/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-scout-2026-07-25T12:58:55.jsonl"
-    ],
-    "start_time": 1784984335.76606,
-    "start_time_iso": "2026-07-25T12:58:55Z",
-    "status": "registered",
-    "current_cmdline": [
-      "node",
-      "/home/david/.nvm/versions/node/v22.22.2/bin/pi",
-      "--mode",
-      "rpc",
-      "--provider",
-      "minimax",
-      "--model",
-      "MiniMax-M3",
-      "--session-dir",
-      "/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-scout-2026-07-25T12:58:55.jsonl"
-    ]
-  },
-  "501340": {
-    "pid": 501340,
-    "flow_name": "unknown",
-    "issue_num": 0,
-    "phase_name": "builder",
-    "cmd": [
-      "pi",
-      "--mode",
-      "rpc",
-      "--provider",
-      "minimax",
-      "--model",
-      "MiniMax-M3",
-      "--session-dir",
-      "/home/david/projects/pi-foundations/.pi/maestro/sessions/44/builder-reviewer-builder-2026-07-25T12:58:55.jsonl"
-    ],
-    "start_time": 1784984335.9087472,
-    "start_time_iso": "2026-07-25T12:58:55Z",
-    "status": "registered",
-    "current_cmdline": [
-      "node",
-      "/home/david/.nvm/versions/node/v22.22.2/bin/pi",
-      "--mode",
-      "rpc",
-      "--provider",
-      "minimax",
-      "--model",
-      "MiniMax-M3",
-      "--session-dir",
-      "/home/david/projects/pi-foundations/.pi/maestro/sessions/44/builder-reviewer-builder-2026-07-25T12:58:55.jsonl"
-    ]
-  },
-  "501362": {
-    "pid": 501362,
+  "556793": {
+    "pid": 556793,
     "flow_name": "builder-reviewer",
     "issue_num": 44,
     "phase_name": "diagnostic",
@@ -77,13 +13,128 @@
       "--model",
       "MiniMax-M3",
       "--session-dir",
-      "/home/david/projects/pi-foundations/.pi/maestro/sessions/44/builder-reviewer-diagnostic-2026-07-25T12:58:56.jsonl"
+      "/home/david/projects/pi-foundations/.pi/maestro/sessions/44/builder-reviewer-diagnostic-2026-07-25T13:14:16.jsonl"
     ],
-    "start_time": 1784984336.264892,
-    "start_time_iso": "2026-07-25T12:58:56Z"
+    "start_time": 1784985257.0036247,
+    "start_time_iso": "2026-07-25T13:14:17Z",
+    "status": "registered",
+    "current_cmdline": [
+      "node",
+      "/home/david/.nvm/versions/node/v22.22.2/bin/pi",
+      "--mode",
+      "rpc",
+      "--provider",
+      "minimax",
+      "--model",
+      "MiniMax-M3",
+      "--session-dir",
+      "/home/david/projects/pi-foundations/.pi/maestro/sessions/44/builder-reviewer-diagnostic-2026-07-25T13:14:16.jsonl"
+    ]
   },
-  "501372": {
-    "pid": 501372,
+  "556798": {
+    "pid": 556798,
+    "flow_name": "unknown",
+    "issue_num": 0,
+    "phase_name": "builder",
+    "cmd": [
+      "pi",
+      "--mode",
+      "rpc",
+      "--provider",
+      "minimax",
+      "--model",
+      "MiniMax-M3",
+      "--session-dir",
+      "/home/david/projects/pi-foundations/.pi/maestro/sessions/43/builder-reviewer-builder-2026-07-25T13:14:17.jsonl"
+    ],
+    "start_time": 1784985257.0178578,
+    "start_time_iso": "2026-07-25T13:14:17Z",
+    "status": "registered",
+    "current_cmdline": [
+      "node",
+      "/home/david/.nvm/versions/node/v22.22.2/bin/pi",
+      "--mode",
+      "rpc",
+      "--provider",
+      "minimax",
+      "--model",
+      "MiniMax-M3",
+      "--session-dir",
+      "/home/david/projects/pi-foundations/.pi/maestro/sessions/43/builder-reviewer-builder-2026-07-25T13:14:17.jsonl"
+    ]
+  },
+  "556878": {
+    "pid": 556878,
+    "flow_name": "unknown",
+    "issue_num": 0,
+    "phase_name": "builder",
+    "cmd": [
+      "pi",
+      "--mode",
+      "rpc",
+      "--provider",
+      "minimax",
+      "--model",
+      "MiniMax-M3",
+      "--session-dir",
+      "/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-07-25T13:14:17.jsonl"
+    ],
+    "start_time": 1784985257.7794695,
+    "start_time_iso": "2026-07-25T13:14:17Z",
+    "status": "registered",
+    "current_cmdline": [
+      "node",
+      "/home/david/.nvm/versions/node/v22.22.2/bin/pi",
+      "--mode",
+      "rpc",
+      "--provider",
+      "minimax",
+      "--model",
+      "MiniMax-M3",
+      "--session-dir",
+      "/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-07-25T13:14:17.jsonl"
+    ]
+  },
+  "556897": {
+    "pid": 556897,
+    "flow_name": "builder-reviewer",
+    "issue_num": 43,
+    "phase_name": "diagnostic",
+    "cmd": [
+      "pi",
+      "--mode",
+      "rpc",
+      "--provider",
+      "minimax",
+      "--model",
+      "MiniMax-M3",
+      "--session-dir",
+      "/home/david/projects/pi-foundations/.pi/maestro/sessions/43/builder-reviewer-diagnostic-2026-07-25T13:14:17.jsonl"
+    ],
+    "start_time": 1784985257.9068515,
+    "start_time_iso": "2026-07-25T13:14:17Z"
+  },
+  "556898": {
+    "pid": 556898,
+    "flow_name": "builder-reviewer",
+    "issue_num": 43,
+    "phase_name": "diagnostic",
+    "cmd": [
+      "pi",
+      "--mode",
+      "rpc",
+      "--provider",
+      "minimax",
+      "--model",
+      "MiniMax-M3",
+      "--session-dir",
+      "/home/david/projects/pi-foundations/.pi/maestro/sessions/43/builder-reviewer-diagnostic-2026-07-25T13:14:17.jsonl"
+    ],
+    "start_time": 1784985257.9097657,
+    "start_time_iso": "2026-07-25T13:14:17Z"
+  },
+  "556913": {
+    "pid": 556913,
     "flow_name": "builder-reviewer",
     "issue_num": 42,
     "phase_name": "diagnostic",
@@ -96,66 +147,9 @@
       "--model",
       "MiniMax-M3",
       "--session-dir",
-      "/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-diagnostic-2026-07-25T12:58:56.jsonl"
+      "/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-diagnostic-2026-07-25T13:14:17.jsonl"
     ],
-    "start_time": 1784984336.4412296,
-    "start_time_iso": "2026-07-25T12:58:56Z"
-  },
-  "501383": {
-    "pid": 501383,
-    "flow_name": "unknown",
-    "issue_num": 0,
-    "phase_name": "builder",
-    "cmd": [
-      "pi",
-      "--mode",
-      "rpc",
-      "--provider",
-      "minimax",
-      "--model",
-      "MiniMax-M3",
-      "--session-dir",
-      "/home/david/projects/pi-foundations/.pi/maestro/sessions/42/builder-reviewer-builder-2026-07-25T12:58:56.jsonl"
-    ],
-    "start_time": 1784984336.5804918,
-    "start_time_iso": "2026-07-25T12:58:56Z"
-  },
-  "501443": {
-    "pid": 501443,
-    "flow_name": "unknown",
-    "issue_num": 0,
-    "phase_name": "builder",
-    "cmd": [
-      "pi",
-      "--mode",
-      "rpc",
-      "--provider",
-      "minimax",
-      "--model",
-      "MiniMax-M3",
-      "--session-dir",
-      "/home/david/projects/pi-foundations/.pi/maestro/sessions/43/builder-reviewer-builder-2026-07-25T12:58:57.jsonl"
-    ],
-    "start_time": 1784984337.3869379,
-    "start_time_iso": "2026-07-25T12:58:57Z"
-  },
-  "501470": {
-    "pid": 501470,
-    "flow_name": "unknown",
-    "issue_num": 0,
-    "phase_name": "builder",
-    "cmd": [
-      "pi",
-      "--mode",
-      "rpc",
-      "--provider",
-      "minimax",
-      "--model",
-      "MiniMax-M3",
-      "--session-dir",
-      "/home/david/projects/pi-foundations/.pi/maestro/sessions/43/builder-reviewer-builder-2026-07-25T12:58:57.jsonl"
-    ],
-    "start_time": 1784984337.783894,
-    "start_time_iso": "2026-07-25T12:58:57Z"
+    "start_time": 1784985257.9348893,
+    "start_time_iso": "2026-07-25T13:14:17Z"
   }
 }

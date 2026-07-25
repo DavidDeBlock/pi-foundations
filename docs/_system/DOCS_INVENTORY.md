@@ -2,11 +2,7 @@
 
 **Purpose:** Central state file containing YAML blocks per file with stable IDs. Source of truth for all reorganization state.
 **Updated By:** Phase 1 scan script, then agent during classification
-<<<<<<< Updated upstream
-**Last Scan:** 2026-07-01T19:11:49.299Z
-=======
-**Last Scan:** 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+**Last Scan:** 2026-07-25T13:12:39.420Z
 
 ---
 
@@ -17,11 +13,8 @@
 | docs/20-architecture | 1 | 0.14 |
 | docs/25-system-specs | 3 | 6.61 |
 | docs/30-vertical-flows | 1 | 0.22 |
-<<<<<<< Updated upstream
-| docs/31-planning-notes | 3 | 30 |
-=======
-| docs/31-planning-notes | 3 | 13.36 |
->>>>>>> Stashed changes
+| docs/31-planning-notes | 6 | 125.73 |
+| docs/31-planning-notes/Pos research | 3 | 20.62 |
 | docs/35-prds | 12 | 248.09 |
 | docs/40-decisions | 3 | 12.38 |
 | docs/50-agent-workflows | 1 | 0.16 |
@@ -54,11 +47,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ### docs/25-system-specs
@@ -81,11 +70,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
@@ -106,11 +91,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
@@ -131,11 +112,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ### docs/30-vertical-flows
@@ -158,11 +135,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ### docs/31-planning-notes
@@ -185,11 +158,7 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
@@ -210,24 +179,15 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0008
-path: docs/31-planning-notes/todo.md
+id: F0011
+path: docs/31-planning-notes/Pos.md
 folder: docs/31-planning-notes
-<<<<<<< Updated upstream
-size_kb: 20.62
-lines: 322
-=======
-size_kb: 3.98
-lines: 62
->>>>>>> Stashed changes
+size_kb: 0.01
+lines: 3
 status: scanned
 class: null
 confidence: null
@@ -240,17 +200,141 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
+```
+
+```yaml
+id: F0012
+path: docs/31-planning-notes/Stappen Boekhouding.md
+folder: docs/31-planning-notes
+size_kb: 0.23
+lines: 11
+status: scanned
+class: null
+confidence: null
+proposed_action: null
+approval: null
+risk: null
+reason: null
+questions: []
+related_files: []
+target_path: null
+current_step: null
+blocker: null
+last_updated: 2026-07-25T13:12:39.419Z
+```
+
+```yaml
+id: F0013
+path: docs/31-planning-notes/todo.md
+folder: docs/31-planning-notes
+size_kb: 116.11
+lines: 1298
+status: scanned
+class: null
+confidence: null
+proposed_action: null
+approval: null
+risk: null
+reason: null
+questions: []
+related_files: []
+target_path: null
+current_step: null
+blocker: null
+last_updated: 2026-07-25T13:12:39.419Z
+```
+
+```yaml
+id: F0014
+path: docs/31-planning-notes/Workflows.md
+folder: docs/31-planning-notes
+size_kb: 0
+lines: 1
+status: scanned
+class: null
+confidence: null
+proposed_action: null
+approval: null
+risk: null
+reason: null
+questions: []
+related_files: []
+target_path: null
+current_step: null
+blocker: null
+last_updated: 2026-07-25T13:12:39.419Z
+```
+
+### docs/31-planning-notes/Pos research
+
+```yaml
+id: F0008
+path: docs/31-planning-notes/Pos research/Click & Collect.md
+folder: docs/31-planning-notes/Pos research
+size_kb: 12.81
+lines: 148
+status: scanned
+class: null
+confidence: null
+proposed_action: null
+approval: null
+risk: null
+reason: null
+questions: []
+related_files: []
+target_path: null
+current_step: null
+blocker: null
+last_updated: 2026-07-25T13:12:39.419Z
+```
+
+```yaml
+id: F0009
+path: docs/31-planning-notes/Pos research/Operationele Workflow.md
+folder: docs/31-planning-notes/Pos research
+size_kb: 7.56
+lines: 99
+status: scanned
+class: null
+confidence: null
+proposed_action: null
+approval: null
+risk: null
+reason: null
+questions: []
+related_files: []
+target_path: null
+current_step: null
+blocker: null
+last_updated: 2026-07-25T13:12:39.419Z
+```
+
+```yaml
+id: F0010
+path: docs/31-planning-notes/Pos research/Tooling.md
+folder: docs/31-planning-notes/Pos research
+size_kb: 0.25
+lines: 10
+status: scanned
+class: null
+confidence: null
+proposed_action: null
+approval: null
+risk: null
+reason: null
+questions: []
+related_files: []
+target_path: null
+current_step: null
+blocker: null
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ### docs/35-prds
 
 ```yaml
-id: F0009
+id: F0015
 path: docs/35-prds/_index.md
 folder: docs/35-prds
 size_kb: 2.15
@@ -267,15 +351,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0010
+id: F0016
 path: docs/35-prds/docs-reorganization-system.md
 folder: docs/35-prds
 size_kb: 13.64
@@ -292,15 +372,11 @@ related_files: []
 target_path: null
 current_step: classified
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0011
+id: F0017
 path: docs/35-prds/maestro-case-improvements-roadmap.md
 folder: docs/35-prds
 size_kb: 14.18
@@ -317,15 +393,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0012
+id: F0018
 path: docs/35-prds/maestro-dag-support.md
 folder: docs/35-prds
 size_kb: 24
@@ -342,15 +414,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0013
+id: F0019
 path: docs/35-prds/maestro-evidence-gates.md
 folder: docs/35-prds
 size_kb: 26.99
@@ -367,15 +435,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0014
+id: F0020
 path: docs/35-prds/maestro-flow-deepening.md
 folder: docs/35-prds
 size_kb: 30.01
@@ -392,15 +456,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0015
+id: F0021
 path: docs/35-prds/maestro-playbooks.md
 folder: docs/35-prds
 size_kb: 24.82
@@ -417,15 +477,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0016
+id: F0022
 path: docs/35-prds/maestro-repo-onboarding.md
 folder: docs/35-prds
 size_kb: 27.4
@@ -442,15 +498,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0017
+id: F0023
 path: docs/35-prds/maestro-retrospective.md
 folder: docs/35-prds
 size_kb: 23.23
@@ -467,15 +519,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0018
+id: F0024
 path: docs/35-prds/maestro-scout-phase.md
 folder: docs/35-prds
 size_kb: 19.92
@@ -492,15 +540,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0019
+id: F0025
 path: docs/35-prds/maestro-tool-allowlists.md
 folder: docs/35-prds
 size_kb: 16.57
@@ -517,15 +561,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0020
+id: F0026
 path: docs/35-prds/maestro-working-memory.md
 folder: docs/35-prds
 size_kb: 25.18
@@ -542,17 +582,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ### docs/40-decisions
 
 ```yaml
-id: F0021
+id: F0027
 path: docs/40-decisions/_index.md
 folder: docs/40-decisions
 size_kb: 0.71
@@ -569,15 +605,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0022
+id: F0028
 path: docs/40-decisions/ADR-009-issue-interaction-contract.md
 folder: docs/40-decisions
 size_kb: 9.97
@@ -594,15 +626,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0023
+id: F0029
 path: docs/40-decisions/adr-template.md
 folder: docs/40-decisions
 size_kb: 1.7
@@ -619,17 +647,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ### docs/50-agent-workflows
 
 ```yaml
-id: F0024
+id: F0030
 path: docs/50-agent-workflows/_index.md
 folder: docs/50-agent-workflows
 size_kb: 0.16
@@ -646,17 +670,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ### docs/90-archive
 
 ```yaml
-id: F0025
+id: F0031
 path: docs/90-archive/_index.md
 folder: docs/90-archive
 size_kb: 0.15
@@ -673,17 +693,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ### docs/90-archive/04-operations
 
 ```yaml
-id: F0026
+id: F0032
 path: docs/90-archive/04-operations/agent-workflow-analysis.md
 folder: docs/90-archive/04-operations
 size_kb: 9.38
@@ -700,15 +716,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0027
+id: F0033
 path: docs/90-archive/04-operations/context-loading-audit.md
 folder: docs/90-archive/04-operations
 size_kb: 13.42
@@ -725,15 +737,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0028
+id: F0034
 path: docs/90-archive/04-operations/info-waterfall.md
 folder: docs/90-archive/04-operations
 size_kb: 20.72
@@ -750,17 +758,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ### docs/90-archive/react-guides
 
 ```yaml
-id: F0029
+id: F0035
 path: docs/90-archive/react-guides/ADVANCED-GUIDE.md
 folder: docs/90-archive/react-guides
 size_kb: 24.33
@@ -777,17 +781,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ### docs/90-archive/react-router-tutorials
 
 ```yaml
-id: F0030
+id: F0036
 path: docs/90-archive/react-router-tutorials/address-book.md
 folder: docs/90-archive/react-router-tutorials
 size_kb: 21.57
@@ -804,15 +804,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0031
+id: F0037
 path: docs/90-archive/react-router-tutorials/quickstart.md
 folder: docs/90-archive/react-router-tutorials
 size_kb: 5.54
@@ -829,15 +825,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0032
+id: F0038
 path: docs/90-archive/react-router-tutorials/README.md
 folder: docs/90-archive/react-router-tutorials
 size_kb: 5.4
@@ -854,17 +846,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ### docs/agents
 
 ```yaml
-id: F0033
+id: F0039
 path: docs/agents/_index.md
 folder: docs/agents
 size_kb: 0.27
@@ -881,15 +869,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0034
+id: F0040
 path: docs/agents/domain.md
 folder: docs/agents
 size_kb: 0.89
@@ -906,15 +890,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0035
+id: F0041
 path: docs/agents/issue-tracker.md
 folder: docs/agents
 size_kb: 1.04
@@ -931,15 +911,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0036
+id: F0042
 path: docs/agents/triage-labels.md
 folder: docs/agents
 size_kb: 2.83
@@ -956,14 +932,13 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-<<<<<<< Updated upstream
-last_updated: 2026-07-01T19:11:49.299Z
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ### docs/prompts
 
 ```yaml
-id: F0037
+id: F0043
 path: docs/prompts/Automate Things.md
 folder: docs/prompts
 size_kb: 0.99
@@ -980,11 +955,11 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-07-01T19:11:49.299Z
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 
 ```yaml
-id: F0038
+id: F0044
 path: docs/prompts/chrome automation.md
 folder: docs/prompts
 size_kb: 0.26
@@ -1001,9 +976,6 @@ related_files: []
 target_path: null
 current_step: null
 blocker: null
-last_updated: 2026-07-01T19:11:49.299Z
-=======
-last_updated: 2026-06-16T22:18:17.323Z
->>>>>>> Stashed changes
+last_updated: 2026-07-25T13:12:39.419Z
 ```
 

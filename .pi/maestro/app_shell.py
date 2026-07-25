@@ -30,7 +30,10 @@ from flow_engine import (
     load_flow,
     run_flow,
 )
-from flow_dispatcher import build_flow_context
+from flow_dispatcher import (
+    build_flow_context,
+    finalize_issue_state,
+)
 import flow_logger as _flow_logger
 
 
@@ -67,6 +70,10 @@ def _run(flow_name: str, issue_num: int, term: Terminal,
     )
     _log = log if log is not None else _flow_logger.StderrLogger()
     outcome = run_flow(flow, flow_context, state, term, gh, _log)
+    # Issue #50: apply the end-of-run label swap (success →
+    # awaiting-manual-check, parked → status:parked). No-op for
+    # unclaimed issues (manual runs, PRDs, audit flows).
+    finalize_issue_state(issue_num, outcome.status, flow_context.claimed, gh)
     return outcome.status == "success"
 
 
@@ -207,10 +214,16 @@ class MaestroApp:
 
         # --- Auto Mode (--auto) ---
         elif getattr(self.args, "auto", False):
-            self.term.info("Auto mode — fetching needs-triage backlog...")
-            issues = self.gh_client.fetch_issues_by_label("needs-triage")
+            # Issue #50: pickup is gated on ready-for-agent (the
+            # human-approved queue); type:prd issues are excluded
+            # by the eligibility filter.
+            import label_machine as _labels
+            self.term.info("Auto mode — fetching ready-for-agent backlog...")
+            issues = _labels.filter_pickup(
+                self.gh_client.fetch_issues_by_label(_labels.DEFAULT_LABELS.ready)
+            )
             if not issues:
-                self.term.info("No 'needs-triage' issues found. Nothing to do.")
+                self.term.info("No 'ready-for-agent' issues found. Nothing to do.")
                 return
             issue_nums = [issue.number for issue in issues]
             self._run_pipeline_with_issues(flow_name, issue_nums)

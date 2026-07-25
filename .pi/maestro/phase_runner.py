@@ -945,6 +945,29 @@ def run_phase(
         duration, tokens, session log path, and a short details
         string.
     """
+    if not isinstance(phase_name, str) or not phase_name.strip():
+        raise ValueError("phase_name must be a non-empty string")
+    if not isinstance(flow, Flow):
+        raise TypeError(f"flow must be a Flow, got {type(flow).__name__}")
+    if not isinstance(context, FlowContext):
+        raise TypeError(f"context must be a FlowContext, got {type(context).__name__}")
+    if not isinstance(state, PhaseState):
+        raise TypeError(f"state must be a PhaseState, got {type(state).__name__}")
+    if phase_name not in flow.phases:
+        raise ValueError(f"unknown phase {phase_name!r}; expected one of {tuple(flow.phases)}")
+    if context.flow != flow:
+        raise ValueError("context.flow must be the same Flow passed to run_phase")
+    if not isinstance(context.issue_num, int) or isinstance(context.issue_num, bool) or context.issue_num < 1:
+        raise ValueError("context.issue_num must be a positive integer")
+    if not isinstance(state.phase_attempt, int) or isinstance(state.phase_attempt, bool) or state.phase_attempt < 1:
+        raise ValueError("state.phase_attempt must be a positive integer")
+    if not callable(getattr(term, "issue_header", None)):
+        raise TypeError("term must provide callable issue_header()")
+    if not callable(getattr(gh, "post_phase_comment", None)):
+        raise TypeError("gh must provide callable post_phase_comment()")
+    if not callable(getattr(log, "emit", None)):
+        raise TypeError("log must provide callable emit()")
+
     _log = _resolve_log(log)
     phase_config = flow.phases.get(phase_name) or {}
     is_optional = bool(phase_config.get("is_optional"))

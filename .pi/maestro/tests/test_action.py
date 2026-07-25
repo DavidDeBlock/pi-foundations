@@ -77,8 +77,10 @@ from action_menu import (  # noqa: E402
     MENU_OPTIONS,
     BatchSpec,
     LabelRule,
+    LaunchResult,
     ScriptedMenuIO,
     SpawnResult,
+    launch_monitor,
     load_available_flows,
     load_config,
     load_default_flow,
@@ -172,6 +174,11 @@ def test_menu_options_include_batch():
     assert "batch" in keys, f"menu options missing 'batch': {MENU_OPTIONS}"
 
 
+def test_menu_options_include_monitor():
+    """The top-level menu exposes the operator-facing monitor action."""
+    assert ("monitor", "Launch monitor") in MENU_OPTIONS
+
+
 def test_menu_options_include_quit():
     """The top-level menu exposes a "Quit" option."""
     keys = [k for k, _ in MENU_OPTIONS]
@@ -188,6 +195,100 @@ def test_menu_options_are_distinct():
     """No two menu options share a key (would make the state machine ambiguous)."""
     keys = [k for k, _ in MENU_OPTIONS]
     assert len(keys) == len(set(keys)), f"duplicate keys: {keys}"
+
+
+# ─── Monitor launch tests (#42) ─────────────────────────────────────────
+
+
+def test_launch_monitor_invokes_canonical_command_and_waits():
+    """The synchronous launcher receives the canonical monitor argv."""
+    calls: list[list[str]] = []
+
+    def launcher(argv: list[str]) -> int:
+        calls.append(argv)
+        return 0
+
+    result = launch_monitor(launch_fn=launcher)
+
+    assert result == LaunchResult(started=True, returncode=0)
+    assert calls == [[sys.executable, str(MAESTRO_DIR / "maestro.py"), "monitor"]]
+
+
+def test_launch_monitor_reports_command_not_found():
+    """An OS launch failure is returned as an operator-facing value."""
+    def launcher(argv: list[str]) -> int:
+        raise FileNotFoundError("maestro missing")
+
+    result = launch_monitor(launch_fn=launcher, monitor_args=["maestro", "monitor"])
+
+    assert result.started is False
+    assert result.returncode is None
+    assert "monitor command not found" in (result.error or "")
+    assert "maestro missing" in (result.error or "")
+
+
+def test_launch_monitor_rejects_malformed_command():
+    """Invalid argv is handled without passing bad input to subprocess."""
+    called = False
+
+    def launcher(argv: list[str]) -> int:
+        nonlocal called
+        called = True
+        return 0
+
+    result = launch_monitor(launch_fn=launcher, monitor_args=[])
+
+    assert result.started is False
+    assert "empty monitor command" in (result.error or "")
+    assert called is False
+
+
+def test_launch_monitor_rejects_invalid_launcher_result():
+    """A broken launcher adapter cannot crash and discard menu state."""
+    result = launch_monitor(
+        launch_fn=lambda argv: "not-an-exit-code",  # type: ignore[return-value]
+        monitor_args=["maestro", "monitor"],
+    )
+
+    assert result.started is False
+    assert "invalid launcher result" in (result.error or "")
+
+
+def test_action_menu_returns_after_monitor_exit():
+    """After the blocking monitor call returns, the menu prompts again."""
+    io = ScriptedMenuIO(["monitor", "quit"])
+    calls: list[list[str]] = []
+
+    rc = run_action_menu(
+        io=io,
+        launch_fn=lambda argv: calls.append(argv) or 0,
+        monitor_args=["maestro", "monitor"],
+    )
+
+    assert rc == 0
+    assert calls == [["maestro", "monitor"]]
+    assert io.answers == []
+
+
+def test_action_menu_preserved_after_monitor_launch_failure():
+    """Launch errors are shown and the next menu choice remains usable."""
+    io = ScriptedMenuIO(["monitor", "quit"])
+
+    def launcher(argv: list[str]) -> int:
+        raise PermissionError("broken install")
+
+    rc = run_action_menu(
+        io=io,
+        launch_fn=launcher,
+        monitor_args=["maestro", "monitor"],
+    )
+
+    assert rc == 0
+    assert io.answers == []
+    assert any(
+        kind == "error" and "broken install" in message
+        for message, kind in io.messages
+    )
 
 
 # ─── Config helper tests ────────────────────────────────────────────────

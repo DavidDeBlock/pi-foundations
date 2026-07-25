@@ -283,6 +283,11 @@ class FlowContext:
     step 1; callers reproduce the
     ``term.issue_header(issue_num, title=..., comments_count=...,
     created_at=...)`` call from them.
+
+    ``claimed`` records whether the dispatcher performed the
+    ``ready-for-agent → status:in-progress`` claim swap (issue #50).
+    Final label swaps (park / success) only happen for claimed
+    issues — manual runs on unlabeled issues never mutate labels.
     """
     flow: "Flow"
     issue_num: int
@@ -295,6 +300,7 @@ class FlowContext:
     prefetched: "PrefetchedContext" = None  # type: ignore[assignment]
     repo_context: dict | None = None
     scout_findings: "dict | None" = None
+    claimed: bool = False
 
 
 @dataclass
@@ -622,6 +628,44 @@ def _evidence_summary(issue_num: int, flow_config: dict) -> str:
         return "unknown (evidence check failed)"
 
 
+def _validate_run_inputs(
+    flow: Flow,
+    context: FlowContext,
+    state: PhaseState,
+    term: Terminal,
+    gh: GithubClient,
+    log: FlowLogger | None,
+) -> None:
+    """Validate the typed runner boundary before producing side effects.
+
+    ``run_flow`` is deliberately a narrow public API.  Failing at this
+    boundary gives callers a useful error instead of a later ``AttributeError``
+    in prompt assembly or a partially-written flow outcome.  The collaborators
+    are duck-typed ports, so only the operation the runner actually requires is
+    checked for them.
+    """
+    if not isinstance(flow, Flow):
+        raise TypeError(f"flow must be a Flow, got {type(flow).__name__}")
+    if not isinstance(context, FlowContext):
+        raise TypeError(f"context must be a FlowContext, got {type(context).__name__}")
+    if not isinstance(state, PhaseState):
+        raise TypeError(f"state must be a PhaseState, got {type(state).__name__}")
+    if not isinstance(context.issue_num, int) or isinstance(context.issue_num, bool) or context.issue_num < 1:
+        raise ValueError("context.issue_num must be a positive integer")
+    if not isinstance(flow.phases, dict) or not flow.phases:
+        raise ValueError("flow.phases must be a non-empty mapping")
+    if state.current_phase is not None and state.current_phase not in flow.phases:
+        raise ValueError(f"state.current_phase is not a phase in flow: {state.current_phase!r}")
+    if not isinstance(state.phase_attempt, int) or isinstance(state.phase_attempt, bool) or state.phase_attempt < 1:
+        raise ValueError("state.phase_attempt must be a positive integer")
+    if not callable(getattr(term, "issue_header", None)):
+        raise TypeError("term must provide callable issue_header()")
+    if not callable(getattr(gh, "post_phase_comment", None)):
+        raise TypeError("gh must provide callable post_phase_comment()")
+    if log is not None and not callable(getattr(log, "emit", None)):
+        raise TypeError("log must provide callable emit()")
+
+
 # ─── The deep module: run_flow ──────────────────────────────────────────
 
 
@@ -679,6 +723,7 @@ def run_flow(
         ``status`` field is one of ``"success"``,
         ``"exhausted_iterations"``, ``"parked"``, or ``"failed"``.
     """
+    _validate_run_inputs(flow, context, state, term, gh, log)
     from phase_runner import run_phase as _phase_runner_run_phase
     from diagnostic import run_diagnostic as _diagnostic_run_diagnostic
 

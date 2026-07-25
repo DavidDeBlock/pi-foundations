@@ -124,7 +124,7 @@ class PipelineContext:
             load_flow,
             run_flow,
         )
-        from flow_dispatcher import build_flow_context
+        from flow_dispatcher import build_flow_context, finalize_issue_state
         from flow_logger import StderrLogger
 
         if not self.term:
@@ -161,6 +161,12 @@ class PipelineContext:
                 outcome = run_flow(
                     flow, flow_context, state,
                     self.term, self.github, log,
+                )
+                # Issue #50: end-of-run label swap (success →
+                # awaiting-manual-check, parked → status:parked).
+                finalize_issue_state(
+                    issue_num, outcome.status, flow_context.claimed,
+                    self.github,
                 )
 
                 if outcome.status == "success":

@@ -7,8 +7,9 @@ fully functional pipeline script powered by the new engine, context API,
 and live dashboard.
 
 Workflow:
-  1. Fetch open issues labeled "needs-triage"
-  2. Run builder-reviewer flow on each issue (close when done)
+  1. Fetch open issues labeled "ready-for-agent" (type:prd excluded)
+  2. Run builder-reviewer flow on each issue (swap to
+     awaiting-manual-check on success; a human verifies and closes)
   3. After backlog processing, run prd-audit on all open parent-prd issues
   4. Display live progress dashboard with final scorecard summary
 
@@ -62,19 +63,24 @@ def run(ctx):
         dashboard = PipelineDashboard(term=term)
         dashboard.print_header("autonomous")
     
-    # ── Phase 1: Process Needs-Triage Backlog ───────────────────────
-    
+    # ── Phase 1: Process Ready-for-Agent Backlog ──────────────────
+
     if term:
-        term._print_verbose("[PHASE 1] Fetching needs-triage backlog...")
-    
-    # Fetch all open issues with "needs-triage" label
-    backlog = gh.fetch_issues_by_label("needs-triage")
-    
+        term._print_verbose("[PHASE 1] Fetching ready-for-agent backlog...")
+
+    # Issue #50: pickup is gated on ready-for-agent (the
+    # human-approved queue). The eligibility filter also excludes
+    # type:prd issues — PRDs are context, never work items.
+    import label_machine as _labels
+    backlog = _labels.filter_pickup(
+        gh.fetch_issues_by_label(_labels.DEFAULT_LABELS.ready)
+    )
+
     if not backlog:
         if term:
-            term.info("No issues in 'needs-triage' queue. Skipping backlog processing.")
+            term.info("No issues in 'ready-for-agent' queue. Skipping backlog processing.")
         if dashboard:
-            dashboard.log_event("No needs-triage issues found", "info")
+            dashboard.log_event("No ready-for-agent issues found", "info")
     else:
         total_backlog = len(backlog)
         
@@ -104,9 +110,9 @@ def run(ctx):
             success = ctx.run_flow("builder-reviewer", issue.number)
             
             if success:
-                # Close the issue (removes all labels including needs-triage)
-                gh.close_issue(issue.number)
-                
+                # Issue #50: do NOT close — the finalizer already
+                # swapped the issue to awaiting-manual-check. A
+                # human verifies and closes.
                 if dashboard:
                     dashboard.record_step(f"#{issue.number}", success=True, details="Builder-reviewer approved")
                     dashboard.log_event(f"#{issue.number} completed ✓", "success")
